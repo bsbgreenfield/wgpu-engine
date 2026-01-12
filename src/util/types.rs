@@ -2,10 +2,15 @@ use std::fmt::Debug;
 
 use bytemuck::{AnyBitPattern, NoUninit};
 
-use crate::util::{pipeline::InstanceData, primitive::PrimitiveVerticesData};
-
 pub type Mat4F32 = [[f32; 4]; 4];
 
+pub struct PrimitiveVerticesData {
+    pub positions: Vec<u8>,
+    pub normal: Option<Vec<u8>>,
+    pub uv: Option<Vec<u8>>,
+    pub joints: Option<Vec<u8>>,
+    pub weights: Option<Vec<u8>>,
+}
 pub trait ModelVertex: NoUninit + Debug {
     fn from_primitive_data(p: &PrimitiveVerticesData) -> Vec<Self>;
     fn normalize_f32_to_u8(input: Vec<f32>) -> Vec<u8> {

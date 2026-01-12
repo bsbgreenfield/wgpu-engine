@@ -33,7 +33,7 @@ use std::{
 use base64::Engine;
 use gltf::Gltf;
 
-use crate::asset_manager::asset_manager::AssetLoadError;
+use crate::asset_manager::{asset_manager::AssetLoadError, model_builder::ModelBuilderError};
 
 impl GltfLoader {
     fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {

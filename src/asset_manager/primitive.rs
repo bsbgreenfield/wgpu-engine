@@ -2,18 +2,14 @@ use std::ops::Range;
 
 use gltf::accessor::{DataType, Dimensions};
 
-use crate::util::types::ModelVertex;
+use crate::{
+    asset_manager::model_builder::{GltfModelBuilder, ModelBuilderError},
+    util::types::{ModelVertex, PrimitiveVerticesData},
+};
 
 #[derive(Debug)]
 pub enum GltfValidationError {
     NoView,
-}
-pub struct PrimitiveVerticesData {
-    pub positions: Vec<u8>,
-    pub normal: Option<Vec<u8>>,
-    pub uv: Option<Vec<u8>>,
-    pub joints: Option<Vec<u8>>,
-    pub weights: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -27,7 +23,7 @@ pub(super) struct GLTFDataAccessor {
 }
 
 #[derive(Debug)]
-pub struct PrimitiveData {
+pub(super) struct PrimitiveData {
     pub(super) mesh_id: usize,
     pub(super) positions: GLTFDataAccessor,
     pub(super) tex_coords: Option<GLTFDataAccessor>,
@@ -73,7 +69,7 @@ impl GLTFDataAccessor {
     }
 }
 
-impl ModelBuilder {
+impl GltfModelBuilder {
     pub(super) fn get_primitive_data(
         &self,
         mesh_id: usize,
@@ -188,7 +184,7 @@ impl ModelBuilder {
     }
 
     /// get the indices within the binary that contain this primitives index data
-    pub(super) fn get_index_range(
+    pub fn get_index_range(
         &self,
         maybe_accessor: Option<&GLTFDataAccessor>,
     ) -> Result<Option<Range<usize>>, GltfValidationError> {

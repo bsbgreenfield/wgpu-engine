@@ -1,8 +1,5 @@
-use crate::asset_manager::{
-    gltf_loader::loader::{GltfLoadError, GltfLoader},
-    model_builder::GltfModelBuilder,
-};
-use std::{collections::HashMap, path::PathBuf};
+use crate::asset_manager::{gltf_loader::loader::GltfLoadError, model_builder::GltfModelBuilder};
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AssetHandle(u32);
@@ -16,16 +13,17 @@ impl From<GltfLoadError> for AssetLoadError {
         Self::Gltf(value)
     }
 }
-
-pub enum AssetType {
-    Gltf(String),
+pub trait Asset {
+    type Builder: AssetBuilder;
+    fn builder() -> Self::Builder;
 }
 
-impl AssetType {
-    fn builder(&self) -> Box<dyn AssetBuilder> {
-        match self {
-            Self::Gltf(string) => Box::new(GltfModelBuilder::new()),
-        }
+pub struct GltfAsset;
+
+impl Asset for GltfAsset {
+    type Builder = GltfModelBuilder;
+    fn builder() -> Self::Builder {
+        GltfModelBuilder::new()
     }
 }
 
@@ -41,9 +39,13 @@ impl AssetManager {
     fn gen_handle(&self) -> AssetHandle {
         return AssetHandle(self.asset_registry.len() as u32);
     }
-    pub fn register(&mut self, a: AssetType) -> Result<(), GltfLoadError> {
-        let asset_builder = a.builder();
-        self.asset_registry.insert(self.gen_handle(), asset_builder);
+    pub fn register<A: Asset>(&mut self) -> Result<(), GltfLoadError>
+    where
+        A::Builder: 'static,
+    {
+        let builder = A::builder();
+        let handle = self.gen_handle();
+        self.asset_registry.insert(handle, Box::new(builder));
         Ok(())
     }
 }
