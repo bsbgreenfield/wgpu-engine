@@ -27,7 +27,7 @@ pub(super) struct GLTFDataAccessor {
 }
 
 #[derive(Debug)]
-pub(super) struct PrimitiveData {
+pub struct PrimitiveData {
     pub(super) mesh_id: usize,
     pub(super) positions: GLTFDataAccessor,
     pub(super) tex_coords: Option<GLTFDataAccessor>,

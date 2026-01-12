@@ -1,8 +1,7 @@
 use std::{any::TypeId, marker::PhantomData};
 
 use crate::{
-    app::app_config::AppConfig,
-    util::types::{GlobalTransform, IndexType, ModelVertex, PNUJWVertex},
+    util::types::{GlobalTransform, IndexType, InstanceData, ModelVertex, PNUJWVertex},
     world::camera::Camera,
 };
 
@@ -83,8 +82,8 @@ impl RenderGroup<PNUJWVertex, u16> {
         });
 
         Self {
-            v: PhantomData::<PNUJWVertex>(),
-            i: PhantomData::<u16>(),
+            v: PhantomData::<PNUJWVertex>,
+            i: PhantomData::<u16>,
             pipeline,
             views: Vec::new(),
         }
@@ -106,8 +105,7 @@ impl Renderer {
 
         if v == TypeId::of::<PNUJWVertex>() && i == TypeId::of::<u16>() {
             if self.PNUJW_render_group.is_none() {
-                self.PNUJW_render_group =
-                    Some(RenderGroup::new::<PNUJWVertex, u16>(device, *format));
+                self.PNUJW_render_group = Some(RenderGroup::new(device, *format));
             }
             return Ok(());
         } else {
@@ -125,7 +123,9 @@ impl Renderer {
         &self,
         render_pass: &mut wgpu::RenderPass,
     ) -> Result<(), wgpu::SurfaceError> {
-        render_pass.set_pipeline(&self.pipeline);
-        todo!()
+        if let Some(pnuj) = &self.PNUJW_render_group {
+            render_pass.set_pipeline(&pnuj.pipeline);
+        }
+        Ok(())
     }
 }

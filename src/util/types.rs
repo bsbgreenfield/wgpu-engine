@@ -136,6 +136,9 @@ const ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
              8 => Float32x4,
 
 ];
+pub trait InstanceData {
+    fn desc() -> wgpu::VertexBufferLayout<'static>;
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
