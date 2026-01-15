@@ -39,10 +39,12 @@ impl EntityManager {
         }
         return Ok(res);
     }
-    pub fn create_entity_with_components<C: ExtractComponents>(
-        asset_manager: &mut AssetManager,
-        asset_handle: &AssetHandle,
-    ) {
+
+    pub fn new() -> Self {
+        Self {
+            available_ids: vec![],
+            mesh_collections: SparseSet::<MeshCollectionComponent, 100>::new(),
+        }
     }
 }
 #[derive(PartialEq, Eq, PartialOrd, Ord)]

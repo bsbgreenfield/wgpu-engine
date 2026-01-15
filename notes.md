@@ -12,3 +12,13 @@ If the user wants to ready the data by making it CPU resident without actually a
 they can add a message to the event queue so that the asset manager can begin loading that data.
 
 If for some reason the renderer requests GPU residency for an asset that is actively being loaded to the CPU, we need the asset manager to handle that
+
+## rendering a box
+1. register box asset
+    - This creates an asset builder in the registry, keyed by asset handle ID. Register returns asset handle
+2. Asset is a gltf, so the builder is a GltfModelBuilder - call builder.with_gltf()
+3.  
+4. request a mesh collection component from the asset manager for the given asset handle
+    - asset_manager.get_components<ExtractComponents: (MeshCollectionComponent,)>(asset_handle)
+    - check the registry - if the builder for this asset has a resource (check for binary data?)
+    - then 

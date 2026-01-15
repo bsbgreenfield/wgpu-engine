@@ -1,11 +1,26 @@
-use crate::asset_manager::{gltf_loader::loader::GltfLoadError, model_builder::GltfModelBuilder};
-use std::collections::HashMap;
+use crate::{
+    asset_manager::{
+        gltf_loader::loader::GltfLoadError,
+        model_builder::{GltfBuilderRegistered, GltfModelBuilder},
+    },
+    world::components::{ExtractComponents, MeshCollectionComponent},
+};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AssetHandle(u32);
+pub struct AssetHandle {
+    type_id: TypeId,
+    id: u32,
+}
 
+#[derive(Debug)]
 pub enum AssetLoadError {
     Gltf(GltfLoadError),
+    AssetNotLoaded,
+    AssetNotFound,
 }
 
 impl From<GltfLoadError> for AssetLoadError {
@@ -15,37 +30,92 @@ impl From<GltfLoadError> for AssetLoadError {
 }
 pub trait Asset {
     type Builder: AssetBuilder;
-    fn builder() -> Self::Builder;
+    type Components;
+    fn builder(dir_name: &str) -> Result<Self::Builder, AssetLoadError>;
 }
 
 pub struct GltfAsset;
 
 impl Asset for GltfAsset {
-    type Builder = GltfModelBuilder;
-    fn builder() -> Self::Builder {
-        GltfModelBuilder::new()
+    type Builder = GltfBuilderRegistered;
+    type Components = (MeshCollectionComponent,);
+    fn builder(dir_name: &str) -> Result<Self::Builder, AssetLoadError> {
+        GltfBuilderRegistered::new(dir_name)
     }
 }
 
-pub(super) trait AssetBuilder {
-    fn with_asset(&mut self, dir_name: &str) -> Result<(), AssetLoadError>;
+#[derive(Clone, Copy)]
+pub enum AssetResidencyLevel {
+    Registered,
+    CPU,
+    GPU,
+}
+
+pub trait AssetBuilder {
+    fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError>;
+    fn get_residency_level(&self) -> AssetResidencyLevel;
+    fn get_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError>;
+}
+
+#[derive(Debug)]
+pub struct LoadedAsset {
+    components: HashMap<TypeId, Box<dyn Any>>,
+}
+
+impl LoadedAsset {
+    pub fn new() -> Self {
+        Self {
+            components: HashMap::new(),
+        }
+    }
+
+    pub fn add_component(&mut self, component: Box<dyn Any>) {
+        self.components.insert(component.type_id(), component);
+    }
+
+    pub fn get(&mut self, tid: &TypeId) -> Option<Box<dyn Any>> {
+        self.components.remove(tid)
+    }
 }
 
 pub struct AssetManager {
-    asset_registry: HashMap<AssetHandle, Box<dyn AssetBuilder>>,
+    asset_registry: HashMap<u32, Box<dyn AssetBuilder>>,
+    asset_data: HashMap<u32, LoadedAsset>,
 }
 
 impl AssetManager {
-    fn gen_handle(&self) -> AssetHandle {
-        return AssetHandle(self.asset_registry.len() as u32);
+    pub fn get_builder(&self, asset_handle: &AssetHandle) -> Option<&Box<dyn AssetBuilder>> {
+        self.asset_registry.get(&asset_handle.id)
     }
-    pub fn register<A: Asset>(&mut self) -> Result<(), GltfLoadError>
+    fn gen_handle<A: Asset + 'static>(&self) -> AssetHandle {
+        AssetHandle {
+            type_id: TypeId::of::<A>(),
+            id: self.asset_registry.len() as u32,
+        }
+    }
+
+    fn get_components_for(
+        &self,
+        asset_handle: &AssetHandle,
+    ) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+        let builder = self
+            .asset_registry
+            .get(&asset_handle.id)
+            .ok_or(AssetLoadError::AssetNotLoaded)?;
+
+        builder.get_components()
+    }
+
+    fn register_with_asset<A: Asset + 'static>(
+        &mut self,
+        dir_name: &str,
+    ) -> Result<AssetHandle, AssetLoadError>
     where
-        A::Builder: 'static,
+        A::Builder: AssetBuilder + 'static,
     {
-        let builder = A::builder();
-        let handle = self.gen_handle();
-        self.asset_registry.insert(handle, Box::new(builder));
-        Ok(())
+        let builder = A::builder(dir_name)?;
+        let handle = self.gen_handle::<A>();
+        self.asset_registry.insert(handle.id, Box::new(builder));
+        Ok(handle)
     }
 }

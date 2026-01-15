@@ -4,11 +4,12 @@ use cgmath::SquareMatrix;
 
 use crate::{
     asset_manager::{
-        asset_manager::{AssetBuilder, AssetLoadError},
+        asset_manager::{AssetBuilder, AssetLoadError, AssetResidencyLevel, LoadedAsset},
         gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
         primitive::{GltfValidationError, PrimitiveData},
     },
     util::types::Mat4F32,
+    world::components::MeshCollectionComponent,
 };
 
 #[derive(Debug)]
@@ -46,7 +47,23 @@ struct ModelJointData {
     joint_pose_transforms: Mat4F32,
     node_to_joint_id_map: HashMap<usize, usize>,
 }
+
+pub struct GltfBuilderRegistered {
+    gltf: gltf::Gltf,
+    bin_source: BinarySource,
+}
+impl GltfBuilderRegistered {
+    pub fn new(dir_name: &str) -> Result<Self, AssetLoadError> {
+        let (gltf, bin) = GltfLoader::load_gltf_from_resource(dir_name)?;
+        Ok(Self {
+            gltf,
+            bin_source: bin,
+        })
+    }
+}
+
 pub struct GltfModelBuilder {
+    residency_level: AssetResidencyLevel,
     pub(super) buffer_offsets: Vec<usize>,
     binary_source: BinarySource,
     model_count: usize,
@@ -58,6 +75,7 @@ pub struct GltfModelBuilder {
 impl GltfModelBuilder {
     pub(super) fn new() -> Self {
         Self {
+            residency_level: AssetResidencyLevel::Registered,
             binary_source: BinarySource::Undefined,
             buffer_offsets: vec![],
             model_count: 0,
@@ -167,11 +185,37 @@ impl GltfModelBuilder {
         self.index_ranges = index_range_vec;
         Ok(self)
     }
+    pub(super) fn create_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+        let mut loaded_asset = LoadedAsset::new();
+        let mesh_collection = MeshCollectionComponent::new(vec![]);
+        loaded_asset.add_component(Box::new(mesh_collection));
+        Ok(vec![loaded_asset])
+    }
+}
+
+impl AssetBuilder for GltfBuilderRegistered {
+    fn get_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+        Err(AssetLoadError::AssetNotLoaded)
+    }
+    fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
+        let mut model_builder = GltfModelBuilder::new();
+        model_builder.with_gltf(&self.gltf, self.bin_source);
+        Ok(Box::new(model_builder))
+    }
+
+    fn get_residency_level(&self) -> AssetResidencyLevel {
+        AssetResidencyLevel::Registered
+    }
 }
 
 impl AssetBuilder for GltfModelBuilder {
-    fn with_asset(&mut self, dir_name: &str) -> Result<(), AssetLoadError> {
-        let (gltf, binary_source) = GltfLoader::load_gltf_from_resource(dir_name)?;
-        todo!()
+    fn get_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+        self.create_components()
+    }
+    fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
+        Ok(Box::new(self))
+    }
+    fn get_residency_level(&self) -> super::asset_manager::AssetResidencyLevel {
+        self.residency_level
     }
 }
