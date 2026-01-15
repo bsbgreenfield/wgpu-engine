@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range};
+use std::{any::Any, collections::HashMap, ops::Range, rc::Rc};
 
 use cgmath::SquareMatrix;
 
@@ -185,16 +185,17 @@ impl GltfModelBuilder {
         self.index_ranges = index_range_vec;
         Ok(self)
     }
-    pub(super) fn create_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+    pub(super) fn create_components(&self) -> Result<LoadedAsset, AssetLoadError> {
         let mut loaded_asset = LoadedAsset::new();
-        let mesh_collection = MeshCollectionComponent::new(vec![]);
-        loaded_asset.add_component(Box::new(mesh_collection));
-        Ok(vec![loaded_asset])
+        // TODO: extract mesh collection components
+        let mesh_collection: Vec<Rc<dyn Any>> = vec![Rc::new(MeshCollectionComponent::new(vec![]))];
+        loaded_asset.add_component(mesh_collection);
+        Ok(loaded_asset)
     }
 }
 
 impl AssetBuilder for GltfBuilderRegistered {
-    fn get_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+    fn get_components(&self) -> Result<LoadedAsset, AssetLoadError> {
         Err(AssetLoadError::AssetNotLoaded)
     }
     fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
@@ -209,7 +210,7 @@ impl AssetBuilder for GltfBuilderRegistered {
 }
 
 impl AssetBuilder for GltfModelBuilder {
-    fn get_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+    fn get_components(&self) -> Result<LoadedAsset, AssetLoadError> {
         self.create_components()
     }
     fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {

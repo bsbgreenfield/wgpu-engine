@@ -8,6 +8,7 @@ use crate::{
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    rc::Rc,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -21,6 +22,7 @@ pub enum AssetLoadError {
     Gltf(GltfLoadError),
     AssetNotLoaded,
     AssetNotFound,
+    ComponentNotFound,
 }
 
 impl From<GltfLoadError> for AssetLoadError {
@@ -54,12 +56,12 @@ pub enum AssetResidencyLevel {
 pub trait AssetBuilder {
     fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError>;
     fn get_residency_level(&self) -> AssetResidencyLevel;
-    fn get_components(&self) -> Result<Vec<LoadedAsset>, AssetLoadError>;
+    fn get_components(&self) -> Result<LoadedAsset, AssetLoadError>;
 }
 
 #[derive(Debug)]
 pub struct LoadedAsset {
-    components: HashMap<TypeId, Box<dyn Any>>,
+    components: HashMap<TypeId, Vec<Rc<dyn Any>>>,
 }
 
 impl LoadedAsset {
@@ -69,12 +71,13 @@ impl LoadedAsset {
         }
     }
 
-    pub fn add_component(&mut self, component: Box<dyn Any>) {
+    pub fn add_component(&mut self, component: Vec<Rc<dyn Any>>) {
         self.components.insert(component.type_id(), component);
     }
 
-    pub fn get(&mut self, tid: &TypeId) -> Option<Box<dyn Any>> {
-        self.components.remove(tid)
+    pub fn get(&self, tid: &TypeId) -> Option<Vec<Rc<dyn Any>>> {
+        let a: Option<Vec<Rc<dyn Any>>> = self.components.get(tid).cloned();
+        a
     }
 }
 
@@ -94,16 +97,18 @@ impl AssetManager {
         }
     }
 
-    fn get_components_for(
-        &self,
+    pub fn get_components_for(
+        &mut self,
         asset_handle: &AssetHandle,
-    ) -> Result<Vec<LoadedAsset>, AssetLoadError> {
+    ) -> Result<&LoadedAsset, AssetLoadError> {
         let builder = self
             .asset_registry
             .get(&asset_handle.id)
             .ok_or(AssetLoadError::AssetNotLoaded)?;
 
-        builder.get_components()
+        let la = builder.get_components()?;
+        self.asset_data.insert(asset_handle.id, la);
+        Ok(self.asset_data.get(&asset_handle.id).unwrap())
     }
 
     fn register_with_asset<A: Asset + 'static>(
