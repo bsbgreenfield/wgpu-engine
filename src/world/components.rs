@@ -8,13 +8,18 @@ use crate::{
     util::types::Mat4F32,
 };
 
+use crate::asset_manager::gltf_assets::mesh::Mesh;
 pub struct MeshCollectionComponent {
     local_transforms: Vec<Mat4F32>,
+    meshes: Vec<Mesh>,
 }
 
 impl MeshCollectionComponent {
-    pub fn new(local_transforms: Vec<Mat4F32>) -> Self {
-        Self { local_transforms }
+    pub fn new(local_transforms: Vec<Mat4F32>, meshes: Vec<Mesh>) -> Self {
+        Self {
+            local_transforms,
+            meshes,
+        }
     }
 }
 

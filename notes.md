@@ -15,15 +15,25 @@ If for some reason the renderer requests GPU residency for an asset that is acti
 
 ## rendering a box
 1. user registers the asset
-- an entry is created in the asset registry with asset_handle: builder
+- an entry is created in the asset registry with asset_handle: builder, and a list of components
 2. user creates a resource backed entity by providing an asset handle 
     - an entry is created in the entity manager RBEs linking entity handle -> ResourceBacking(asset handle, index) 
 3. the entity is added to the scene using the entity handle
 4. the user activates the scene
 5. the asset manager loads the asset associated with the RBE with a residency level of GPU
-- the asset manager calls load(ResLevel::GPU) on the correct asset_buider 
-- the asset builder writes vertex and index data into the appropriate CPUMeshPool
-- the asset builder creates a LoadedAsset entry with vertex and index offsets
+    - the asset manager calls load(ResLevel::GPU) on the correct asset_buider 
+    - the asset builder writes vertex and index data into the appropriate CPUMeshPool
+    - the asset builder creates a LoadedAsset entry with {MeshCollectionComponent: Vec[entry] } 
+6. the asset manager creates and set the GPU buffer from the CPU data (in future will be pool)
+7. the entity manager adds data for the mesh collection component and links it to the entity
+8. the renderer attempts to create a render view for the newly actived entity
+9. the renderer sees that there is no associated group, so it creates one
+    - it uses the GPU vertex and index buffers in the asset manager for the correct vertex/index type
+10. the renderer creates the render view by looping through the mesh collection component associated with the entity
+    - for each mesh in the mesh collection
+    - for each primitive in the mesh
+    - create draw item from mesh id, and buffer slice created from buffer ref in group 
+    and offsets defined by the primitive
 
 
 
@@ -33,4 +43,4 @@ TODO: add models(?), meshes, primitives to gtlf_assets becauase its the only log
 for the mesh collections
 
 load_model() should attempt to load all possible components from gltf (for now) and needs to create a loaded asset entry that contains 
-mesh collections, which in turn contain AT LEAST mesh id, local transforms, primitives per mesh(with vetex index offsets)
+mesh collections, which in turn contain AT LEAST mesh id, local transforms, primitives per mesh(with vertex index offsets)

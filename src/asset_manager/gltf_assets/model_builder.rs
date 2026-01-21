@@ -1,8 +1,11 @@
 use crate::{
     asset_manager::{
         asset_manager::{AssetBuilder, AssetLoadError, AssetResidencyLevel, LoadedAsset, MeshPool},
-        gltf_assets::gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
-        primitive::{GltfValidationError, PrimitiveData},
+        gltf_assets::{
+            gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
+            mesh::{Mesh, Primitive},
+            primitive::{GltfValidationError, PrimitiveData},
+        },
     },
     util::types::{IndexType, Mat4F32, ModelVertex},
     world::components::MeshCollectionComponent,
@@ -218,10 +221,20 @@ impl GltfModelBuilder {
         let binary_data = GltfLoader::load_binary_data_from_source(&self.binary_source)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
 
+        let mut mesh_collections = Vec::<MeshCollectionComponent>::new();
+
+        let mut meshes = Vec::<Mesh>::new();
         for ((model_id, primitive_data), model_data) in
             self.primitive_data.iter().zip(self.model_data.iter())
         {
+            let mut primitives = Vec::<Primitive>::new();
+            let mut mesh_id = primitive_data
+                .first()
+                .expect("there are no primtives!")
+                .mesh_id;
             for data in primitive_data.iter() {
+                assert!(data.mesh_id == mesh_id);
+                mesh_id = data.mesh_id;
                 let model_vertices: Vec<V> = self.get_primitive_vertex_data(data, &binary_data)?;
                 let primitive_index_range = self.get_index_range(data.indices.as_ref()).unwrap();
                 let relative_index_range = self.get_relative_indices(
@@ -236,11 +249,16 @@ impl GltfModelBuilder {
                 };
 
                 let vertex_range = Range {
-                    start: (vertex_len * vertex_stride) as u64,
-                    end: ((vertex_len + model_vertices.len()) * vertex_stride) as u64,
+                    start: (vertex_len * vertex_stride) as u32,
+                    end: ((vertex_len + model_vertices.len()) * vertex_stride) as u32,
                 };
+                primitives.push(Primitive::new(vertex_range, index_range));
                 mesh_pool.push_vertices(model_vertices);
             }
+            meshes.push(Mesh {
+                primitives,
+                id: mesh_id as u32,
+            });
         }
         mesh_pool.push_indices(&self.index_ranges, &binary_data);
         todo!()
@@ -249,7 +267,8 @@ impl GltfModelBuilder {
     pub(super) fn create_components(&self) -> Result<LoadedAsset, AssetLoadError> {
         let mut loaded_asset = LoadedAsset::new();
         // TODO: extract mesh collection components
-        let mesh_collection: Vec<Rc<dyn Any>> = vec![Rc::new(MeshCollectionComponent::new(vec![]))];
+        let mesh_collection: Vec<Rc<dyn Any>> =
+            vec![Rc::new(MeshCollectionComponent::new(vec![], vec![]))];
         loaded_asset.add_component(mesh_collection);
         Ok(loaded_asset)
     }

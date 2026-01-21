@@ -1,5 +1,7 @@
 use std::{any::TypeId, marker::PhantomData};
 
+use wgpu::{Buffer, BufferSlice};
+
 use crate::{
     util::types::{GlobalTransform, IndexType, InstanceData, ModelVertex, PNUJWVertex},
     world::{
@@ -13,19 +15,27 @@ enum RendererError {
     UndefinedRenderGroup(TypeId, TypeId),
 }
 
-struct RenderView {
-    vertex_offset_len: (u64, u64),
-    index_offset_len: Option<(u64, u64)>,
+struct DrawItem<'v> {
+    mesh_id: u32,
+    vertex_slice: BufferSlice<'v>,
+    index_slice: BufferSlice<'v>,
+    index_count: u32,
 }
 
-struct RenderGroup<V: ModelVertex, I: IndexType> {
+struct RenderView<'v> {
+    items: Vec<DrawItem<'v>>,
+}
+
+struct RenderGroup<'buffer, V: ModelVertex, I: IndexType> {
     v: PhantomData<V>,
     i: PhantomData<I>,
     pipeline: wgpu::RenderPipeline,
-    views: Vec<RenderView>,
+    vertex_buffer: &'buffer Buffer,
+    index_buffer: &'buffer Buffer,
+    views: Vec<RenderView<'buffer>>,
 }
 
-impl RenderGroup<PNUJWVertex, u16> {
+impl<'g> RenderGroup<'g, PNUJWVertex, u16> {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
