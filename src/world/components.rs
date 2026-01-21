@@ -4,11 +4,7 @@ use std::{
 };
 
 use crate::{
-    asset_manager::{
-        self,
-        asset_manager::{Asset, AssetHandle, AssetLoadError, AssetManager, LoadedAsset},
-        model_builder::GltfModelBuilder,
-    },
+    asset_manager::asset_manager::{AssetHandle, AssetLoadError, AssetManager},
     util::types::Mat4F32,
 };
 
@@ -32,7 +28,7 @@ pub trait ExtractComponents {
 }
 
 impl ExtractComponents for (MeshCollectionComponent,) {
-    type Output = Vec<MeshCollectionComponent>;
+    type Output = Vec<Rc<MeshCollectionComponent>>;
 
     // TODO: This is perhaps not ideal. If we want to extract a single mesh collection from an
     // asset we need to get and clone all of them.
@@ -56,6 +52,6 @@ impl ExtractComponents for (MeshCollectionComponent,) {
             );
         }
 
-        todo!()
+        Ok(res)
     }
 }

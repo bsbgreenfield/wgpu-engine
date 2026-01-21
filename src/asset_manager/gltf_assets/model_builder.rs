@@ -1,16 +1,14 @@
-use std::{any::Any, collections::HashMap, ops::Range, rc::Rc};
-
-use cgmath::SquareMatrix;
-
 use crate::{
     asset_manager::{
-        asset_manager::{AssetBuilder, AssetLoadError, AssetResidencyLevel, LoadedAsset},
-        gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
+        asset_manager::{AssetBuilder, AssetLoadError, AssetResidencyLevel, LoadedAsset, MeshPool},
+        gltf_assets::gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
         primitive::{GltfValidationError, PrimitiveData},
     },
-    util::types::Mat4F32,
+    util::types::{IndexType, Mat4F32, ModelVertex},
     world::components::MeshCollectionComponent,
 };
+use cgmath::SquareMatrix;
+use std::{any::Any, collections::HashMap, ops::Range, rc::Rc};
 
 #[derive(Debug)]
 pub enum ModelBuilderError {
@@ -19,6 +17,7 @@ pub enum ModelBuilderError {
     GLTFLoadError(GltfLoadError),
     MeshNotFound(usize),
     ValidationError(GltfValidationError),
+    BinarySourceNotFound,
     IndexRangeError,
 }
 
@@ -64,7 +63,7 @@ impl GltfBuilderRegistered {
 
 pub struct GltfModelBuilder {
     residency_level: AssetResidencyLevel,
-    pub(super) buffer_offsets: Vec<usize>,
+    pub(in crate::asset_manager) buffer_offsets: Vec<usize>,
     binary_source: BinarySource,
     model_count: usize,
     primitive_data: HashMap<usize, Vec<PrimitiveData>>,
@@ -84,6 +83,29 @@ impl GltfModelBuilder {
             index_ranges: vec![],
         }
     }
+
+    fn get_relative_indices(
+        &self,
+        primitive_index_range: &Range<usize>,
+    ) -> Result<Range<usize>, ModelBuilderError> {
+        let mut offset = 0;
+        for range in self.index_ranges.iter() {
+            if !range.contains(&primitive_index_range.start) {
+                offset += range.len();
+                continue;
+            }
+            let relative_primitive_index_offset =
+                offset + primitive_index_range.start - range.start;
+
+            return Ok(Range {
+                start: relative_primitive_index_offset,
+                end: relative_primitive_index_offset + primitive_index_range.len(),
+            });
+        }
+
+        Err(ModelBuilderError::IndexRangeError)
+    }
+
     fn get_root_nodes(gltf: &gltf::Gltf) -> Result<Vec<usize>, gltf::Error> {
         let scene = gltf.scenes().next().ok_or(gltf::Error::UnsupportedScheme)?;
         let mesh_node_iter = scene
@@ -185,6 +207,45 @@ impl GltfModelBuilder {
         self.index_ranges = index_range_vec;
         Ok(self)
     }
+
+    pub fn build_all_models<V: ModelVertex, I: IndexType>(
+        &self,
+        mesh_pool: &mut MeshPool<V, I>,
+    ) -> Result<(), ModelBuilderError> {
+        let vertex_stride = size_of::<V>();
+        let index_stride = size_of::<I>();
+
+        let binary_data = GltfLoader::load_binary_data_from_source(&self.binary_source)
+            .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
+
+        for ((model_id, primitive_data), model_data) in
+            self.primitive_data.iter().zip(self.model_data.iter())
+        {
+            for data in primitive_data.iter() {
+                let model_vertices: Vec<V> = self.get_primitive_vertex_data(data, &binary_data)?;
+                let primitive_index_range = self.get_index_range(data.indices.as_ref()).unwrap();
+                let relative_index_range = self.get_relative_indices(
+                    &primitive_index_range.unwrap_or(Range { start: 0, end: 0 }),
+                )?;
+
+                let index_len = mesh_pool.cpu.indices.len().clone();
+                let vertex_len = mesh_pool.cpu.vertices.len().clone();
+                let index_range = Range {
+                    start: (index_len + (relative_index_range.start / index_stride)) as u32,
+                    end: (index_len + (relative_index_range.end / index_stride)) as u32,
+                };
+
+                let vertex_range = Range {
+                    start: (vertex_len * vertex_stride) as u64,
+                    end: ((vertex_len + model_vertices.len()) * vertex_stride) as u64,
+                };
+                mesh_pool.push_vertices(model_vertices);
+            }
+        }
+        mesh_pool.push_indices(&self.index_ranges, &binary_data);
+        todo!()
+    }
+
     pub(super) fn create_components(&self) -> Result<LoadedAsset, AssetLoadError> {
         let mut loaded_asset = LoadedAsset::new();
         // TODO: extract mesh collection components
@@ -216,7 +277,7 @@ impl AssetBuilder for GltfModelBuilder {
     fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
         Ok(Box::new(self))
     }
-    fn get_residency_level(&self) -> super::asset_manager::AssetResidencyLevel {
+    fn get_residency_level(&self) -> AssetResidencyLevel {
         self.residency_level
     }
 }

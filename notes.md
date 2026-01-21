@@ -14,11 +14,23 @@ they can add a message to the event queue so that the asset manager can begin lo
 If for some reason the renderer requests GPU residency for an asset that is actively being loaded to the CPU, we need the asset manager to handle that
 
 ## rendering a box
-1. register box asset
-    - This creates an asset builder in the registry, keyed by asset handle ID. Register returns asset handle
-2. Asset is a gltf, so the builder is a GltfModelBuilder - call builder.with_gltf()
-3.  
-4. request a mesh collection component from the asset manager for the given asset handle
-    - asset_manager.get_components<ExtractComponents: (MeshCollectionComponent,)>(asset_handle)
-    - check the registry - if the builder for this asset has a resource (check for binary data?)
-    - then 
+1. user registers the asset
+- an entry is created in the asset registry with asset_handle: builder
+2. user creates a resource backed entity by providing an asset handle 
+    - an entry is created in the entity manager RBEs linking entity handle -> ResourceBacking(asset handle, index) 
+3. the entity is added to the scene using the entity handle
+4. the user activates the scene
+5. the asset manager loads the asset associated with the RBE with a residency level of GPU
+- the asset manager calls load(ResLevel::GPU) on the correct asset_buider 
+- the asset builder writes vertex and index data into the appropriate CPUMeshPool
+- the asset builder creates a LoadedAsset entry with vertex and index offsets
+
+
+
+
+
+TODO: add models(?), meshes, primitives to gtlf_assets becauase its the only logical way to track the vertex / index offsets 
+for the mesh collections
+
+load_model() should attempt to load all possible components from gltf (for now) and needs to create a loaded asset entry that contains 
+mesh collections, which in turn contain AT LEAST mesh id, local transforms, primitives per mesh(with vetex index offsets)

@@ -2,7 +2,10 @@ use std::{any::TypeId, marker::PhantomData};
 
 use crate::{
     util::types::{GlobalTransform, IndexType, InstanceData, ModelVertex, PNUJWVertex},
-    world::camera::Camera,
+    world::{
+        camera::Camera,
+        entity_manager::{EntityHandle, EntityManager},
+    },
 };
 
 #[derive(Debug)]
@@ -95,6 +98,69 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    pub fn render(&self, device: &wgpu::Device, surface: &wgpu::Surface) {
+        Self::render_PNUJW(&self.PNUJW_render_group, device, surface);
+    }
+
+    fn render_PNUJW(
+        pnujw: &Option<RenderGroup<PNUJWVertex, u16>>,
+        device: &wgpu::Device,
+        surface: &wgpu::Surface,
+    ) -> Result<(), wgpu::SurfaceError> {
+        let output = surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            multiview_mask: None,
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                depth_slice: None,
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        if let Some(PNUJW_render_group) = pnujw {
+            render_pass.set_pipeline(&PNUJW_render_group.pipeline);
+            render_pass.set_index_buffer(
+                PNUJW_render_group.index_buffer.slice(),
+                wgpu::IndexFormat::Uint16,
+            );
+            for view in PNUJW_render_group.views.iter() {
+                for mesh in view.meshes.iter() {}
+                render_pass.set_immediates(0, &mesh.id);
+                for primitive in mesh.primitives.iter() {
+                    render_pass.set_vertex_buffer(0, &PNUJW_render_group.vertex_buffer);
+                    render_pass.draw_indexed(primitive.indices.clone(), 0, 0..1);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn setup_for(&mut self, entity: EntityHandle, entity_manager: &EntityManager) {
+        todo!()
+    }
+
     fn ensure_render_group<V: ModelVertex, I: IndexType>(
         &mut self,
         device: &wgpu::Device,

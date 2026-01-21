@@ -1,9 +1,9 @@
-use std::{error::Error, fmt::Display, mem::MaybeUninit};
+use std::{collections::HashMap, error::Error, fmt::Display, mem::MaybeUninit};
 
 use crate::{
     asset_manager::{
         self,
-        asset_manager::{AssetHandle, AssetManager},
+        asset_manager::{AssetHandle, AssetLoadError, AssetManager},
     },
     world::components::{ExtractComponents, MeshCollectionComponent},
 };
@@ -19,9 +19,16 @@ impl Display for EntityManagerError {
 }
 impl Error for EntityManagerError {}
 
+pub struct ResourceBacking {
+    asset_handle: AssetHandle,
+    resource_index: u8,
+}
+
 pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent, 100>,
+    rbes: HashMap<EntityHandle, ResourceBacking>,
+    asset_manager: AssetManager,
 }
 
 impl EntityManager {
@@ -40,10 +47,20 @@ impl EntityManager {
         return Ok(res);
     }
 
+    pub fn create_all_entities_from_asset<C: ExtractComponents>(
+        &mut self,
+        asset_handle: &AssetHandle,
+    ) -> Result<EntityHandle, AssetLoadError> {
+        let a = C::extract_from(&mut self.asset_manager, asset_handle)?;
+        todo!()
+    }
+
     pub fn new() -> Self {
         Self {
             available_ids: vec![],
+            rbes: HashMap::new(),
             mesh_collections: SparseSet::<MeshCollectionComponent, 100>::new(),
+            asset_manager: AssetManager::new(),
         }
     }
 }

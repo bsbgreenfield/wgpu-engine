@@ -1,5 +1,4 @@
 pub mod asset_manager;
-mod gltf_loader;
-pub mod model_builder;
+pub(super) mod gltf_assets;
 mod primitive;
 mod range_splicer;

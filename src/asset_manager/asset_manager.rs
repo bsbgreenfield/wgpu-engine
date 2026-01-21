@@ -1,13 +1,11 @@
 use crate::{
-    asset_manager::{
-        gltf_loader::loader::GltfLoadError,
-        model_builder::{GltfBuilderRegistered, GltfModelBuilder},
-    },
-    world::components::{ExtractComponents, MeshCollectionComponent},
+    asset_manager::gltf_assets::gltf_loader::loader::GltfLoadError,
+    util::types::{IndexType, ModelVertex, PNUJWVertex},
 };
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    ops::Range,
     rc::Rc,
 };
 
@@ -34,16 +32,6 @@ pub trait Asset {
     type Builder: AssetBuilder;
     type Components;
     fn builder(dir_name: &str) -> Result<Self::Builder, AssetLoadError>;
-}
-
-pub struct GltfAsset;
-
-impl Asset for GltfAsset {
-    type Builder = GltfBuilderRegistered;
-    type Components = (MeshCollectionComponent,);
-    fn builder(dir_name: &str) -> Result<Self::Builder, AssetLoadError> {
-        GltfBuilderRegistered::new(dir_name)
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -81,12 +69,58 @@ impl LoadedAsset {
     }
 }
 
+pub struct MeshPool<V: ModelVertex, I: IndexType> {
+    pub cpu: CPUMeshPool<V, I>,
+    gpu: GPUMeshBuffers,
+}
+
+impl<V: ModelVertex, I: IndexType> MeshPool<V, I> {
+    pub fn get_vertices_mut(&mut self) -> &mut Vec<V> {
+        &mut self.cpu.vertices
+    }
+    pub fn get_indices_mut(&mut self) -> &mut Vec<I> {
+        &mut self.cpu.indices
+    }
+
+    pub fn push_vertices(&mut self, vertices: Vec<V>) {
+        self.cpu.vertices.extend(vertices);
+    }
+    pub fn push_indices(&mut self, index_ranges: &Vec<Range<usize>>, bin: &Vec<u8>) {
+        let mut index_vec: Vec<I> = Vec::new();
+        for range in index_ranges.iter() {
+            let indices_bytes: &[u8] = &bin[range.start..range.end];
+            let indices: &[I] = bytemuck::cast_slice::<u8, I>(indices_bytes);
+            index_vec.extend(indices.to_vec());
+        }
+        self.cpu.indices.extend(index_vec);
+    }
+}
+struct CPUMeshPool<V: ModelVertex, I: IndexType> {
+    pub vertices: Vec<V>,
+    pub indices: Vec<I>,
+}
+
+struct GPUMeshBuffers {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+}
+
+pub struct BufferPool {
+    pub PNUJW: MeshPool<PNUJWVertex, u16>,
+}
+
 pub struct AssetManager {
     asset_registry: HashMap<u32, Box<dyn AssetBuilder>>,
     asset_data: HashMap<u32, LoadedAsset>,
 }
 
 impl AssetManager {
+    pub fn new() -> Self {
+        Self {
+            asset_registry: HashMap::new(),
+            asset_data: HashMap::new(),
+        }
+    }
     pub fn get_builder(&self, asset_handle: &AssetHandle) -> Option<&Box<dyn AssetBuilder>> {
         self.asset_registry.get(&asset_handle.id)
     }
