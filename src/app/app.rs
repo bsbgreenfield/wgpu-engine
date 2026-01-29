@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::app::{app_config::AppConfig, app_state::AppState};
+use crate::{
+    app::{app_config::AppConfig, app_state::AppState},
+    world::world::World,
+};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -13,6 +16,7 @@ use winit::{
 pub struct App<'a> {
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
+    pub world: Option<World>,
     pub app_state: AppState,
     surface_ready: bool,
 }
@@ -22,8 +26,9 @@ impl<'a> App<'a> {
         Self {
             window: None,
             app_config: None,
-            surface_ready: false,
             app_state: AppState,
+            surface_ready: false,
+            world: None,
         }
     }
 }
@@ -42,6 +47,9 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             self.app_config = Some(
                 pollster::block_on(AppConfig::new(self.window.as_ref().unwrap().clone())).unwrap(),
             );
+            let aspect_ratio: f32 = self.app_config.as_ref().unwrap().get_aspect_ratio();
+            let world = World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device);
+            self.world = Some(world)
         }
     }
 

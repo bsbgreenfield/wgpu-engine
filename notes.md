@@ -44,3 +44,23 @@ for the mesh collections
 
 load_model() should attempt to load all possible components from gltf (for now) and needs to create a loaded asset entry that contains 
 mesh collections, which in turn contain AT LEAST mesh id, local transforms, primitives per mesh(with vertex index offsets)
+
+
+## Buffer Arenas
+The issue that I am struggling with is how to manage adding new data to a render pass.
+
+Use case: the player approaches a group of entites whose data has been loaded to the CPU. We need to get that data into a vertex buffer 
+so that the render can start issuing draw calls.
+
+There are a few things that are happening behind the scenes here.
+1. The group of entites needs to be marked as "visible" or "active"
+2. the render needs to make new "draw items" which represent the new entites. This means it needs a buffer slice for vertex and index, 
+which in turn need offset values
+3. In order to obtain offset values, we need to have written data into some free slot in the vertex buffer
+
+The idea is to have a buffer arena. the vertex and index buffer for a certain vertex / index format will be initialized with a reasonable 
+capacity to handle new asset loads. When an entity needs to be loaded, we use queue.write_buffer() using the cpu data in the asset manager
+which slots the data into some available space in the arena. Once that operation is (succesfully) completed, we generate draw items for the renderer.
+
+With this method, we wont actually know the offsets until the gpu upload is actually completed (or at least started) 
+so there isnt any point to managing offset data within the cpu. All we need to add an asset is a Vec<Vertex> and Vec<Index>

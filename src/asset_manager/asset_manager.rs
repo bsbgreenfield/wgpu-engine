@@ -1,15 +1,16 @@
 use crate::{
-    asset_manager::gltf_assets::gltf_loader::loader::GltfLoadError,
+    asset_manager::gltf_assets::{
+        gltf_loader::loader::GltfLoadError, model_builder::MeshCollectionAssetData,
+    },
     util::types::{IndexType, ModelVertex, PNUJWVertex},
 };
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
     ops::Range,
-    rc::Rc,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct AssetHandle {
     type_id: TypeId,
     id: u32,
@@ -44,34 +45,27 @@ pub enum AssetResidencyLevel {
 pub trait AssetBuilder {
     fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError>;
     fn get_residency_level(&self) -> AssetResidencyLevel;
-    fn get_components(&self) -> Result<LoadedAsset, AssetLoadError>;
 }
 
 #[derive(Debug)]
 pub struct LoadedAsset {
-    components: HashMap<TypeId, Vec<Rc<dyn Any>>>,
+    mesh_collections: Vec<MeshCollectionAssetData>,
 }
 
 impl LoadedAsset {
     pub fn new() -> Self {
         Self {
-            components: HashMap::new(),
+            mesh_collections: Vec::new(),
         }
     }
 
-    pub fn add_component(&mut self, component: Vec<Rc<dyn Any>>) {
-        self.components.insert(component.type_id(), component);
-    }
-
-    pub fn get(&self, tid: &TypeId) -> Option<Vec<Rc<dyn Any>>> {
-        let a: Option<Vec<Rc<dyn Any>>> = self.components.get(tid).cloned();
-        a
+    pub fn add_mesh_collections(&mut self, mesh_collections: Vec<MeshCollectionAssetData>) {
+        self.mesh_collections.extend(mesh_collections);
     }
 }
 
 pub struct MeshPool<V: ModelVertex, I: IndexType> {
     pub cpu: CPUMeshPool<V, I>,
-    gpu: GPUMeshBuffers,
 }
 
 impl<V: ModelVertex, I: IndexType> MeshPool<V, I> {
@@ -131,21 +125,21 @@ impl AssetManager {
         }
     }
 
-    pub fn get_components_for(
-        &mut self,
-        asset_handle: &AssetHandle,
-    ) -> Result<&LoadedAsset, AssetLoadError> {
-        let builder = self
-            .asset_registry
-            .get(&asset_handle.id)
-            .ok_or(AssetLoadError::AssetNotLoaded)?;
+    // pub fn get_components_for(
+    //     &mut self,
+    //     asset_handle: &AssetHandle,
+    // ) -> Result<&LoadedAsset, AssetLoadError> {
+    //     let builder = self
+    //         .asset_registry
+    //         .get(&asset_handle.id)
+    //         .ok_or(AssetLoadError::AssetNotLoaded)?;
 
-        let la = builder.get_components()?;
-        self.asset_data.insert(asset_handle.id, la);
-        Ok(self.asset_data.get(&asset_handle.id).unwrap())
-    }
+    //     let la = builder.get_components()?;
+    //     self.asset_data.insert(asset_handle.id, la);
+    //     Ok(self.asset_data.get(&asset_handle.id).unwrap())
+    // }
 
-    fn register_with_asset<A: Asset + 'static>(
+    pub fn register_asset<A: Asset + 'static>(
         &mut self,
         dir_name: &str,
     ) -> Result<AssetHandle, AssetLoadError>

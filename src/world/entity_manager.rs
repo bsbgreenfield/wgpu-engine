@@ -5,7 +5,7 @@ use crate::{
         self,
         asset_manager::{AssetHandle, AssetLoadError, AssetManager},
     },
-    world::components::{ExtractComponents, MeshCollectionComponent},
+    world::components::MeshCollectionComponent,
 };
 
 #[derive(Debug)]
@@ -19,16 +19,9 @@ impl Display for EntityManagerError {
 }
 impl Error for EntityManagerError {}
 
-pub struct ResourceBacking {
-    asset_handle: AssetHandle,
-    resource_index: u8,
-}
-
 pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent, 100>,
-    rbes: HashMap<EntityHandle, ResourceBacking>,
-    asset_manager: AssetManager,
 }
 
 impl EntityManager {
@@ -47,24 +40,31 @@ impl EntityManager {
         return Ok(res);
     }
 
-    pub fn create_all_entities_from_asset<C: ExtractComponents>(
-        &mut self,
-        asset_handle: &AssetHandle,
-    ) -> Result<EntityHandle, AssetLoadError> {
-        let a = C::extract_from(&mut self.asset_manager, asset_handle)?;
-        todo!()
-    }
+    //pub fn create_all_entities_from_asset<C: ExtractComponents>(
+    //    &mut self,
+    //    asset_handle: &AssetHandle,
+    //) -> Result<EntityHandle, AssetLoadError> {
+    //    let a = C::extract_from(&mut self.asset_manager, asset_handle)?;
+    //    todo!()
+    //}
 
     pub fn new() -> Self {
         Self {
             available_ids: vec![],
-            rbes: HashMap::new(),
             mesh_collections: SparseSet::<MeshCollectionComponent, 100>::new(),
-            asset_manager: AssetManager::new(),
         }
     }
+
+    pub fn add_mesh_collection_for_entity(
+        &mut self,
+        entity: EntityHandle,
+        mesh_collection: MeshCollectionComponent,
+    ) {
+        self.mesh_collections
+            .insert(entity.0 as usize, mesh_collection);
+    }
 }
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EntityHandle(u32);
 pub struct Entity {
     handle: EntityHandle,
@@ -85,5 +85,28 @@ impl<T, const N: usize> SparseSet<T, N> {
             sparse: [INVALID; N],
             len: 0,
         }
+    }
+
+    pub fn insert(&mut self, id: usize, value: T) {
+        assert!(id < N, "ID out of bounds");
+        assert!(self.len < N, "SparseSet is full");
+
+        if self.contains(id) {
+            panic!("ID already present in SparseSet");
+        }
+
+        let dense_index = self.len;
+
+        // write value
+        self.dense[dense_index].write(value);
+        self.dense_ids[dense_index] = id;
+        self.sparse[id] = dense_index;
+
+        self.len += 1;
+    }
+
+    #[inline]
+    pub fn contains(&self, id: usize) -> bool {
+        id < N && self.sparse[id] < self.len && self.dense_ids[self.sparse[id]] == id
     }
 }

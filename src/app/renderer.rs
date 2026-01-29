@@ -1,4 +1,4 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::{any::TypeId, marker::PhantomData, ops::Range};
 
 use wgpu::{Buffer, BufferSlice};
 
@@ -13,6 +13,59 @@ use crate::{
 #[derive(Debug)]
 enum RendererError {
     UndefinedRenderGroup(TypeId, TypeId),
+}
+
+struct ArenaAllocator {
+    cursor: u64,
+}
+
+impl ArenaAllocator {
+    fn alloc(&mut self, size: u64, align: u64) -> Option<Range<u64>> {
+        let aligned = Self::align_up(self.cursor, align);
+        let end = aligned + size;
+        self.cursor = end;
+        Some(aligned..end)
+    }
+
+    fn align_up(value: u64, align: u64) -> u64 {
+        (value + align - 1) & !(align - 1)
+    }
+}
+
+struct GPUMeshArena<V: ModelVertex, I: IndexType> {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    vertex_capacity: u64,
+    index_capacity: u64,
+    allocator: ArenaAllocator,
+    vertex_type: PhantomData<V>,
+    index_type: PhantomData<I>,
+}
+
+impl GPUMeshArena<PNUJWVertex, u16> {
+    fn new(device: &wgpu::Device, vertex_capacity: u64, index_capacity: u64) -> Self {
+        GPUMeshArena {
+            vertex_capacity,
+            index_capacity,
+            vertex_buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("PNUJ vertex buffer arena"),
+                size: vertex_capacity,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            index_buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("PNUJ vertex buffer arena"),
+                size: vertex_capacity,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            allocator: ArenaAllocator { cursor: 0 },
+            vertex_type: PhantomData::<PNUJWVertex>,
+            index_type: PhantomData::<u16>,
+        }
+    }
+
+    fn upload_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {}
 }
 
 struct DrawItem<'v> {
@@ -30,8 +83,6 @@ struct RenderGroup<'buffer, V: ModelVertex, I: IndexType> {
     v: PhantomData<V>,
     i: PhantomData<I>,
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: &'buffer Buffer,
-    index_buffer: &'buffer Buffer,
     views: Vec<RenderView<'buffer>>,
 }
 
@@ -103,11 +154,12 @@ impl<'g> RenderGroup<'g, PNUJWVertex, u16> {
     }
 }
 
-pub struct Renderer {
-    PNUJW_render_group: Option<RenderGroup<PNUJWVertex, u16>>,
+pub struct Renderer<'group> {
+    PNUJW_mesh_arena: GPUMeshArena<PNUJWVertex, u16>,
+    PNUJW_render_group: Option<RenderGroup<'group, PNUJWVertex, u16>>,
 }
 
-impl Renderer {
+impl Renderer<'_> {
     pub fn render(&self, device: &wgpu::Device, surface: &wgpu::Surface) {
         Self::render_PNUJW(&self.PNUJW_render_group, device, surface);
     }

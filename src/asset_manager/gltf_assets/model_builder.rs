@@ -8,7 +8,6 @@ use crate::{
         },
     },
     util::types::{IndexType, Mat4F32, ModelVertex},
-    world::components::MeshCollectionComponent,
 };
 use cgmath::SquareMatrix;
 use std::{any::Any, collections::HashMap, ops::Range, rc::Rc};
@@ -214,27 +213,21 @@ impl GltfModelBuilder {
     pub fn build_all_models<V: ModelVertex, I: IndexType>(
         &self,
         mesh_pool: &mut MeshPool<V, I>,
-    ) -> Result<(), ModelBuilderError> {
+    ) -> Result<LoadedAsset, ModelBuilderError> {
         let vertex_stride = size_of::<V>();
         let index_stride = size_of::<I>();
 
         let binary_data = GltfLoader::load_binary_data_from_source(&self.binary_source)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
 
-        let mut mesh_collections = Vec::<MeshCollectionComponent>::new();
+        let mut mesh_collections_data = Vec::<MeshCollectionAssetData>::new();
 
-        let mut meshes = Vec::<Mesh>::new();
+        // TODO: add model id to mesh collection component to make it easier to find later?
         for ((model_id, primitive_data), model_data) in
             self.primitive_data.iter().zip(self.model_data.iter())
         {
-            let mut primitives = Vec::<Primitive>::new();
-            let mut mesh_id = primitive_data
-                .first()
-                .expect("there are no primtives!")
-                .mesh_id;
+            let mut meshes = Vec::<Mesh>::new();
             for data in primitive_data.iter() {
-                assert!(data.mesh_id == mesh_id);
-                mesh_id = data.mesh_id;
                 let model_vertices: Vec<V> = self.get_primitive_vertex_data(data, &binary_data)?;
                 let primitive_index_range = self.get_index_range(data.indices.as_ref()).unwrap();
                 let relative_index_range = self.get_relative_indices(
@@ -252,32 +245,44 @@ impl GltfModelBuilder {
                     start: (vertex_len * vertex_stride) as u32,
                     end: ((vertex_len + model_vertices.len()) * vertex_stride) as u32,
                 };
-                primitives.push(Primitive::new(vertex_range, index_range));
+                let current_primitive = Primitive::new(vertex_range, index_range);
+                // either add the primitive to an existing mesh, or create a new mesh with this
+                // primitive as the first entry
+                if let Some(current_mesh) = meshes
+                    .iter_mut()
+                    .find(|mesh| mesh.id == data.mesh_id as u32)
+                {
+                    current_mesh.primitives.push(current_primitive);
+                } else {
+                    meshes.push(Mesh {
+                        id: data.mesh_id as u32,
+                        primitives: vec![current_primitive],
+                    });
+                }
                 mesh_pool.push_vertices(model_vertices);
             }
-            meshes.push(Mesh {
-                primitives,
-                id: mesh_id as u32,
-            });
+            mesh_collections_data.push(MeshCollectionAssetData::new(
+                model_data.local_transforms.clone(),
+                meshes,
+            ));
         }
         mesh_pool.push_indices(&self.index_ranges, &binary_data);
-        todo!()
-    }
-
-    pub(super) fn create_components(&self) -> Result<LoadedAsset, AssetLoadError> {
         let mut loaded_asset = LoadedAsset::new();
-        // TODO: extract mesh collection components
-        let mesh_collection: Vec<Rc<dyn Any>> =
-            vec![Rc::new(MeshCollectionComponent::new(vec![], vec![]))];
-        loaded_asset.add_component(mesh_collection);
+        loaded_asset.add_mesh_collections(mesh_collections_data);
         Ok(loaded_asset)
     }
+
+    // pub(super) fn create_components(&self) -> Result<LoadedAsset, AssetLoadError> {
+    //     let mut loaded_asset = LoadedAsset::new();
+    //     // TODO: extract mesh collection components
+    //     let mesh_collection: Vec<Rc<dyn Any>> =
+    //         vec![Rc::new(MeshCollectionComponent::new(vec![], vec![]))];
+    //     loaded_asset.add_component(mesh_collection);
+    //     Ok(loaded_asset)
+    // }
 }
 
 impl AssetBuilder for GltfBuilderRegistered {
-    fn get_components(&self) -> Result<LoadedAsset, AssetLoadError> {
-        Err(AssetLoadError::AssetNotLoaded)
-    }
     fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
         let mut model_builder = GltfModelBuilder::new();
         model_builder.with_gltf(&self.gltf, self.bin_source);
@@ -290,13 +295,25 @@ impl AssetBuilder for GltfBuilderRegistered {
 }
 
 impl AssetBuilder for GltfModelBuilder {
-    fn get_components(&self) -> Result<LoadedAsset, AssetLoadError> {
-        self.create_components()
-    }
     fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
         Ok(Box::new(self))
     }
     fn get_residency_level(&self) -> AssetResidencyLevel {
         self.residency_level
+    }
+}
+
+#[derive(Debug)]
+pub struct MeshCollectionAssetData {
+    local_transforms: Vec<Mat4F32>,
+    meshes: Vec<Mesh>,
+}
+
+impl MeshCollectionAssetData {
+    fn new(local_transforms: Vec<Mat4F32>, meshes: Vec<Mesh>) -> Self {
+        Self {
+            local_transforms,
+            meshes,
+        }
     }
 }

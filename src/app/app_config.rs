@@ -11,10 +11,13 @@ pub struct AppConfig<'a> {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
-    pub renderer: Renderer,
+    pub renderer: Renderer<'a>,
 }
 
 impl<'a> AppConfig<'a> {
+    pub fn get_aspect_ratio(&self) -> f32 {
+        (self.surface_config.width / self.surface_config.height) as f32
+    }
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -57,7 +60,7 @@ impl<'a> AppConfig<'a> {
             occlusion_query_set: None,
         });
 
-        self.renderer.render(&mut render_pass)
+        todo!()
     }
 
     pub(super) async fn new(window: Arc<Window>) -> Result<Self> {
