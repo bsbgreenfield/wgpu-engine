@@ -1,6 +1,6 @@
 use std::{any::TypeId, marker::PhantomData, ops::Range};
 
-use wgpu::{Buffer, BufferSlice};
+use wgpu::BufferSlice;
 
 use crate::{
     util::types::{GlobalTransform, IndexType, InstanceData, ModelVertex, PNUJWVertex},
@@ -13,6 +13,11 @@ use crate::{
 #[derive(Debug)]
 enum RendererError {
     UndefinedRenderGroup(TypeId, TypeId),
+}
+
+struct UploadMeshJob<'j, V: ModelVertex, I: IndexType> {
+    vertices: &'j [V],
+    indices: &'j [I],
 }
 
 struct ArenaAllocator {
@@ -37,9 +42,16 @@ struct GPUMeshArena<V: ModelVertex, I: IndexType> {
     index_buffer: wgpu::Buffer,
     vertex_capacity: u64,
     index_capacity: u64,
-    allocator: ArenaAllocator,
+    vertex_allocator: ArenaAllocator,
+    index_allocator: ArenaAllocator,
     vertex_type: PhantomData<V>,
     index_type: PhantomData<I>,
+}
+
+struct GPUMeshHandle {
+    vertex: Range<u64>,
+    index: Range<u64>,
+    count: u64,
 }
 
 impl GPUMeshArena<PNUJWVertex, u16> {
@@ -59,13 +71,46 @@ impl GPUMeshArena<PNUJWVertex, u16> {
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
-            allocator: ArenaAllocator { cursor: 0 },
+            vertex_allocator: ArenaAllocator { cursor: 0 },
+            index_allocator: ArenaAllocator { cursor: 0 },
             vertex_type: PhantomData::<PNUJWVertex>,
             index_type: PhantomData::<u16>,
         }
     }
 
-    fn upload_mesh(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {}
+    fn upload_mesh(
+        &mut self,
+        upoad_job: UploadMeshJob<PNUJWVertex, u16>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<GPUMeshHandle> {
+        let vertex_range = self.vertex_allocator.alloc(
+            upoad_job.vertices.len() as u64,
+            std::mem::align_of::<PNUJWVertex>() as u64,
+        )?;
+        let index_range = self.index_allocator.alloc(
+            upoad_job.indices.len() as u64,
+            std::mem::align_of::<u16>() as u64,
+        )?;
+
+        queue.write_buffer(
+            &self.vertex_buffer,
+            vertex_range.start,
+            bytemuck::cast_slice(upoad_job.vertices),
+        );
+
+        queue.write_buffer(
+            &self.index_buffer,
+            index_range.start,
+            bytemuck::cast_slice(upoad_job.indices),
+        );
+
+        Some(GPUMeshHandle {
+            vertex: vertex_range,
+            index: index_range,
+            count: upoad_job.indices.len() as u64,
+        })
+    }
 }
 
 struct DrawItem<'v> {
