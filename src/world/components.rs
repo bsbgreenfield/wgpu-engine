@@ -2,7 +2,7 @@ use crate::asset_manager::asset_manager::AssetHandle;
 
 #[derive(Debug)]
 pub struct ResourceBacking {
-    asset_handle: AssetHandle,
+    pub asset_handle: AssetHandle,
     resource_index: u8,
 }
 
@@ -17,7 +17,7 @@ impl ResourceBacking {
 
 #[derive(Debug)]
 pub struct MeshCollectionComponent {
-    resource_backing: ResourceBacking,
+    pub resource_backing: ResourceBacking,
 }
 
 impl MeshCollectionComponent {

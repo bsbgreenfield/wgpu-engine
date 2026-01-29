@@ -11,7 +11,6 @@ pub struct AppConfig<'a> {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
-    pub renderer: Renderer<'a>,
 }
 
 impl<'a> AppConfig<'a> {
@@ -25,42 +24,6 @@ impl<'a> AppConfig<'a> {
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
         }
-    }
-
-    pub(super) fn render(&self, window: Arc<Window>) -> Result<(), wgpu::SurfaceError> {
-        window.request_redraw();
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            multiview_mask: None,
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                depth_slice: None,
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        todo!()
     }
 
     pub(super) async fn new(window: Arc<Window>) -> Result<Self> {

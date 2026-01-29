@@ -283,9 +283,9 @@ impl GltfModelBuilder {
 }
 
 impl AssetBuilder for GltfBuilderRegistered {
-    fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
+    fn load_asset(&mut self) -> Result<Box<dyn AssetBuilder>, AssetLoadError> {
         let mut model_builder = GltfModelBuilder::new();
-        model_builder.with_gltf(&self.gltf, self.bin_source);
+        model_builder.with_gltf(&self.gltf, self.bin_source.clone());
         Ok(Box::new(model_builder))
     }
 

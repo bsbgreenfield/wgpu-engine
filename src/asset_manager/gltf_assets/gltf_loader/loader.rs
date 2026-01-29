@@ -1,5 +1,6 @@
 pub struct GltfLoader;
 
+#[derive(Clone)]
 pub enum BinarySource {
     BinFile(PathBuf),
     GLB(PathBuf),

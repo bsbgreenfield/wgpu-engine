@@ -1,4 +1,9 @@
-use std::{collections::HashMap, error::Error, fmt::Display, mem::MaybeUninit};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt::Display,
+    mem::MaybeUninit,
+};
 
 use crate::{
     asset_manager::{
@@ -25,6 +30,15 @@ pub struct EntityManager {
 }
 
 impl EntityManager {
+    pub fn assets_of(&self, entity_handle: EntityHandle) -> Vec<AssetHandle> {
+        let mut result: Vec<AssetHandle> = vec![];
+        if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
+        {
+            result.push(mesh_collection_component.resource_backing.asset_handle);
+        }
+        return result;
+    }
+
     pub fn new_entity(&mut self) -> Result<EntityHandle, EntityManagerError> {
         // return the lowest number available
         let first_range = self
@@ -64,7 +78,7 @@ impl EntityManager {
             .insert(entity.0 as usize, mesh_collection);
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntityHandle(u32);
 pub struct Entity {
     handle: EntityHandle,
@@ -103,6 +117,13 @@ impl<T, const N: usize> SparseSet<T, N> {
         self.sparse[id] = dense_index;
 
         self.len += 1;
+    }
+
+    fn get(&self, id: usize) -> Option<&T> {
+        if self.contains(id) {
+            unsafe { return Some(self.dense[self.sparse[id]].assume_init_ref()) }
+        }
+        None
     }
 
     #[inline]

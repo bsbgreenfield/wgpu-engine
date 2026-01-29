@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+
+use wgpu::wgc::device;
+
 use super::scene::Scene;
 use crate::{
     asset_manager::{
@@ -9,13 +13,18 @@ use crate::{
         camera::Camera,
         components::{MeshCollectionComponent, ResourceBacking},
         entity_manager::{EntityHandle, EntityManager, EntityManagerError},
-        scene::SceneLoadLevel,
+        scene::{SceneEvent, SceneLoadLevel},
     },
 };
 
+#[derive(Debug)]
 enum WorldInitError {
     AssetFailure(AssetLoadError),
     EntityFailure(EntityManagerError),
+}
+
+enum WorldUpdateError {
+    SomethingIsWrong(String),
 }
 
 impl From<AssetLoadError> for WorldInitError {
@@ -67,6 +76,30 @@ impl World {
         dir_name: &str,
     ) -> Result<AssetHandle, AssetLoadError> {
         self.asset_manager.register_asset::<A>(dir_name)
+    }
+
+    pub fn update(&mut self) -> Result<(), WorldUpdateError> {
+        if self.scene.is_dirty() {
+            if let Some(scene_event) = self.scene.pop_event() {
+                self.handle_scene_event(scene_event, self.scene.load_level);
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_scene_event(&self, event: SceneEvent, scene_load_level: SceneLoadLevel) {
+        match event {
+            SceneEvent::EntitiesAdded(entities) => {
+                let mut required_asssets = HashSet::<AssetHandle>::new();
+                for entity_handle in entities {
+                    let assets = self.entity_manager.assets_of(entity_handle);
+                    required_asssets.extend(assets);
+                }
+                // AKA load if needed
+                self.asset_manager
+                    .set_minumum_load_level(required_asssets.iter().collect())
+            }
+        }
     }
 
     // pub fn add_resource_backed_entity<C: ExtractComponents>(

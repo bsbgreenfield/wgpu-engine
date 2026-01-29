@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    app::{app_config::AppConfig, app_state::AppState},
+    app::{app_config::AppConfig, app_state::AppState, renderer::Renderer},
     world::world::World,
 };
 use winit::{
@@ -17,6 +17,7 @@ pub struct App<'a> {
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
     pub world: Option<World>,
+    pub renderer: Renderer<'a>,
     pub app_state: AppState,
     surface_ready: bool,
 }
@@ -28,6 +29,7 @@ impl<'a> App<'a> {
             app_config: None,
             app_state: AppState,
             surface_ready: false,
+            renderer: Renderer::new(),
             world: None,
         }
     }
@@ -48,8 +50,9 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 pollster::block_on(AppConfig::new(self.window.as_ref().unwrap().clone())).unwrap(),
             );
             let aspect_ratio: f32 = self.app_config.as_ref().unwrap().get_aspect_ratio();
-            let world = World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device);
-            self.world = Some(world)
+            let world =
+                World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
+            self.world = Some(world);
         }
     }
 
@@ -80,12 +83,9 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 if !self.surface_ready {
                     return;
                 }
-                match self
-                    .app_config
-                    .as_mut()
-                    .unwrap()
-                    .render(self.window.as_ref().unwrap().clone())
-                {
+                let config = self.app_config.as_ref().unwrap();
+
+                match self.renderer.render(&config.device, &config.surface) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         let size = self.window.as_ref().unwrap().inner_size();

@@ -1,15 +1,21 @@
 use crate::world::entity_manager::{EntityHandle, EntityManager};
 
+#[derive(Clone, Copy)]
 pub enum SceneLoadLevel {
     NotLoaded,
     CPU,
     GPU,
 }
 
+pub enum SceneEvent {
+    EntitiesAdded(Vec<EntityHandle>),
+}
+
 pub struct Scene {
     entitites: Vec<EntityHandle>,
     dirty: bool,
-    load_level: SceneLoadLevel,
+    pub load_level: SceneLoadLevel,
+    event_queue: Vec<SceneEvent>,
 }
 
 impl Scene {
@@ -18,6 +24,7 @@ impl Scene {
             entitites: vec![],
             dirty: false,
             load_level: SceneLoadLevel::NotLoaded,
+            event_queue: Vec::new(),
         }
     }
 
@@ -28,5 +35,13 @@ impl Scene {
     pub fn set_load_level(&mut self, level: SceneLoadLevel) {
         self.load_level = level;
         self.dirty = true;
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn pop_event(&mut self) -> Option<SceneEvent> {
+        self.event_queue.pop()
     }
 }

@@ -125,6 +125,20 @@ impl AssetManager {
         }
     }
 
+    pub fn set_minumum_load_level(
+        &mut self,
+        assets: Vec<&AssetHandle>,
+    ) -> Result<(), AssetLoadError> {
+        for asset in assets {
+            let entry = self
+                .asset_registry
+                .entry(asset.id)
+                .and_modify(|builder| builder = builder.load_asset().unwrap());
+        }
+
+        todo!()
+    }
+
     // pub fn get_components_for(
     //     &mut self,
     //     asset_handle: &AssetHandle,

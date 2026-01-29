@@ -205,8 +205,12 @@ pub struct Renderer<'group> {
 }
 
 impl Renderer<'_> {
-    pub fn render(&self, device: &wgpu::Device, surface: &wgpu::Surface) {
-        Self::render_PNUJW(&self.PNUJW_render_group, device, surface);
+    pub fn render(
+        &self,
+        device: &wgpu::Device,
+        surface: &wgpu::Surface,
+    ) -> Result<(), wgpu::SurfaceError> {
+        Self::render_PNUJW(&self.PNUJW_render_group, device, surface)
     }
 
     fn render_PNUJW(
@@ -247,18 +251,7 @@ impl Renderer<'_> {
 
         if let Some(PNUJW_render_group) = pnujw {
             render_pass.set_pipeline(&PNUJW_render_group.pipeline);
-            render_pass.set_index_buffer(
-                PNUJW_render_group.index_buffer.slice(),
-                wgpu::IndexFormat::Uint16,
-            );
-            for view in PNUJW_render_group.views.iter() {
-                for mesh in view.meshes.iter() {}
-                render_pass.set_immediates(0, &mesh.id);
-                for primitive in mesh.primitives.iter() {
-                    render_pass.set_vertex_buffer(0, &PNUJW_render_group.vertex_buffer);
-                    render_pass.draw_indexed(primitive.indices.clone(), 0, 0..1);
-                }
-            }
+            todo!()
         }
 
         Ok(())
@@ -286,19 +279,11 @@ impl Renderer<'_> {
         }
     }
 
-    pub(super) fn new() -> Self {
+    pub(super) fn new(device: &wgpu::Device) -> Self {
+        let vertex_size: u64 = 16 * 1000 * 1000;
         Renderer {
+            PNUJW_mesh_arena: GPUMeshArena::new(device, vertex_size, vertex_size / 4),
             PNUJW_render_group: None,
         }
-    }
-
-    pub(super) fn render(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-    ) -> Result<(), wgpu::SurfaceError> {
-        if let Some(pnuj) = &self.PNUJW_render_group {
-            render_pass.set_pipeline(&pnuj.pipeline);
-        }
-        Ok(())
     }
 }

@@ -64,3 +64,6 @@ which slots the data into some available space in the arena. Once that operation
 
 With this method, we wont actually know the offsets until the gpu upload is actually completed (or at least started) 
 so there isnt any point to managing offset data within the cpu. All we need to add an asset is a Vec<Vertex> and Vec<Index>
+
+
+
