@@ -25,6 +25,12 @@ impl From<ModelBuilderError> for GltfLoadError {
     }
 }
 
+impl From<gltf::Error> for GltfLoadError {
+    fn from(value: gltf::Error) -> Self {
+        Self::GltfPackageError(value)
+    }
+}
+
 use std::{
     error::Error,
     fs::{self, DirEntry, ReadDir},

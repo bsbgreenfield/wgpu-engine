@@ -3,7 +3,10 @@ use std::ops::Range;
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager::gltf_assets::model_builder::{GltfModelBuilder, ModelBuilderError},
+    asset_manager::gltf_assets::{
+        model_builder::{GltfModelBuilder, ModelBuilderError},
+        model_builder_new::GltfModelBuilderNew,
+    },
     util::types::{ModelVertex, PrimitiveVerticesData},
 };
 
@@ -68,7 +71,85 @@ impl GLTFDataAccessor {
         })
     }
 }
+impl GltfModelBuilderNew {
+    pub(super) fn get_primitive_data(
+        mesh_id: usize,
+        primitive: &gltf::Primitive,
+    ) -> Result<PrimitiveData, GltfValidationError> {
+        let position_accessor = GLTFDataAccessor::from_accessor(
+            &primitive
+                .attributes()
+                .find(|a| a.0 == gltf::Semantic::Positions)
+                .unwrap()
+                .1,
+        )?;
 
+        let maybe_normals_accessor = match primitive
+            .attributes()
+            .find(|a| a.0 == gltf::Semantic::Normals)
+        {
+            Some(normals) => Some(GLTFDataAccessor::from_accessor(&normals.1)?),
+            None => None,
+        };
+        let maybe_indices_accessor = match primitive.indices() {
+            Some(indices) => Some(GLTFDataAccessor::from_accessor(&indices)?),
+            None => None,
+        };
+        let maybe_tex_coords_accessor = match primitive
+            .attributes()
+            .find(|a| a.0 == gltf::Semantic::TexCoords(0))
+        {
+            Some(tex_coords) => Some(GLTFDataAccessor::from_accessor(&tex_coords.1)?),
+            None => None,
+        };
+        let maybe_joints0_accessor = match primitive
+            .attributes()
+            .find(|a| a.0 == gltf::Semantic::Joints(0))
+        {
+            Some(joints) => Some(GLTFDataAccessor::from_accessor(&joints.1)?),
+            None => None,
+        };
+        let maybe_weights_accessor = match primitive
+            .attributes()
+            .find(|a| a.0 == gltf::Semantic::Weights(0))
+        {
+            Some(weights) => Some(GLTFDataAccessor::from_accessor(&weights.1)?),
+            None => None,
+        };
+
+        Ok(PrimitiveData {
+            mesh_id: mesh_id,
+            positions: position_accessor,
+            normals: maybe_normals_accessor,
+            indices: maybe_indices_accessor,
+            tex_coords: maybe_tex_coords_accessor,
+            joints: maybe_joints0_accessor,
+            weights: maybe_weights_accessor,
+        })
+    }
+
+    /// get the indices within the binary that contain this primitives index data
+    pub fn get_index_range(
+        &self,
+        maybe_accessor: Option<&GLTFDataAccessor>,
+        buffer_offsets: &Vec<usize>,
+    ) -> Result<Option<Range<usize>>, GltfValidationError> {
+        match maybe_accessor {
+            Some(accessor) => {
+                let length = accessor.byte_size as usize
+                    * accessor.num_elements as usize
+                    * accessor.count as usize;
+                let buffer_offset = buffer_offsets[accessor.buffer_index as usize];
+                let offset = accessor.byte_offset as usize + buffer_offset as usize;
+                return Ok(Some(Range {
+                    start: offset,
+                    end: offset + length,
+                }));
+            }
+            None => Ok(None),
+        }
+    }
+}
 impl GltfModelBuilder {
     pub(super) fn get_primitive_data(
         &self,

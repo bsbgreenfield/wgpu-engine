@@ -1,6 +1,7 @@
 use crate::{
     asset_manager::gltf_assets::{
-        gltf_loader::loader::GltfLoadError, model_builder::MeshCollectionAssetData,
+        gltf_loader::loader::GltfLoadError,
+        model_builder::{MeshCollectionAssetData, ModelBuilderError},
     },
     util::types::{IndexType, ModelVertex, PNUJWVertex},
 };
@@ -24,6 +25,12 @@ pub enum AssetLoadError {
     ComponentNotFound,
 }
 
+impl From<ModelBuilderError> for AssetLoadError {
+    fn from(value: ModelBuilderError) -> Self {
+        Self::Gltf(GltfLoadError::ModelBuilderError(Box::new(value)))
+    }
+}
+
 impl From<GltfLoadError> for AssetLoadError {
     fn from(value: GltfLoadError) -> Self {
         Self::Gltf(value)
@@ -43,7 +50,10 @@ pub enum AssetResidencyLevel {
 }
 
 pub trait AssetBuilder {
-    fn load_asset(self) -> Result<Box<dyn AssetBuilder>, AssetLoadError>;
+    fn load_asset<V: ModelVertex, I: IndexType>(
+        &mut self,
+        mesh_pool: &mut MeshPool<V, I>,
+    ) -> Result<(), AssetLoadError>;
     fn get_residency_level(&self) -> AssetResidencyLevel;
 }
 
