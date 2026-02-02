@@ -1,13 +1,14 @@
 use crate::{
     asset_manager::gltf_assets::{
         gltf_loader::loader::GltfLoadError,
-        model_builder::{MeshCollectionAssetData, ModelBuilderError},
+        model_builder_new::{MeshCollectionAssetData, ModelBuilderError},
     },
     util::types::{IndexType, ModelVertex, PNUJWVertex},
 };
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    marker::PhantomData,
     ops::Range,
 };
 
@@ -49,12 +50,21 @@ pub enum AssetResidencyLevel {
     GPU,
 }
 
+struct AssetLoadResult {
+    vertex_type: TypeId,
+    index_type: TypeId,
+}
+
 pub trait AssetBuilder {
-    fn load_asset<V: ModelVertex, I: IndexType>(
+    fn load_asset(
         &mut self,
-        mesh_pool: &mut MeshPool<V, I>,
-    ) -> Result<(), AssetLoadError>;
+        vertex_data_offset: usize,
+        index_data_offset: usize,
+    ) -> Result<(Vec<u8>, Vec<u8>), AssetLoadError>;
     fn get_residency_level(&self) -> AssetResidencyLevel;
+
+    fn get_vertex_format(&self) -> TypeId;
+    fn get_index_format(&self) -> TypeId;
 }
 
 #[derive(Debug)]
@@ -74,46 +84,35 @@ impl LoadedAsset {
     }
 }
 
-pub struct MeshPool<V: ModelVertex, I: IndexType> {
-    pub cpu: CPUMeshPool<V, I>,
+struct CPUVertexData<V: ModelVertex> {
+    vertices: Vec<u8>,
+    vertex_type: PhantomData<V>,
+}
+struct CPUIndexData<I: IndexType> {
+    indices: Vec<u8>,
+    index_type: PhantomData<I>,
 }
 
-impl<V: ModelVertex, I: IndexType> MeshPool<V, I> {
-    pub fn get_vertices_mut(&mut self) -> &mut Vec<V> {
-        &mut self.cpu.vertices
-    }
-    pub fn get_indices_mut(&mut self) -> &mut Vec<I> {
-        &mut self.cpu.indices
-    }
-
-    pub fn push_vertices(&mut self, vertices: Vec<V>) {
-        self.cpu.vertices.extend(vertices);
-    }
-    pub fn push_indices(&mut self, index_ranges: &Vec<Range<usize>>, bin: &Vec<u8>) {
-        let mut index_vec: Vec<I> = Vec::new();
-        for range in index_ranges.iter() {
-            let indices_bytes: &[u8] = &bin[range.start..range.end];
-            let indices: &[I] = bytemuck::cast_slice::<u8, I>(indices_bytes);
-            index_vec.extend(indices.to_vec());
+impl<V: ModelVertex> CPUVertexData<V> {
+    fn new() -> Self {
+        Self {
+            vertices: Vec::new(),
+            vertex_type: PhantomData::<V>,
         }
-        self.cpu.indices.extend(index_vec);
     }
 }
-struct CPUMeshPool<V: ModelVertex, I: IndexType> {
-    pub vertices: Vec<V>,
-    pub indices: Vec<I>,
-}
-
-struct GPUMeshBuffers {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-}
-
-pub struct BufferPool {
-    pub PNUJW: MeshPool<PNUJWVertex, u16>,
+impl<I: IndexType> CPUIndexData<I> {
+    fn new() -> Self {
+        Self {
+            indices: Vec::new(),
+            index_type: PhantomData::<I>,
+        }
+    }
 }
 
 pub struct AssetManager {
+    PNUJW_cpu_data: CPUVertexData<PNUJWVertex>,
+    U16_index_data: CPUIndexData<u16>,
     asset_registry: HashMap<u32, Box<dyn AssetBuilder>>,
     asset_data: HashMap<u32, LoadedAsset>,
 }
@@ -121,6 +120,8 @@ pub struct AssetManager {
 impl AssetManager {
     pub fn new() -> Self {
         Self {
+            PNUJW_cpu_data: CPUVertexData::<PNUJWVertex>::new(),
+            U16_index_data: CPUIndexData::<u16>::new(),
             asset_registry: HashMap::new(),
             asset_data: HashMap::new(),
         }
@@ -135,18 +136,12 @@ impl AssetManager {
         }
     }
 
-    pub fn set_minumum_load_level(
-        &mut self,
-        assets: Vec<&AssetHandle>,
-    ) -> Result<(), AssetLoadError> {
+    pub fn set_minumum_load_level(&mut self, assets: Vec<AssetHandle>) {
         for asset in assets {
-            let entry = self
-                .asset_registry
-                .entry(asset.id)
-                .and_modify(|builder| builder = builder.load_asset().unwrap());
+            if let Some(a) = self.asset_registry.get_mut(&asset.id) {
+                a.load_asset(self, 0, 0);
+            }
         }
-
-        todo!()
     }
 
     // pub fn get_components_for(

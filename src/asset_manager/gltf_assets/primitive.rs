@@ -3,11 +3,8 @@ use std::ops::Range;
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager::gltf_assets::{
-        model_builder::{GltfModelBuilder, ModelBuilderError},
-        model_builder_new::GltfModelBuilderNew,
-    },
-    util::types::{ModelVertex, PrimitiveVerticesData},
+    asset_manager::gltf_assets::model_builder_new::{GltfModelBuilderNew, ModelBuilderError},
+    util::types::{IndexType, ModelVertex, PrimitiveVerticesData},
 };
 
 #[derive(Debug)]
@@ -71,7 +68,7 @@ impl GLTFDataAccessor {
         })
     }
 }
-impl GltfModelBuilderNew {
+impl<V: ModelVertex, I: IndexType> GltfModelBuilderNew<V, I> {
     pub(super) fn get_primitive_data(
         mesh_id: usize,
         primitive: &gltf::Primitive,
@@ -130,7 +127,6 @@ impl GltfModelBuilderNew {
 
     /// get the indices within the binary that contain this primitives index data
     pub fn get_index_range(
-        &self,
         maybe_accessor: Option<&GLTFDataAccessor>,
         buffer_offsets: &Vec<usize>,
     ) -> Result<Option<Range<usize>>, GltfValidationError> {
@@ -149,76 +145,14 @@ impl GltfModelBuilderNew {
             None => Ok(None),
         }
     }
-}
-impl GltfModelBuilder {
-    pub(super) fn get_primitive_data(
-        &self,
-        mesh_id: usize,
-        primitive: &gltf::Primitive,
-    ) -> Result<PrimitiveData, GltfValidationError> {
-        let position_accessor = GLTFDataAccessor::from_accessor(
-            &primitive
-                .attributes()
-                .find(|a| a.0 == gltf::Semantic::Positions)
-                .unwrap()
-                .1,
-        )?;
 
-        let maybe_normals_accessor = match primitive
-            .attributes()
-            .find(|a| a.0 == gltf::Semantic::Normals)
-        {
-            Some(normals) => Some(GLTFDataAccessor::from_accessor(&normals.1)?),
-            None => None,
-        };
-        let maybe_indices_accessor = match primitive.indices() {
-            Some(indices) => Some(GLTFDataAccessor::from_accessor(&indices)?),
-            None => None,
-        };
-        let maybe_tex_coords_accessor = match primitive
-            .attributes()
-            .find(|a| a.0 == gltf::Semantic::TexCoords(0))
-        {
-            Some(tex_coords) => Some(GLTFDataAccessor::from_accessor(&tex_coords.1)?),
-            None => None,
-        };
-        let maybe_joints0_accessor = match primitive
-            .attributes()
-            .find(|a| a.0 == gltf::Semantic::Joints(0))
-        {
-            Some(joints) => Some(GLTFDataAccessor::from_accessor(&joints.1)?),
-            None => None,
-        };
-        let maybe_weights_accessor = match primitive
-            .attributes()
-            .find(|a| a.0 == gltf::Semantic::Weights(0))
-        {
-            Some(weights) => Some(GLTFDataAccessor::from_accessor(&weights.1)?),
-            None => None,
-        };
-
-        Ok(PrimitiveData {
-            mesh_id: mesh_id,
-            positions: position_accessor,
-            normals: maybe_normals_accessor,
-            indices: maybe_indices_accessor,
-            tex_coords: maybe_tex_coords_accessor,
-            joints: maybe_joints0_accessor,
-            weights: maybe_weights_accessor,
-        })
-    }
-
-    /// builds out vertex data in a specified model vertex format V
-    pub(super) fn get_primitive_vertex_data<V: ModelVertex>(
-        &self,
+    pub(super) fn get_primitive_vertex_data(
+        buffer_offsets: &Vec<usize>,
         primitive_data: &PrimitiveData,
         binary_data: &Vec<u8>,
     ) -> Result<Vec<V>, ModelBuilderError> {
-        let positions = copy_binary_data_from_gltf(
-            &primitive_data.positions,
-            &self.buffer_offsets,
-            binary_data,
-        )?;
+        let positions =
+            copy_binary_data_from_gltf(&primitive_data.positions, buffer_offsets, binary_data)?;
 
         let mut normals = None;
         let mut tex_coords = None;
@@ -227,28 +161,28 @@ impl GltfModelBuilder {
         if let Some(normals_accessor) = primitive_data.normals {
             normals = Some(copy_binary_data_from_gltf(
                 &normals_accessor,
-                &self.buffer_offsets,
+                buffer_offsets,
                 binary_data,
             )?);
         }
         if let Some(tex_coords_accessor) = primitive_data.tex_coords {
             tex_coords = Some(copy_binary_data_from_gltf(
                 &tex_coords_accessor,
-                &self.buffer_offsets,
+                buffer_offsets,
                 binary_data,
             )?);
         }
         if let Some(joints_accessor) = primitive_data.joints {
             joints = Some(copy_binary_data_from_gltf(
                 &joints_accessor,
-                &self.buffer_offsets,
+                buffer_offsets,
                 binary_data,
             )?);
         }
         if let Some(weights_accessor) = primitive_data.weights {
             weights = Some(copy_binary_data_from_gltf(
                 &weights_accessor,
-                &self.buffer_offsets,
+                buffer_offsets,
                 binary_data,
             )?);
         }
@@ -262,27 +196,6 @@ impl GltfModelBuilder {
         };
 
         Ok(V::from_primitive_data(&pvd))
-    }
-
-    /// get the indices within the binary that contain this primitives index data
-    pub fn get_index_range(
-        &self,
-        maybe_accessor: Option<&GLTFDataAccessor>,
-    ) -> Result<Option<Range<usize>>, GltfValidationError> {
-        match maybe_accessor {
-            Some(accessor) => {
-                let length = accessor.byte_size as usize
-                    * accessor.num_elements as usize
-                    * accessor.count as usize;
-                let buffer_offset = self.buffer_offsets[accessor.buffer_index as usize];
-                let offset = accessor.byte_offset as usize + buffer_offset as usize;
-                return Ok(Some(Range {
-                    start: offset,
-                    end: offset + length,
-                }));
-            }
-            None => Ok(None),
-        }
     }
 }
 fn copy_binary_data_from_gltf(

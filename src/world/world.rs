@@ -8,7 +8,7 @@ use crate::{
         asset_manager::{Asset, AssetHandle, AssetLoadError, AssetManager},
         gltf_assets::gltf_model::GltfAsset,
     },
-    util::types::Mat4F32,
+    util::types::{IndexType, Mat4F32, PNUJWVertex},
     world::{
         camera::Camera,
         components::{MeshCollectionComponent, ResourceBacking},
@@ -53,7 +53,7 @@ impl World {
         let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        let box_asset = asset_manager.register_asset::<GltfAsset>("box")?;
+        let box_asset = asset_manager.register_asset::<GltfAsset<PNUJWVertex, u16>>("box")?;
 
         let mesh = MeshCollectionComponent::new(ResourceBacking::new(box_asset, 0));
 
