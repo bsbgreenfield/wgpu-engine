@@ -1,20 +1,17 @@
 use crate::{
-    asset_manager::gltf_assets::{
-        gltf_loader::loader::GltfLoadError,
-        model_builder_new::{MeshCollectionAssetData, ModelBuilderError},
+    asset_manager::{
+        asset_builder_new::AssetBuilderNew,
+        gltf_assets::{
+            gltf_loader::loader::GltfLoadError,
+            model_builder_new::{MeshCollectionAssetData, ModelBuilderError},
+        },
     },
     util::types::{IndexType, ModelVertex, PNUJWVertex},
 };
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    marker::PhantomData,
-    ops::Range,
-};
+use std::{any::TypeId, collections::HashMap};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct AssetHandle {
-    type_id: TypeId,
     id: u32,
 }
 
@@ -37,11 +34,6 @@ impl From<GltfLoadError> for AssetLoadError {
         Self::Gltf(value)
     }
 }
-pub trait Asset {
-    type Builder: AssetBuilder;
-    type Components;
-    fn builder(dir_name: &str) -> Result<Self::Builder, AssetLoadError>;
-}
 
 #[derive(Clone, Copy)]
 pub enum AssetResidencyLevel {
@@ -50,17 +42,12 @@ pub enum AssetResidencyLevel {
     GPU,
 }
 
-struct AssetLoadResult {
-    vertex_type: TypeId,
-    index_type: TypeId,
-}
-
-pub trait AssetBuilder {
+pub trait AssetBuilder<V: ModelVertex, I: IndexType> {
     fn load_asset(
-        &mut self,
-        vertex_data_offset: usize,
-        index_data_offset: usize,
-    ) -> Result<(Vec<u8>, Vec<u8>), AssetLoadError>;
+        &self,
+        vertex_data: &mut CPUVertexData<V>,
+        index_data: &mut CPUIndexData<I>,
+    ) -> Result<LoadedAsset, AssetLoadError>;
     fn get_residency_level(&self) -> AssetResidencyLevel;
 
     fn get_vertex_format(&self) -> TypeId;
@@ -85,19 +72,16 @@ impl LoadedAsset {
 }
 
 struct CPUVertexData<V: ModelVertex> {
-    vertices: Vec<u8>,
-    vertex_type: PhantomData<V>,
+    vertices: Vec<V>,
 }
 struct CPUIndexData<I: IndexType> {
-    indices: Vec<u8>,
-    index_type: PhantomData<I>,
+    indices: Vec<I>,
 }
 
 impl<V: ModelVertex> CPUVertexData<V> {
     fn new() -> Self {
         Self {
             vertices: Vec::new(),
-            vertex_type: PhantomData::<V>,
         }
     }
 }
@@ -105,43 +89,36 @@ impl<I: IndexType> CPUIndexData<I> {
     fn new() -> Self {
         Self {
             indices: Vec::new(),
-            index_type: PhantomData::<I>,
         }
     }
 }
 
 pub struct AssetManager {
+    registered_handles: Vec<AssetHandle>,
     PNUJW_cpu_data: CPUVertexData<PNUJWVertex>,
     U16_index_data: CPUIndexData<u16>,
-    asset_registry: HashMap<u32, Box<dyn AssetBuilder>>,
+    PNUJW_U16_Builder: AssetBuilderNew<PNUJWVertex, u16>,
     asset_data: HashMap<u32, LoadedAsset>,
 }
 
 impl AssetManager {
     pub fn new() -> Self {
         Self {
+            registered_handles: Vec::new(),
             PNUJW_cpu_data: CPUVertexData::<PNUJWVertex>::new(),
             U16_index_data: CPUIndexData::<u16>::new(),
-            asset_registry: HashMap::new(),
+            PNUJW_U16_Builder: AssetBuilderNew::new(),
             asset_data: HashMap::new(),
         }
     }
-    pub fn get_builder(&self, asset_handle: &AssetHandle) -> Option<&Box<dyn AssetBuilder>> {
-        self.asset_registry.get(&asset_handle.id)
-    }
-    fn gen_handle<A: Asset + 'static>(&self) -> AssetHandle {
+    fn gen_handle(&self) -> AssetHandle {
         AssetHandle {
-            type_id: TypeId::of::<A>(),
-            id: self.asset_registry.len() as u32,
+            id: self.registered_handles.len() as u32,
         }
     }
 
     pub fn set_minumum_load_level(&mut self, assets: Vec<AssetHandle>) {
-        for asset in assets {
-            if let Some(a) = self.asset_registry.get_mut(&asset.id) {
-                a.load_asset(self, 0, 0);
-            }
-        }
+        todo!()
     }
 
     // pub fn get_components_for(
@@ -158,16 +135,23 @@ impl AssetManager {
     //     Ok(self.asset_data.get(&asset_handle.id).unwrap())
     // }
 
-    pub fn register_asset<A: Asset + 'static>(
+    pub fn register_asset<V: ModelVertex, I: IndexType>(
         &mut self,
-        dir_name: &str,
-    ) -> Result<AssetHandle, AssetLoadError>
-    where
-        A::Builder: AssetBuilder + 'static,
-    {
-        let builder = A::builder(dir_name)?;
-        let handle = self.gen_handle::<A>();
-        self.asset_registry.insert(handle.id, Box::new(builder));
+        asset: super::Asset,
+    ) -> Result<AssetHandle, AssetLoadError> {
+        let builder = self.get_builder();
+        let handle = AssetHandle { id: 0 };
+        builder.register_asset(asset, handle);
         Ok(handle)
+    }
+}
+
+trait BuilderSelector<V: ModelVertex, I: IndexType> {
+    fn get_builder(&mut self) -> &mut AssetBuilderNew<V, I>;
+}
+
+impl BuilderSelector<PNUJWVertex, u16> for AssetManager {
+    fn get_builder(&mut self) -> &mut AssetBuilderNew<PNUJWVertex, u16> {
+        &mut self.PNUJW_U16_Builder
     }
 }

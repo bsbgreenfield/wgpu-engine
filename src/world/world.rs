@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 
-use wgpu::wgc::device;
-
 use super::scene::Scene;
 use crate::{
     asset_manager::{
-        asset_manager::{Asset, AssetHandle, AssetLoadError, AssetManager},
-        gltf_assets::gltf_model::GltfAsset,
+        Asset,
+        asset_manager::{AssetHandle, AssetLoadError, AssetManager},
+        gltf_assets::GltfAsset,
     },
     util::types::{IndexType, Mat4F32, PNUJWVertex},
     world::{
@@ -53,7 +52,10 @@ impl World {
         let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        let box_asset = asset_manager.register_asset::<GltfAsset<PNUJWVertex, u16>>("box")?;
+        // TODO: remove requirement for specifying vertex index type
+        // remove ability to create assets separate from asset handles
+        let box_asset =
+            asset_manager.register_asset::<PNUJWVertex, u16>(Asset::new_gltf("box").unwrap())?;
 
         let mesh = MeshCollectionComponent::new(ResourceBacking::new(box_asset, 0));
 
@@ -71,13 +73,6 @@ impl World {
         })
     }
 
-    pub fn include_asset<A: Asset + 'static>(
-        &mut self,
-        dir_name: &str,
-    ) -> Result<AssetHandle, AssetLoadError> {
-        self.asset_manager.register_asset::<A>(dir_name)
-    }
-
     pub fn update(&mut self) -> Result<(), WorldUpdateError> {
         if self.scene.is_dirty() {
             if let Some(scene_event) = self.scene.pop_event() {
@@ -87,7 +82,7 @@ impl World {
         Ok(())
     }
 
-    fn handle_scene_event(&self, event: SceneEvent, scene_load_level: SceneLoadLevel) {
+    fn handle_scene_event(&mut self, event: SceneEvent, scene_load_level: SceneLoadLevel) {
         match event {
             SceneEvent::EntitiesAdded(entities) => {
                 let mut required_asssets = HashSet::<AssetHandle>::new();
@@ -97,7 +92,7 @@ impl World {
                 }
                 // AKA load if needed
                 self.asset_manager
-                    .set_minumum_load_level(required_asssets.iter().collect())
+                    .set_minumum_load_level(required_asssets.into_iter().collect())
             }
         }
     }
