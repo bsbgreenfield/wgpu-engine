@@ -3,7 +3,7 @@ use std::ops::Range;
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager::gltf_assets::model_builder_new::{GltfModelBuilderNew, ModelBuilderError},
+    asset_manager::gltf_assets::{mesh::Primitive, model_builder_new::ModelBuilderError},
     util::types::{IndexType, ModelVertex, PrimitiveVerticesData},
 };
 
@@ -68,7 +68,7 @@ impl GLTFDataAccessor {
         })
     }
 }
-impl<V: ModelVertex, I: IndexType> GltfModelBuilderNew<V, I> {
+impl Primitive {
     pub(super) fn get_primitive_data(
         mesh_id: usize,
         primitive: &gltf::Primitive,
@@ -146,7 +146,7 @@ impl<V: ModelVertex, I: IndexType> GltfModelBuilderNew<V, I> {
         }
     }
 
-    pub(super) fn get_primitive_vertex_data(
+    pub(super) fn get_primitive_vertex_data<V: ModelVertex>(
         buffer_offsets: &Vec<usize>,
         primitive_data: &PrimitiveData,
         binary_data: &Vec<u8>,

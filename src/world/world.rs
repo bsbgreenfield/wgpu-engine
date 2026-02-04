@@ -54,8 +54,10 @@ impl World {
 
         // TODO: remove requirement for specifying vertex index type
         // remove ability to create assets separate from asset handles
-        let box_asset =
-            asset_manager.register_asset::<PNUJWVertex, u16>(Asset::new_gltf("box").unwrap())?;
+        let box_asset = asset_manager
+            .register_asset::<crate::asset_manager::asset_manager::GLTFAsset<PNUJWVertex, u16>>(
+                "box",
+            )?;
 
         let mesh = MeshCollectionComponent::new(ResourceBacking::new(box_asset, 0));
 

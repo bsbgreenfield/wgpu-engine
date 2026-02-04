@@ -1,11 +1,10 @@
-use std::{any::TypeId, collections::HashMap, marker::PhantomData, ops::Range};
+use std::{collections::HashMap, ops::Range};
 
 use cgmath::SquareMatrix;
 
 use crate::{
     asset_manager::{
-        Asset,
-        asset_manager::{AssetBuilder, AssetLoadError, AssetManager, LoadedAsset},
+        asset_manager::{AssetLoadError, LoadedAsset},
         gltf_assets::{
             gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
             mesh::{Mesh, Primitive},
@@ -30,13 +29,6 @@ impl From<GltfValidationError> for ModelBuilderError {
     fn from(value: GltfValidationError) -> Self {
         Self::ValidationError(value)
     }
-}
-pub struct GltfModelBuilderNew<V: ModelVertex, I: IndexType> {
-    gltf: gltf::Gltf,
-    bin_source: BinarySource,
-    loaded_asset: Option<LoadedAsset>,
-    v: PhantomData<V>,
-    i: PhantomData<I>,
 }
 
 struct ModelDataNew {
@@ -128,9 +120,8 @@ pub trait GltfBuilder {
                     .ok_or(ModelBuilderError::MeshNotFound(*mesh_id))?;
 
                 for primitive in mesh.primitives() {
-                    let data =
-                        GltfModelBuilderNew::<V, I>::get_primitive_data(mesh.index(), &primitive)
-                            .map_err(|e| ModelBuilderError::ValidationError(e))?;
+                    let data = Primitive::get_primitive_data(mesh.index(), &primitive)
+                        .map_err(|e| ModelBuilderError::ValidationError(e))?;
                     primitive_data_buf.push(data);
                 }
             }
@@ -148,12 +139,9 @@ pub trait GltfBuilder {
             for data in data_buf.iter() {
                 crate::asset_manager::range_splicer::define_index_ranges(
                     &mut index_range_vec,
-                    &GltfModelBuilderNew::<V, I>::get_index_range(
-                        data.indices.as_ref(),
-                        buffer_offsets,
-                    )
-                    .map_err(|err| ModelBuilderError::ValidationError(err))?
-                    .unwrap_or(Range { start: 0, end: 0 }),
+                    &Primitive::get_index_range(data.indices.as_ref(), buffer_offsets)
+                        .map_err(|err| ModelBuilderError::ValidationError(err))?
+                        .unwrap_or(Range { start: 0, end: 0 }),
                 );
             }
         }
@@ -182,17 +170,34 @@ pub trait GltfBuilder {
 
         Err(ModelBuilderError::IndexRangeError)
     }
+
+    fn set_index_data<I: IndexType>(
+        index_ranges: &Vec<Range<usize>>,
+        index_data: &mut Vec<I>,
+        bin: &Vec<u8>,
+    ) {
+        let mut index_vec: Vec<I> = Vec::new();
+        for range in index_ranges.iter() {
+            let indices_bytes: &[u8] = &bin[range.start..range.end];
+            let indices: &[I] = bytemuck::cast_slice::<u8, I>(indices_bytes);
+            index_vec.extend(indices.to_vec());
+        }
+        index_data.extend(index_vec);
+    }
+
     fn build_all_models<V: ModelVertex, I: IndexType>(
         bin_source: &BinarySource,
         index_ranges: &Vec<Range<usize>>,
         buffer_offsets: &Vec<usize>,
         model_data_vec: &Vec<ModelDataNew>,
         primitive_data_map: &HashMap<usize, Vec<PrimitiveData>>,
-        index_data_offset: usize,
-        vertex_data_offset: usize,
-    ) -> Result<((Vec<u8>, Vec<u8>), LoadedAsset), ModelBuilderError> {
+        cpu_vertex_data: &mut Vec<V>,
+        cpu_index_data: &mut Vec<I>,
+    ) -> Result<LoadedAsset, ModelBuilderError> {
         let vertex_stride = size_of::<V>();
         let index_stride = size_of::<I>();
+        let vertex_data_offset = cpu_vertex_data.len() * vertex_stride;
+        let index_data_offset = cpu_index_data.len() * index_stride;
 
         let binary_data = GltfLoader::load_binary_data_from_source(bin_source)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
@@ -204,15 +209,10 @@ pub trait GltfBuilder {
         {
             let mut meshes = Vec::<Mesh>::new();
             for data in primitive_data.iter() {
-                let model_vertices = GltfModelBuilderNew::<V, I>::get_primitive_vertex_data(
-                    buffer_offsets,
-                    data,
-                    &binary_data,
-                )?;
-                let primitive_index_range = GltfModelBuilderNew::<V, I>::get_index_range(
-                    data.indices.as_ref(),
-                    buffer_offsets,
-                )?;
+                let model_vertices =
+                    Primitive::get_primitive_vertex_data::<V>(buffer_offsets, data, &binary_data)?;
+                let primitive_index_range =
+                    Primitive::get_index_range(data.indices.as_ref(), buffer_offsets)?;
                 let relative_index_range = Self::get_relative_indices(
                     index_ranges,
                     &primitive_index_range.unwrap_or(Range { start: 0, end: 0 }),
@@ -239,6 +239,8 @@ pub trait GltfBuilder {
                         primitives: vec![current_primitive],
                     });
                 }
+                // ****** WRITE CPU VERTEX DATA *******
+                cpu_vertex_data.extend(model_vertices);
             }
 
             mesh_collections_data.push(MeshCollectionAssetData::new(
@@ -246,32 +248,34 @@ pub trait GltfBuilder {
                 meshes,
             ));
         }
+        // ****** SET INDEX DATA ******
+        Self::set_index_data(&index_ranges, cpu_index_data, &binary_data);
         let mut loaded_asset = LoadedAsset::new();
         loaded_asset.add_mesh_collections(mesh_collections_data);
-        todo!()
+        Ok(loaded_asset)
     }
 
     fn load_gltf<V: ModelVertex, I: IndexType>(
         gltf: &gltf::Gltf,
         bin_source: &BinarySource,
-        index_data_offset: usize,
-        vertex_data_offset: usize,
-    ) -> Result<(), AssetLoadError> {
+        vertex_data: &mut Vec<V>,
+        index_data: &mut Vec<I>,
+    ) -> Result<LoadedAsset, AssetLoadError> {
         let buffer_offsets = Self::get_buffer_offsets(gltf);
         let model_data_vec = Self::get_model_data::<V, I>(gltf)?;
         let primitive_data = Self::get_primitive_data_map::<V, I>(gltf, &model_data_vec)?;
         let index_range_vec = Self::get_index_range_vec::<V, I>(&primitive_data, &buffer_offsets)?;
-        Self::build_all_models::<V, I>(
+        let loaded_asset = Self::build_all_models::<V, I>(
             bin_source,
             &index_range_vec,
             &buffer_offsets,
             &model_data_vec,
             &primitive_data,
-            index_data_offset,
-            vertex_data_offset,
-        );
+            vertex_data,
+            index_data,
+        )?;
 
-        todo!()
+        Ok(loaded_asset)
     }
 }
 
