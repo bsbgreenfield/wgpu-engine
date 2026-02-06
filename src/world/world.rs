@@ -17,12 +17,12 @@ use crate::{
 };
 
 #[derive(Debug)]
-enum WorldInitError {
+pub enum WorldInitError {
     AssetFailure(AssetLoadError),
     EntityFailure(EntityManagerError),
 }
 
-enum WorldUpdateError {
+pub enum WorldUpdateError {
     SomethingIsWrong(String),
 }
 
@@ -93,8 +93,10 @@ impl World {
                     required_asssets.extend(assets);
                 }
                 // AKA load if needed
-                self.asset_manager
-                    .set_minumum_load_level(required_asssets.into_iter().collect())
+                self.asset_manager.set_minumum_load_level(
+                    required_asssets.into_iter().collect(),
+                    scene_load_level,
+                );
             }
         }
     }

@@ -78,7 +78,6 @@ impl<'a> AppConfig<'a> {
             surface,
             device,
             queue,
-            renderer: Renderer::new(),
             surface_config: config,
         })
     }

@@ -1,6 +1,6 @@
 use crate::world::entity_manager::{EntityHandle, EntityManager};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum SceneLoadLevel {
     NotLoaded,
     CPU,

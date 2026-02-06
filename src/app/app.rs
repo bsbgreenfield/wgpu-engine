@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     app::{app_config::AppConfig, app_state::AppState, renderer::Renderer},
-    world::world::World,
+    world::world::{World, WorldUpdateError},
 };
 use winit::{
     application::ApplicationHandler,
@@ -17,7 +17,7 @@ pub struct App<'a> {
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
     pub world: Option<World>,
-    pub renderer: Renderer<'a>,
+    pub renderer: Option<Renderer<'a>>,
     pub app_state: AppState,
     surface_ready: bool,
 }
@@ -29,8 +29,28 @@ impl<'a> App<'a> {
             app_config: None,
             app_state: AppState,
             surface_ready: false,
-            renderer: Renderer::new(),
+            renderer: None,
             world: None,
+        }
+    }
+
+    fn run_frame(&mut self) {
+        unsafe {
+            self.update_world();
+            self.render();
+        }
+    }
+
+    fn update_world(&mut self) -> Result<(), WorldUpdateError> {
+        unsafe { self.world.as_mut().unwrap_unchecked().update() }
+    }
+
+    fn render(&mut self) {
+        unsafe {
+            let _ = self.renderer.as_mut().unwrap_unchecked().render(
+                &self.app_config.as_ref().unwrap_unchecked().device,
+                &self.app_config.as_ref().unwrap_unchecked().surface,
+            );
         }
     }
 }
@@ -53,6 +73,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let world =
                 World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
             self.world = Some(world);
+            self.renderer = Some(Renderer::new(&self.app_config.as_ref().unwrap().device))
         }
     }
 
@@ -85,7 +106,12 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 }
                 let config = self.app_config.as_ref().unwrap();
 
-                match self.renderer.render(&config.device, &config.surface) {
+                match self
+                    .renderer
+                    .as_ref()
+                    .unwrap()
+                    .render(&config.device, &config.surface)
+                {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         let size = self.window.as_ref().unwrap().inner_size();

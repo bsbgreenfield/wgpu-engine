@@ -1,9 +1,12 @@
+use image::load_from_memory_with_format;
+
 use crate::{
     asset_manager::gltf_assets::{
         gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
         model_builder_new::{GltfBuilder, MeshCollectionAssetData, ModelBuilderError},
     },
     util::types::{IndexType, ModelVertex, PNUJWVertex},
+    world::scene::SceneLoadLevel,
 };
 use std::{
     collections::HashMap,
@@ -36,11 +39,54 @@ impl From<GltfLoadError> for AssetLoadError {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum AssetResidencyLevel {
     Registered,
     CPU,
     GPU,
+}
+impl PartialEq<SceneLoadLevel> for AssetResidencyLevel {
+    fn eq(&self, other: &SceneLoadLevel) -> bool {
+        match self {
+            AssetResidencyLevel::Registered => {
+                if *other == SceneLoadLevel::NotLoaded {
+                    return true;
+                }
+            }
+            AssetResidencyLevel::CPU => {
+                if *other == SceneLoadLevel::CPU {
+                    return true;
+                }
+            }
+            AssetResidencyLevel::GPU => {
+                if *other == SceneLoadLevel::GPU {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+impl PartialOrd<SceneLoadLevel> for AssetResidencyLevel {
+    fn partial_cmp(&self, other: &SceneLoadLevel) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        match self {
+            AssetResidencyLevel::Registered => match other {
+                SceneLoadLevel::NotLoaded => return Some(Ordering::Equal),
+                SceneLoadLevel::CPU | SceneLoadLevel::GPU => return Some(Ordering::Less),
+            },
+            AssetResidencyLevel::CPU => match other {
+                SceneLoadLevel::NotLoaded => return Some(Ordering::Greater),
+                SceneLoadLevel::CPU => return Some(Ordering::Equal),
+                SceneLoadLevel::GPU => return Some(Ordering::Less),
+            },
+            AssetResidencyLevel::GPU => match other {
+                SceneLoadLevel::NotLoaded | SceneLoadLevel::CPU => return Some(Ordering::Greater),
+                SceneLoadLevel::GPU => return Some(Ordering::Equal),
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -107,6 +153,7 @@ impl<I: IndexType> CPUIndexData<I> {
 }
 
 pub struct AssetManager {
+    gpu_upload_queue: Vec<AssetHandle>,
     registered_handles: Vec<AssetHandle>,
     PNUJW_vertex_data: CPUVertexData<PNUJWVertex>,
     U16_index_data: CPUIndexData<u16>,
@@ -117,6 +164,7 @@ pub struct AssetManager {
 impl AssetManager {
     pub fn new() -> Self {
         Self {
+            gpu_upload_queue: Vec::new(),
             registered_handles: Vec::new(),
             PNUJW_vertex_data: CPUVertexData::<PNUJWVertex>::new(),
             U16_index_data: CPUIndexData::<u16>::new(),
@@ -130,12 +178,30 @@ impl AssetManager {
         }
     }
 
-    pub fn set_minumum_load_level(&mut self, assets: Vec<AssetHandle>) {
+    pub fn set_minumum_load_level(
+        &mut self,
+        assets: Vec<AssetHandle>,
+        load_level: SceneLoadLevel,
+    ) -> Result<(), AssetLoadError> {
         for asset in assets {
-            let (_, ra) = self.registered_assets.remove_entry(&asset).unwrap();
-            let new_entry = ra.load_asset(self);
-            self.registered_assets.insert(asset, new_entry);
+            let asset_residency = self
+                .registered_assets
+                .get(&asset)
+                .ok_or(AssetLoadError::AssetNotFound)?
+                .residency;
+
+            if asset_residency < load_level {
+                if load_level == SceneLoadLevel::GPU
+                    && asset_residency == AssetResidencyLevel::Registered
+                {
+                    let (_, ra) = self.registered_assets.remove_entry(&asset).unwrap();
+                    let new_entry = ra.load_asset(self);
+                    self.registered_assets.insert(asset, new_entry);
+                    self.gpu_upload_queue.push(asset);
+                }
+            }
         }
+        Ok(())
     }
 
     pub fn register_asset<A: Asset + 'static>(
