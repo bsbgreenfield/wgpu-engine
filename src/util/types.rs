@@ -10,6 +10,7 @@ pub struct PrimitiveVerticesData {
     pub uv: Option<Vec<u8>>,
     pub joints: Option<Vec<u8>>,
     pub weights: Option<Vec<u8>>,
+    pub count: usize,
 }
 pub trait ModelVertex: NoUninit + Debug {
     fn from_primitive_data(p: &PrimitiveVerticesData) -> Vec<Self>;
@@ -46,7 +47,7 @@ pub struct PNUJWVertex {
     pub weights: [u8; 4],
 }
 
-const PNUJATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+const PNUJW_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
     0 => Float32x3,
     1 => Float32x3,
     2 => Float32x2,
@@ -60,7 +61,7 @@ impl ModelVertex for PNUJWVertex {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &PNUJATTRIBUTES,
+            attributes: &PNUJW_ATTRIBUTES,
         }
     }
     fn from_primitive_data(p: &PrimitiveVerticesData) -> Vec<Self> {
@@ -126,6 +127,63 @@ impl ModelVertex for PNUJWVertex {
                         joints[3] as u8,
                     ],
                     weights: weights.try_into().unwrap(),
+                };
+            })
+            .collect();
+
+        vertex_vec
+    }
+}
+
+// ************************* PNUJ *************************
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PNUVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
+}
+
+const PNU_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
+    0 => Float32x3,
+    1 => Float32x3,
+    2 => Float32x2,
+];
+
+impl ModelVertex for PNUVertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &PNU_ATTRIBUTES,
+        }
+    }
+    fn from_primitive_data(p: &PrimitiveVerticesData) -> Vec<Self> {
+        let position_f32: &[f32] = bytemuck::cast_slice(&p.positions);
+        let normals_f32: Option<Vec<f32>> = match &p.normal {
+            Some(normals) => Some(bytemuck::cast_slice(normals).to_vec()),
+            None => None,
+        };
+        let tex_coords_f32: Option<Vec<f32>> = match &p.uv {
+            Some(tex_coords) => Some(bytemuck::cast_slice(tex_coords).to_vec()),
+            None => None,
+        };
+        let vertex_vec: Vec<Self> = (0..(position_f32.len() / 3))
+            .map(|i| {
+                let normal = match &normals_f32 {
+                    Some(n) => n[i * 3..i * 3 + 3].try_into().unwrap(),
+                    None => [0.0, 0.0, 0.0],
+                };
+                let tex = match &tex_coords_f32 {
+                    Some(t) => t[i * 2..i * 2 + 2].try_into().unwrap(),
+                    None => [0.0, 0.0],
+                };
+
+                return PNUVertex {
+                    position: position_f32[i * 3..i * 3 + 3].try_into().unwrap(),
+                    normal: normal,
+                    uv: tex,
                 };
             })
             .collect();

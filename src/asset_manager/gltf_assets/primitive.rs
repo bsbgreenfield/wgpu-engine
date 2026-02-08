@@ -3,8 +3,11 @@ use std::ops::Range;
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager::gltf_assets::{mesh::Primitive, model_builder_new::ModelBuilderError},
-    util::types::{IndexType, ModelVertex, PrimitiveVerticesData},
+    asset_manager::gltf_assets::{
+        mesh::Primitive,
+        model_builder_new::{MeshVertexFormat, ModelBuilderError},
+    },
+    util::types::{IndexType, ModelVertex, PNUJWVertex, PNUVertex, PrimitiveVerticesData},
 };
 
 #[derive(Debug)]
@@ -18,7 +21,7 @@ pub(super) struct GLTFDataAccessor {
     byte_offset: u32,
     count: u32,
     stride: Option<u8>,
-    byte_size: u8,
+    pub(super) byte_size: u8,
     num_elements: u8,
 }
 
@@ -126,6 +129,7 @@ impl Primitive {
     }
 
     /// get the indices within the binary that contain this primitives index data
+    /// TODO: Assert that this is actually an indices accessor
     pub fn get_index_range(
         maybe_accessor: Option<&GLTFDataAccessor>,
         buffer_offsets: &Vec<usize>,
@@ -146,11 +150,11 @@ impl Primitive {
         }
     }
 
-    pub(super) fn get_primitive_vertex_data<V: ModelVertex>(
+    pub(super) fn get_primitive_vertex_data(
         buffer_offsets: &Vec<usize>,
         primitive_data: &PrimitiveData,
         binary_data: &Vec<u8>,
-    ) -> Result<Vec<V>, ModelBuilderError> {
+    ) -> Result<PrimitiveVerticesData, ModelBuilderError> {
         let positions =
             copy_binary_data_from_gltf(&primitive_data.positions, buffer_offsets, binary_data)?;
 
@@ -187,15 +191,14 @@ impl Primitive {
             )?);
         }
 
-        let pvd: PrimitiveVerticesData = PrimitiveVerticesData {
+        Ok(PrimitiveVerticesData {
             positions: positions,
             normal: normals,
             uv: tex_coords,
             joints: joints,
             weights: weights,
-        };
-
-        Ok(V::from_primitive_data(&pvd))
+            count: primitive_data.positions.num_elements as usize,
+        })
     }
 }
 fn copy_binary_data_from_gltf(

@@ -3,7 +3,9 @@ use image::load_from_memory_with_format;
 use crate::{
     asset_manager::gltf_assets::{
         gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
-        model_builder_new::{GltfBuilder, MeshCollectionAssetData, ModelBuilderError},
+        model_builder_new::{
+            GltfBuilder, GltfLoadResult, MeshCollectionAssetData, ModelBuilderError,
+        },
     },
     util::types::{IndexType, ModelVertex, PNUJWVertex},
     world::scene::SceneLoadLevel,
@@ -265,16 +267,20 @@ pub struct GLTFAsset<V: ModelVertex, I: IndexType> {
 impl<V: ModelVertex, I: IndexType> Asset for GLTFAsset<V, I> {
     type V = V;
     type I = I;
+    type BuildOutput = GltfLoadResult<V, I>;
 
     fn from(dir_name: &str) -> Self {
         todo!("implement get generic params from the source")
     }
-    fn build<'a>(&self, manager: &'a mut AssetManager)
+    fn build<'a>(
+        &self,
+        manager: &'a mut AssetManager,
+    ) -> Result<GltfLoadResult<V, I>, AssetLoadError>
     where
         AssetManager: DataSelector<Self::V, Self::I>,
     {
         let (vertices, indices) = manager.data_for_mut::<Self>();
-        Self::load_gltf::<V, I>(&self.gltf, &self.bin, vertices, indices);
+        Self::load_gltf::<V, I>(&self.gltf, &self.bin)
     }
 
     fn new(dir_name: &str) -> Result<Self, AssetLoadError> {
@@ -290,11 +296,13 @@ impl<V: ModelVertex, I: IndexType> Asset for GLTFAsset<V, I> {
 
 impl<V: ModelVertex, I: IndexType> GltfBuilder for GLTFAsset<V, I> {}
 
-trait Asset {
+pub trait Asset {
     type V: ModelVertex;
     type I: IndexType;
+
+    type BuildOutput;
     fn from(dir_name: &str) -> Self;
-    fn build<'a>(&self, manager: &'a mut AssetManager)
+    fn build<'a>(&self, manager: &'a mut AssetManager) -> Result<Self::BuildOutput, AssetLoadError>
     where
         AssetManager: DataSelector<Self::V, Self::I>;
     fn new(dir_name: &str) -> Result<Self, AssetLoadError>
@@ -337,7 +345,7 @@ trait Asset {
 //    }
 //}
 
-trait DataSelector<V: ModelVertex, I: IndexType> {
+pub trait DataSelector<V: ModelVertex, I: IndexType> {
     fn get_data(&self) -> (&CPUVertexData<V>, &CPUIndexData<I>);
     fn get_data_mut(&mut self) -> (&mut CPUVertexData<V>, &mut CPUIndexData<I>);
 }
