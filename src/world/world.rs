@@ -2,8 +2,10 @@ use std::collections::HashSet;
 
 use super::scene::Scene;
 use crate::{
-    asset_manager::asset_manager::{AssetHandle, AssetLoadError, AssetManager, GltfAsset},
-    util::types::{IndexType, Mat4F32, PNUJWVertex},
+    asset_manager::asset_manager::{
+        AssetHandle, AssetLoadError, AssetManager, GltfAsset, LoadedAsset,
+    },
+    util::types::Mat4F32,
     world::{
         camera::Camera,
         components::{MeshCollectionComponent, ResourceBacking},
@@ -18,8 +20,16 @@ pub enum WorldInitError {
     EntityFailure(EntityManagerError),
 }
 
+#[derive(Debug)]
 pub enum WorldUpdateError {
+    AssetLoadFailure(AssetLoadError),
     SomethingIsWrong(String),
+}
+
+impl From<AssetLoadError> for WorldUpdateError {
+    fn from(value: AssetLoadError) -> Self {
+        Self::AssetLoadFailure(value)
+    }
 }
 
 impl From<AssetLoadError> for WorldInitError {
@@ -33,10 +43,20 @@ impl From<EntityManagerError> for WorldInitError {
     }
 }
 
+pub enum WorldUpdateDelta {
+    EntityDidLoad(EntityHandle),
+}
+
+impl WorldUpdateDelta {
+    fn from_loaded_asset(la: &LoadedAsset, entity_handle: EntityHandle) -> Self {
+        Self::EntityDidLoad(entity_handle)
+    }
+}
+
 pub struct World {
     camera: Camera,
     scene: Scene,
-    asset_manager: AssetManager<'static>,
+    asset_manager: AssetManager,
     entity_manager: EntityManager,
 }
 
@@ -77,35 +97,33 @@ impl World {
         Ok(())
     }
 
-    fn handle_scene_event(&mut self, event: SceneEvent, scene_load_level: SceneLoadLevel) {
+    fn handle_scene_event(
+        &mut self,
+        event: SceneEvent,
+        scene_load_level: SceneLoadLevel,
+    ) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
+        let mut deltas: Vec<WorldUpdateDelta> = Vec::new();
         match event {
             SceneEvent::EntitiesAdded(entities) => {
-                let mut required_asssets = HashSet::<AssetHandle>::new();
                 for entity_handle in entities {
                     let assets = self.entity_manager.assets_of(entity_handle);
-                    required_asssets.extend(assets);
+                    self.asset_manager
+                        .set_minumum_load_level(assets.into_iter().collect(), scene_load_level)?
+                        .iter()
+                        .for_each(|la_ref| {
+                            deltas.push(WorldUpdateDelta::from_loaded_asset(la_ref, entity_handle));
+                        });
                 }
                 // AKA load if needed
-                let _ = self.asset_manager.set_minumum_load_level(
-                    required_asssets.into_iter().collect(),
-                    scene_load_level,
-                );
             }
         }
+        Ok(deltas)
     }
-
-    // pub fn add_resource_backed_entity<C: ExtractComponents>(
-    //     asset_manager: &mut AssetManager,
-    //     asset_handle: AssetHandle,
-    // ) -> Result<EntityHandle, AssetLoadError> {
-    //     let components: C::Output = C::extract_from(asset_manager, &asset_handle)?;
-    //     todo!()
-    // }
 }
 
 pub struct EntityBuilder<'m> {
     entity_manager: &'m mut EntityManager,
-    asset_manger: &'m mut AssetManager<'m>,
+    asset_manger: &'m mut AssetManager,
 }
 
 impl<'m> EntityBuilder<'m> {

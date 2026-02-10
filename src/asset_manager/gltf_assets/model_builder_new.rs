@@ -31,7 +31,7 @@ impl From<GltfValidationError> for ModelBuilderError {
     }
 }
 
-struct ModelDataNew {
+pub struct ModelDataNew {
     id: usize,
     mesh_ids: Vec<usize>,
     local_transforms: Vec<Mat4F32>,
@@ -300,6 +300,7 @@ pub trait GltfBuilder {
     }
 }
 
+#[derive(Debug)]
 pub struct GltfLoadResult {
     pub pnujw_vertices: Vec<PNUJWVertex>,
     pub pnu_vertices: Vec<PNUVertex>,
@@ -307,15 +308,7 @@ pub struct GltfLoadResult {
     pub mesh_data: Vec<GltfMeshData>,
 }
 
-impl<'am> GltfLoadResult {
-    fn upload_data_CPU(
-        self,
-        manager: &'am mut AssetManager,
-    ) -> Result<LoadedAsset<'am>, AssetLoadError> {
-        todo!()
-    }
-}
-
+#[derive(Debug)]
 pub struct GltfMeshData {
     pub local_transforms: Vec<Mat4F32>,
     pub meshes: Vec<Mesh>,

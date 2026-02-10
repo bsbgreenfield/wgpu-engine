@@ -7,6 +7,7 @@ use crate::{
     world::{
         camera::Camera,
         entity_manager::{EntityHandle, EntityManager},
+        world::WorldUpdateDelta,
     },
 };
 
@@ -206,13 +207,24 @@ pub struct Renderer<'group> {
 
 impl Renderer<'_> {
     pub fn render(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         surface: &wgpu::Surface,
+        world_update_deltas: Vec<WorldUpdateDelta>,
     ) -> Result<(), wgpu::SurfaceError> {
+        for delta in world_update_deltas {
+            self.process_update_delta(delta);
+        }
         Self::render_PNUJW(&self.PNUJW_render_group, device, surface)
     }
 
+    fn process_update_delta(&mut self, delta: WorldUpdateDelta) {
+        match delta {
+            WorldUpdateDelta::EntityDidLoad => {
+                todo!()
+            }
+        }
+    }
     fn render_PNUJW(
         pnujw: &Option<RenderGroup<PNUJWVertex, u16>>,
         device: &wgpu::Device,

@@ -36,7 +36,7 @@ impl<'a> App<'a> {
 
     fn run_frame(&mut self) {
         unsafe {
-            self.update_world();
+            let deltas = self.update_world().expect("update failure");
             self.render();
         }
     }
