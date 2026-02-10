@@ -1,4 +1,6 @@
-use std::ops::Range;
+use std::{any::TypeId, marker::PhantomData, ops::Range};
+
+use crate::util::types::ModelVertex;
 
 #[derive(Debug)]
 pub struct Mesh {
@@ -8,12 +10,17 @@ pub struct Mesh {
 
 #[derive(Debug)]
 pub struct Primitive {
+    pub vertex_type: TypeId,
     pub vertices: Range<u32>,
     pub indices: Range<u32>,
 }
 
 impl Primitive {
-    pub fn new(vertices: Range<u32>, indices: Range<u32>) -> Self {
-        Self { vertices, indices }
+    pub fn new<V: ModelVertex>(vertices: Range<u32>, indices: Range<u32>) -> Self {
+        Self {
+            vertices,
+            indices,
+            vertex_type: TypeId::of::<V>(),
+        }
     }
 }

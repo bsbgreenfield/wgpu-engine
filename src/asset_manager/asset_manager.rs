@@ -1,18 +1,14 @@
-use image::load_from_memory_with_format;
-
 use crate::{
     asset_manager::gltf_assets::{
         gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
-        model_builder_new::{
-            GltfBuilder, GltfLoadResult, MeshCollectionAssetData, ModelBuilderError,
-        },
+        model_builder_new::{GltfBuilder, GltfLoadResult, ModelBuilderError},
     },
-    util::types::{IndexType, ModelVertex, PNUJWVertex},
+    util::types::{IndexType, ModelVertex, PNUJWVertex, PNUVertex},
     world::scene::SceneLoadLevel,
 };
 use std::{
+    any::TypeId,
     collections::HashMap,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
@@ -91,20 +87,49 @@ impl PartialOrd<SceneLoadLevel> for AssetResidencyLevel {
     }
 }
 
+type LoadedMeshData<'la, V: ModelVertex> = Vec<Vec<&'la [V]>>;
 #[derive(Debug)]
-pub struct LoadedAsset {
-    mesh_collections: Vec<MeshCollectionAssetData>,
+pub struct LoadedAsset<'la> {
+    pnuj_mesh_data: LoadedMeshData<'la, PNUJWVertex>,
+    pnu_mesh_data: LoadedMeshData<'la, PNUVertex>,
 }
 
-impl LoadedAsset {
-    pub fn new() -> Self {
-        Self {
-            mesh_collections: Vec::new(),
+impl<'am, 'la> LoadedAsset<'la>
+where
+    'am: 'la,
+{
+    pub fn load_gltf_data(asset_manager: &'am mut AssetManager, gltf_data: GltfLoadResult) -> Self {
+        let pnujw_offset = asset_manager.pnujw_vertex_data.len();
+        let pnu_offset = asset_manager.pnu_vertex_data.len();
+        asset_manager
+            .pnujw_vertex_data
+            .extend(gltf_data.pnujw_vertices);
+        asset_manager.pnu_vertex_data.extend(gltf_data.pnu_vertices);
+        for model in gltf_data.mesh_data.iter() {
+            // TODO: deal with local transorms
+            let mut slices_vec_pnujw = Vec::<Vec<&[PNUJWVertex]>>::new();
+            let mut slices_vec_pnu = Vec::<Vec<&[PNUVertex]>>::new();
+            for mesh in model.meshes.iter() {
+                let mut slices_pnujw = Vec::<&[PNUJWVertex]>::new();
+                let mut slices_pnu = Vec::<&[PNUVertex]>::new();
+                for primitive in mesh.primitives.iter() {
+                    if primitive.vertex_type == TypeId::of::<PNUJWVertex>() {
+                        slices_pnujw.push(
+                            &asset_manager.pnujw_vertex_data[pnujw_offset
+                                + primitive.vertices.start as usize
+                                ..pnujw_offset + primitive.vertices.end as usize],
+                        );
+                    } else {
+                        slices_pnu.push(
+                            &asset_manager.pnu_vertex_data[pnu_offset
+                                + primitive.vertices.start as usize
+                                ..pnujw_offset + primitive.vertices.end as usize],
+                        );
+                    }
+                }
+            }
         }
-    }
-
-    pub fn add_mesh_collections(&mut self, mesh_collections: Vec<MeshCollectionAssetData>) {
-        self.mesh_collections.extend(mesh_collections);
+        todo!()
     }
 }
 
@@ -154,22 +179,24 @@ impl<I: IndexType> CPUIndexData<I> {
     }
 }
 
-pub struct AssetManager {
+pub struct AssetManager<'am> {
     gpu_upload_queue: Vec<AssetHandle>,
     registered_handles: Vec<AssetHandle>,
-    PNUJW_vertex_data: CPUVertexData<PNUJWVertex>,
-    U16_index_data: CPUIndexData<u16>,
-    registered_assets: HashMap<AssetHandle, RegisteredAsset>,
-    loaded_assets: Vec<LoadedAsset>,
+    pnujw_vertex_data: CPUVertexData<PNUJWVertex>,
+    pnu_vertex_data: CPUVertexData<PNUVertex>,
+    u16_index_data: CPUIndexData<u16>,
+    registered_assets: HashMap<AssetHandle, Box<dyn AssetNew<BuildOutput = GltfLoadResult>>>,
+    loaded_assets: Vec<LoadedAsset<'am>>,
 }
 
-impl AssetManager {
+impl<'am> AssetManager<'am> {
     pub fn new() -> Self {
         Self {
             gpu_upload_queue: Vec::new(),
             registered_handles: Vec::new(),
-            PNUJW_vertex_data: CPUVertexData::<PNUJWVertex>::new(),
-            U16_index_data: CPUIndexData::<u16>::new(),
+            pnujw_vertex_data: CPUVertexData::<PNUJWVertex>::new(),
+            pnu_vertex_data: CPUVertexData::<PNUVertex>::new(),
+            u16_index_data: CPUIndexData::<u16>::new(),
             loaded_assets: Vec::new(),
             registered_assets: HashMap::new(),
         }
@@ -190,125 +217,90 @@ impl AssetManager {
                 .registered_assets
                 .get(&asset)
                 .ok_or(AssetLoadError::AssetNotFound)?
-                .residency;
+                .get_residency_level();
 
             if asset_residency < load_level {
                 if load_level == SceneLoadLevel::GPU
                     && asset_residency == AssetResidencyLevel::Registered
                 {
-                    let (_, ra) = self.registered_assets.remove_entry(&asset).unwrap();
-                    let new_entry = ra.load_asset(self);
-                    self.registered_assets.insert(asset, new_entry);
-                    self.gpu_upload_queue.push(asset);
+                    let (_, mut registered_asset) =
+                        self.registered_assets.remove_entry(&asset).unwrap();
+                    let load_result = registered_asset.load_asset()?;
+                    registered_asset.set_residency_level(AssetResidencyLevel::CPU);
+                    self.registered_assets.insert(asset, registered_asset);
                 }
             }
         }
         Ok(())
     }
 
-    pub fn register_asset<A: Asset + 'static>(
+    pub fn register_asset<A: AssetNew + 'static>(
         &mut self,
         source: &str,
-    ) -> Result<AssetHandle, AssetLoadError>
-    where
-        AssetManager: DataSelector<A::V, A::I>,
-    {
+    ) -> Result<AssetHandle, AssetLoadError> {
         let a = A::new(source)?;
         let handle = self.gen_handle();
-        self.registered_assets.insert(
-            handle,
-            RegisteredAsset {
-                residency: AssetResidencyLevel::Registered,
-                build: Some(Box::new(move |manager: &mut AssetManager| {
-                    a.build(manager);
-                })),
-            },
-        );
         todo!("rest of the function goes here")
     }
 
-    fn data_for<A>(&self) -> (&CPUVertexData<A::V>, &CPUIndexData<A::I>)
-    where
-        A: Asset,
-        AssetManager: DataSelector<A::V, A::I>,
-    {
-        <Self as DataSelector<A::V, A::I>>::get_data(self)
-    }
-    fn data_for_mut<A>(&mut self) -> (&mut CPUVertexData<A::V>, &mut CPUIndexData<A::I>)
-    where
-        A: Asset,
-        AssetManager: DataSelector<A::V, A::I>,
-    {
-        <Self as DataSelector<A::V, A::I>>::get_data_mut(self)
-    }
+    // fn data_for<A>(&self) -> (&CPUVertexData<A::V>, &CPUIndexData<A::I>)
+    // where
+    //     A: Asset,
+    //     AssetManager: DataSelector<A::V, A::I>,
+    // {
+    //     <Self as DataSelector<A::V, A::I>>::get_data(self)
+    // }
+    // fn data_for_mut<A>(&mut self) -> (&mut CPUVertexData<A::V>, &mut CPUIndexData<A::I>)
+    // where
+    //     A: Asset,
+    //     AssetManager: DataSelector<A::V, A::I>,
+    // {
+    //     <Self as DataSelector<A::V, A::I>>::get_data_mut(self)
+    // }
 }
 
-struct RegisteredAsset {
-    residency: AssetResidencyLevel,
-    build: Option<Box<dyn FnOnce(&mut AssetManager)>>,
-}
-impl RegisteredAsset {
-    fn load_asset(self, manager: &mut AssetManager) -> Self {
-        (self.build.unwrap())(manager);
-        RegisteredAsset {
-            residency: AssetResidencyLevel::CPU,
-            build: None,
-        }
-    }
-}
-
-pub struct GLTFAsset<V: ModelVertex, I: IndexType> {
-    _v: PhantomData<V>,
-    _i: PhantomData<I>,
-    gltf: gltf::Gltf,
-    bin: BinarySource,
-}
-
-impl<V: ModelVertex, I: IndexType> Asset for GLTFAsset<V, I> {
-    type V = V;
-    type I = I;
-    type BuildOutput = GltfLoadResult<V, I>;
-
-    fn from(dir_name: &str) -> Self {
-        todo!("implement get generic params from the source")
-    }
-    fn build<'a>(
-        &self,
-        manager: &'a mut AssetManager,
-    ) -> Result<GltfLoadResult<V, I>, AssetLoadError>
-    where
-        AssetManager: DataSelector<Self::V, Self::I>,
-    {
-        let (vertices, indices) = manager.data_for_mut::<Self>();
-        Self::load_gltf::<V, I>(&self.gltf, &self.bin)
-    }
-
-    fn new(dir_name: &str) -> Result<Self, AssetLoadError> {
-        let (gltf, bin) = GltfLoader::load_gltf_from_resource(dir_name)?;
-        Ok(Self {
-            _v: PhantomData,
-            _i: PhantomData,
-            gltf,
-            bin,
-        })
-    }
-}
-
-impl<V: ModelVertex, I: IndexType> GltfBuilder for GLTFAsset<V, I> {}
-
-pub trait Asset {
-    type V: ModelVertex;
-    type I: IndexType;
-
+pub trait AssetNew {
     type BuildOutput;
-    fn from(dir_name: &str) -> Self;
-    fn build<'a>(&self, manager: &'a mut AssetManager) -> Result<Self::BuildOutput, AssetLoadError>
-    where
-        AssetManager: DataSelector<Self::V, Self::I>;
     fn new(dir_name: &str) -> Result<Self, AssetLoadError>
     where
         Self: Sized;
+    fn load_asset(&self) -> Result<Self::BuildOutput, AssetLoadError>;
+    fn get_residency_level(&self) -> AssetResidencyLevel;
+    fn set_residency_level(&mut self, level: AssetResidencyLevel);
 }
+
+pub struct GltfAsset {
+    gltf: gltf::Gltf,
+    bin: BinarySource,
+    res_level: AssetResidencyLevel,
+}
+impl GltfBuilder for GltfAsset {}
+
+impl AssetNew for GltfAsset {
+    type BuildOutput = GltfLoadResult;
+    fn get_residency_level(&self) -> AssetResidencyLevel {
+        self.res_level
+    }
+    fn set_residency_level(&mut self, level: AssetResidencyLevel) {
+        self.res_level = level;
+    }
+    fn new(dir_name: &str) -> Result<Self, AssetLoadError>
+    where
+        Self: Sized,
+    {
+        let (gltf, bin) = GltfLoader::load_gltf_from_resource(dir_name)?;
+        Ok(Self {
+            gltf,
+            bin,
+            res_level: AssetResidencyLevel::Registered,
+        })
+    }
+
+    fn load_asset(&self) -> Result<Self::BuildOutput, AssetLoadError> {
+        self.load_asset()
+    }
+}
+
 //struct Asset<A: AssetType> {
 //    res_level: AssetResidencyLevel,
 //    asset_type: A,
@@ -345,16 +337,16 @@ pub trait Asset {
 //    }
 //}
 
-pub trait DataSelector<V: ModelVertex, I: IndexType> {
-    fn get_data(&self) -> (&CPUVertexData<V>, &CPUIndexData<I>);
-    fn get_data_mut(&mut self) -> (&mut CPUVertexData<V>, &mut CPUIndexData<I>);
-}
-
-impl DataSelector<PNUJWVertex, u16> for AssetManager {
-    fn get_data(&self) -> (&CPUVertexData<PNUJWVertex>, &CPUIndexData<u16>) {
-        (&self.PNUJW_vertex_data, &self.U16_index_data)
-    }
-    fn get_data_mut(&mut self) -> (&mut CPUVertexData<PNUJWVertex>, &mut CPUIndexData<u16>) {
-        (&mut self.PNUJW_vertex_data, &mut self.U16_index_data)
-    }
-}
+//pub trait DataSelector<V: ModelVertex, I: IndexType> {
+//    fn get_data(&self) -> (&CPUVertexData<V>, &CPUIndexData<I>);
+//    fn get_data_mut(&mut self) -> (&mut CPUVertexData<V>, &mut CPUIndexData<I>);
+//}
+//
+//impl DataSelector<PNUJWVertex, u16> for AssetManager {
+//    fn get_data(&self) -> (&CPUVertexData<PNUJWVertex>, &CPUIndexData<u16>) {
+//        (&self.PNUJW_vertex_data, &self.U16_index_data)
+//    }
+//    fn get_data_mut(&mut self) -> (&mut CPUVertexData<PNUJWVertex>, &mut CPUIndexData<u16>) {
+//        (&mut self.PNUJW_vertex_data, &mut self.U16_index_data)
+//    }
+//}

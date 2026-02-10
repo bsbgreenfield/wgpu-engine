@@ -2,11 +2,7 @@ use std::collections::HashSet;
 
 use super::scene::Scene;
 use crate::{
-    asset_manager::{
-        Asset,
-        asset_manager::{AssetHandle, AssetLoadError, AssetManager},
-        gltf_assets::GltfAsset,
-    },
+    asset_manager::asset_manager::{AssetHandle, AssetLoadError, AssetManager, GltfAsset},
     util::types::{IndexType, Mat4F32, PNUJWVertex},
     world::{
         camera::Camera,
@@ -40,7 +36,7 @@ impl From<EntityManagerError> for WorldInitError {
 pub struct World {
     camera: Camera,
     scene: Scene,
-    asset_manager: AssetManager,
+    asset_manager: AssetManager<'static>,
     entity_manager: EntityManager,
 }
 
@@ -54,10 +50,7 @@ impl World {
 
         // TODO: remove requirement for specifying vertex index type
         // remove ability to create assets separate from asset handles
-        let box_asset = asset_manager
-            .register_asset::<crate::asset_manager::asset_manager::GLTFAsset<PNUJWVertex, u16>>(
-                "box",
-            )?;
+        let box_asset = asset_manager.register_asset::<GltfAsset>("box")?;
 
         let mesh = MeshCollectionComponent::new(ResourceBacking::new(box_asset, 0));
 
@@ -93,7 +86,7 @@ impl World {
                     required_asssets.extend(assets);
                 }
                 // AKA load if needed
-                self.asset_manager.set_minumum_load_level(
+                let _ = self.asset_manager.set_minumum_load_level(
                     required_asssets.into_iter().collect(),
                     scene_load_level,
                 );
@@ -112,7 +105,7 @@ impl World {
 
 pub struct EntityBuilder<'m> {
     entity_manager: &'m mut EntityManager,
-    asset_manger: &'m mut AssetManager,
+    asset_manger: &'m mut AssetManager<'m>,
 }
 
 impl<'m> EntityBuilder<'m> {

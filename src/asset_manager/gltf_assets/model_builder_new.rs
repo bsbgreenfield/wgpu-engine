@@ -4,7 +4,7 @@ use cgmath::SquareMatrix;
 
 use crate::{
     asset_manager::{
-        asset_manager::{AssetLoadError, LoadedAsset},
+        asset_manager::{AssetLoadError, AssetManager, LoadedAsset},
         gltf_assets::{
             gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
             mesh::{Mesh, Primitive},
@@ -183,7 +183,7 @@ pub trait GltfBuilder {
         index_data.extend(index_vec);
     }
 
-    fn build_all_models_new(
+    fn build_all_models(
         bin_source: &BinarySource,
         index_ranges: &Vec<Range<usize>>,
         buffer_offsets: &Vec<usize>,
@@ -229,26 +229,30 @@ pub trait GltfBuilder {
                 let is_jointed = primitive_data.joints.is_some().clone();
 
                 let mut vertex_range = Range::<u32>::default();
+                let mut current_primitive: Option<Primitive> = None;
                 if is_jointed {
                     vertex_range.start = (pnujw_vertices.len() * size_of::<PNUJWVertex>()) as u32;
                     vertex_range.end = ((pnujw_vertices.len() + primitive_vertex_data.count)
                         * size_of::<PNUJWVertex>()) as u32;
+                    current_primitive
+                        .insert(Primitive::new::<PNUJWVertex>(vertex_range, index_range));
                 } else {
                     vertex_range.start = (pnujw_vertices.len() * size_of::<PNUVertex>()) as u32;
                     vertex_range.end = ((pnujw_vertices.len() + primitive_vertex_data.count)
                         * size_of::<PNUVertex>()) as u32;
+                    current_primitive
+                        .insert(Primitive::new::<PNUVertex>(vertex_range, index_range));
                 }
 
-                let current_primitive = Primitive::new(vertex_range, index_range);
                 if let Some(current_mesh) = meshes
                     .iter_mut()
                     .find(|mesh| mesh.id == primitive_data.mesh_id as u32)
                 {
-                    current_mesh.primitives.push(current_primitive);
+                    current_mesh.primitives.push(current_primitive.unwrap());
                 } else {
                     meshes.push(Mesh {
                         id: primitive_data.mesh_id as u32,
-                        primitives: vec![current_primitive],
+                        primitives: vec![current_primitive.unwrap()],
                     });
                 }
 
@@ -276,74 +280,6 @@ pub trait GltfBuilder {
         })
     }
 
-    fn build_all_models(
-        bin_source: &BinarySource,
-        index_ranges: &Vec<Range<usize>>,
-        buffer_offsets: &Vec<usize>,
-        model_data_vec: &Vec<ModelDataNew>,
-        primitive_data_map: &HashMap<usize, Vec<PrimitiveData>>,
-    ) -> Result<GltfLoadResult, ModelBuilderError> {
-        let mut vertex_data = Vec::<V>::new();
-        let mut index_data = Vec::<I>::new();
-
-        let binary_data = GltfLoader::load_binary_data_from_source(bin_source)
-            .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
-
-        for ((_, primitive_data), model_data) in
-            primitive_data_map.iter().zip(model_data_vec.iter())
-        {
-            let mut meshes = Vec::<Mesh>::new();
-            for data in primitive_data.iter() {
-                let model_vertices =
-                    Primitive::get_primitive_vertex_data(buffer_offsets, data, &binary_data)?;
-
-                let vertex_len = match model_vertices.vertex_format {
-                    MeshVertexFormat::PNUJW => model_vertices.len::<PNUJWVertex>(),
-                    MeshVertexFormat::PNU => model_vertices.len::<PNUVertex>(),
-                };
-                let primitive_index_range =
-                    Primitive::get_index_range(data.indices.as_ref(), buffer_offsets)?;
-                let relative_index_range = Self::get_relative_indices(
-                    index_ranges,
-                    &primitive_index_range.unwrap_or(Range { start: 0, end: 0 }),
-                )?;
-
-                let index_range = Range {
-                    start: (relative_index_range.start / index_stride) as u32,
-                    end: (relative_index_range.end / index_stride) as u32,
-                };
-
-                let vertex_range = Range {
-                    start: (vertex_data.len() * vertex_stride) as u32,
-                    end: ((vertex_data.len() + model_vertices.len()) * vertex_stride) as u32,
-                };
-                let current_primitive = Primitive::new(vertex_range, index_range);
-                if let Some(current_mesh) = meshes
-                    .iter_mut()
-                    .find(|mesh| mesh.id == data.mesh_id as u32)
-                {
-                    current_mesh.primitives.push(current_primitive);
-                } else {
-                    meshes.push(Mesh {
-                        id: data.mesh_id as u32,
-                        primitives: vec![current_primitive],
-                    });
-                }
-                vertex_data.extend(model_vertices.data);
-            }
-
-            result.mesh_data.push(GltfMeshData {
-                local_transforms: model_data.local_transforms.clone(),
-                meshes,
-            });
-        }
-        // ****** SET INDEX DATA ******
-        Self::set_index_data(&index_ranges, &mut index_data, &binary_data);
-        result.vertices = vertex_data;
-        result.indices = index_data;
-        Ok(result)
-    }
-
     fn load_gltf(
         gltf: &gltf::Gltf,
         bin_source: &BinarySource,
@@ -352,7 +288,7 @@ pub trait GltfBuilder {
         let model_data_vec = Self::get_model_data(gltf)?;
         let primitive_data = Self::get_primitive_data_map(gltf, &model_data_vec)?;
         let index_range_vec = Self::get_index_range_vec(&primitive_data, &buffer_offsets)?;
-        let load_result = Self::build_all_models::<V, I>(
+        let load_result = Self::build_all_models(
             bin_source,
             &index_range_vec,
             &buffer_offsets,
@@ -365,28 +301,22 @@ pub trait GltfBuilder {
 }
 
 pub struct GltfLoadResult {
-    pnujw_vertices: Vec<PNUJWVertex>,
-    pnu_vertices: Vec<PNUVertex>,
-    indices: Vec<u16>,
-    mesh_data: Vec<GltfMeshData>,
+    pub pnujw_vertices: Vec<PNUJWVertex>,
+    pub pnu_vertices: Vec<PNUVertex>,
+    pub indices: Vec<u16>,
+    pub mesh_data: Vec<GltfMeshData>,
+}
+
+impl<'am> GltfLoadResult {
+    fn upload_data_CPU(
+        self,
+        manager: &'am mut AssetManager,
+    ) -> Result<LoadedAsset<'am>, AssetLoadError> {
+        todo!()
+    }
 }
 
 pub struct GltfMeshData {
-    local_transforms: Vec<Mat4F32>,
-    meshes: Vec<Mesh>,
-}
-
-#[derive(Debug)]
-pub struct MeshCollectionAssetData {
-    local_transforms: Vec<Mat4F32>,
-    meshes: Vec<Mesh>,
-}
-
-impl MeshCollectionAssetData {
-    fn new(local_transforms: Vec<Mat4F32>, meshes: Vec<Mesh>) -> Self {
-        Self {
-            local_transforms,
-            meshes,
-        }
-    }
+    pub local_transforms: Vec<Mat4F32>,
+    pub meshes: Vec<Mesh>,
 }
