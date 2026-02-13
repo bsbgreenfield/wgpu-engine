@@ -3,7 +3,8 @@ use std::{any::TypeId, marker::PhantomData, ops::Range};
 use wgpu::BufferSlice;
 
 use crate::{
-    util::types::{GlobalTransform, IndexType, InstanceData, ModelVertex, PNUJWVertex},
+    app::app_config::AppConfig,
+    util::types::{GlobalTransform, IndexType, InstanceData, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
         camera::Camera,
         entity_manager::{EntityHandle, EntityManager},
@@ -55,13 +56,14 @@ struct GPUMeshHandle {
     count: u64,
 }
 
-impl GPUMeshArena<PNUJWVertex, u16> {
+impl<V: ModelVertex> GPUMeshArena<V, u16> {
     fn new(device: &wgpu::Device, vertex_capacity: u64, index_capacity: u64) -> Self {
+        let label: String = format!("vertex buffer arena for {:?}", TypeId::of::<V>());
         GPUMeshArena {
             vertex_capacity,
             index_capacity,
             vertex_buffer: device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("PNUJ vertex buffer arena"),
+                label: Some(&label),
                 size: vertex_capacity,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -74,42 +76,40 @@ impl GPUMeshArena<PNUJWVertex, u16> {
             }),
             vertex_allocator: ArenaAllocator { cursor: 0 },
             index_allocator: ArenaAllocator { cursor: 0 },
-            vertex_type: PhantomData::<PNUJWVertex>,
+            vertex_type: PhantomData::<V>,
             index_type: PhantomData::<u16>,
         }
     }
 
     fn upload_mesh(
         &mut self,
-        upoad_job: UploadMeshJob<PNUJWVertex, u16>,
-        device: &wgpu::Device,
+        upload_job: UploadMeshJob<V, u16>,
         queue: &wgpu::Queue,
     ) -> Option<GPUMeshHandle> {
         let vertex_range = self.vertex_allocator.alloc(
-            upoad_job.vertices.len() as u64,
+            upload_job.vertices.len() as u64,
             std::mem::align_of::<PNUJWVertex>() as u64,
         )?;
         let index_range = self.index_allocator.alloc(
-            upoad_job.indices.len() as u64,
+            upload_job.indices.len() as u64,
             std::mem::align_of::<u16>() as u64,
         )?;
-
         queue.write_buffer(
             &self.vertex_buffer,
             vertex_range.start,
-            bytemuck::cast_slice(upoad_job.vertices),
+            bytemuck::cast_slice(upload_job.vertices),
         );
 
         queue.write_buffer(
             &self.index_buffer,
             index_range.start,
-            bytemuck::cast_slice(upoad_job.indices),
+            bytemuck::cast_slice(upload_job.indices),
         );
 
         Some(GPUMeshHandle {
             vertex: vertex_range,
             index: index_range,
-            count: upoad_job.indices.len() as u64,
+            count: upload_job.indices.len() as u64,
         })
     }
 }
@@ -132,7 +132,7 @@ struct RenderGroup<'buffer, V: ModelVertex, I: IndexType> {
     views: Vec<RenderView<'buffer>>,
 }
 
-impl<'g> RenderGroup<'g, PNUJWVertex, u16> {
+impl<'g, V: ModelVertex> RenderGroup<'g, V, u16> {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -192,7 +192,7 @@ impl<'g> RenderGroup<'g, PNUJWVertex, u16> {
         });
 
         Self {
-            v: PhantomData::<PNUJWVertex>,
+            v: PhantomData::<V>,
             i: PhantomData::<u16>,
             pipeline,
             views: Vec::new(),
@@ -201,43 +201,89 @@ impl<'g> RenderGroup<'g, PNUJWVertex, u16> {
 }
 
 pub struct Renderer<'group> {
-    PNUJW_mesh_arena: GPUMeshArena<PNUJWVertex, u16>,
-    PNUJW_render_group: Option<RenderGroup<'group, PNUJWVertex, u16>>,
+    pnujw_mesh_arena: GPUMeshArena<PNUJWVertex, u16>,
+    pnu_mesh_arena: GPUMeshArena<PNUVertex, u16>,
+    pnujw_render_group: Option<RenderGroup<'group, PNUJWVertex, u16>>,
+    pnu_render_group: Option<RenderGroup<'group, PNUVertex, u16>>,
 }
 
 impl Renderer<'_> {
     pub fn render(
         &mut self,
-        device: &wgpu::Device,
-        surface: &wgpu::Surface,
+        config: &AppConfig,
         world_update_deltas: Vec<WorldUpdateDelta>,
     ) -> Result<(), wgpu::SurfaceError> {
         for delta in world_update_deltas {
-            self.process_update_delta(delta);
+            self.process_update_delta(config, delta);
         }
-        Self::render_PNUJW(&self.PNUJW_render_group, device, surface)
+        if let Some(ref pnujw_render_group) = self.pnujw_render_group {
+            Self::render_PNUJW(pnujw_render_group, config).unwrap();
+        }
+        if let Some(ref pnu_render_group) = self.pnu_render_group {
+            todo!();
+        }
+
+        Ok(())
     }
 
-    fn process_update_delta(&mut self, delta: WorldUpdateDelta) {
+    fn process_update_delta(&mut self, config: &AppConfig, delta: WorldUpdateDelta) {
         match delta {
-            WorldUpdateDelta::EntityDidLoad => {
+            WorldUpdateDelta::EntityDidLoad(handle) => {
+                let pnujw_vertices = Vec::<PNUJWVertex>::new();
+                let pnujw_ref = &pnujw_vertices[..];
+                let pnu_vertices = Vec::<PNUVertex>::new();
+                let pnu_ref = &pnu_vertices[..];
+                let indices = Vec::<u16>::new();
+                let indices_ref = &indices[..];
+
+                if !pnujw_ref.is_empty() {
+                    self.ensure_render_group::<PNUJWVertex, u16>(
+                        &config.device,
+                        &wgpu::TextureFormat::R8Unorm,
+                    )
+                    .unwrap();
+                    let upload_job = UploadMeshJob {
+                        vertices: pnujw_ref,
+                        indices: indices_ref,
+                    };
+                    let gpu_mesh_handle = self
+                        .pnujw_mesh_arena
+                        .upload_mesh(upload_job, &config.queue)
+                        .unwrap();
+                }
+                if !pnu_ref.is_empty() {
+                    self.ensure_render_group::<PNUVertex, u16>(
+                        &config.device,
+                        &wgpu::TextureFormat::R8Unorm,
+                    )
+                    .unwrap();
+
+                    let upload_job = UploadMeshJob {
+                        vertices: pnu_ref,
+                        indices: indices_ref,
+                    };
+                    let gpu_mesh_handle =
+                        self.pnu_mesh_arena.upload_mesh(upload_job, &config.queue);
+                }
+
                 todo!()
             }
         }
     }
     fn render_PNUJW(
-        pnujw: &Option<RenderGroup<PNUJWVertex, u16>>,
-        device: &wgpu::Device,
-        surface: &wgpu::Surface,
+        pnujw: &RenderGroup<PNUJWVertex, u16>,
+        config: &AppConfig,
     ) -> Result<(), wgpu::SurfaceError> {
-        let output = surface.get_current_texture()?;
+        let output = config.surface.get_current_texture()?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let mut encoder = config
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             multiview_mask: None,
@@ -261,10 +307,13 @@ impl Renderer<'_> {
             occlusion_query_set: None,
         });
 
-        if let Some(PNUJW_render_group) = pnujw {
-            render_pass.set_pipeline(&PNUJW_render_group.pipeline);
-            todo!()
+        render_pass.set_pipeline(&pnujw.pipeline);
+        for a in pnujw.views.iter() {
+            for d in a.items.iter() {
+                // render pass draw
+            }
         }
+        todo!();
 
         Ok(())
     }
@@ -282,8 +331,14 @@ impl Renderer<'_> {
         let i = TypeId::of::<I>();
 
         if v == TypeId::of::<PNUJWVertex>() && i == TypeId::of::<u16>() {
-            if self.PNUJW_render_group.is_none() {
-                self.PNUJW_render_group = Some(RenderGroup::new(device, *format));
+            if self.pnujw_render_group.is_none() {
+                self.pnujw_render_group =
+                    Some(RenderGroup::<PNUJWVertex, u16>::new(device, *format));
+            }
+            return Ok(());
+        } else if v == TypeId::of::<PNUJWVertex>() && i == TypeId::of::<u16>() {
+            if self.pnu_render_group.is_none() {
+                self.pnu_render_group = Some(RenderGroup::<PNUVertex, u16>::new(device, *format));
             }
             return Ok(());
         } else {
@@ -292,10 +347,16 @@ impl Renderer<'_> {
     }
 
     pub(super) fn new(device: &wgpu::Device) -> Self {
-        let vertex_size: u64 = 16 * 1000 * 1000;
+        let vertex_size: u64 = 16 * 1024 * 1024;
         Renderer {
-            PNUJW_mesh_arena: GPUMeshArena::new(device, vertex_size, vertex_size / 4),
-            PNUJW_render_group: None,
+            pnujw_mesh_arena: GPUMeshArena::new(device, vertex_size, vertex_size / 4),
+            pnujw_render_group: None,
+            pnu_mesh_arena: GPUMeshArena::new(device, vertex_size, vertex_size / 4),
+            pnu_render_group: None,
         }
     }
+}
+
+pub(super) enum RenderDelta {
+    NewRenderable,
 }

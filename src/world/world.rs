@@ -68,14 +68,14 @@ impl World {
         let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        // TODO: remove requirement for specifying vertex index type
-        // remove ability to create assets separate from asset handles
         let box_asset = asset_manager.register_asset::<GltfAsset>("box")?;
 
         let mesh = MeshCollectionComponent::new(ResourceBacking::new(box_asset, 0));
 
         let box_entity = entity_manager.new_entity()?;
+
         entity_manager.add_mesh_collection_for_entity(box_entity, mesh);
+
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
         scene.set_load_level(SceneLoadLevel::GPU);
@@ -88,13 +88,14 @@ impl World {
         })
     }
 
-    pub fn update(&mut self) -> Result<(), WorldUpdateError> {
+    pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
+        let mut deltas = Vec::<WorldUpdateDelta>::new();
         if self.scene.is_dirty() {
             if let Some(scene_event) = self.scene.pop_event() {
-                self.handle_scene_event(scene_event, self.scene.load_level);
+                deltas.extend(self.handle_scene_event(scene_event, self.scene.load_level)?);
             }
         }
-        Ok(())
+        Ok(deltas)
     }
 
     fn handle_scene_event(
@@ -114,7 +115,6 @@ impl World {
                             deltas.push(WorldUpdateDelta::from_loaded_asset(la_ref, entity_handle));
                         });
                 }
-                // AKA load if needed
             }
         }
         Ok(deltas)

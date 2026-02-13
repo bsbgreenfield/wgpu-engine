@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     app::{app_config::AppConfig, app_state::AppState, renderer::Renderer},
-    world::world::{World, WorldUpdateError},
+    world::world::{World, WorldUpdateDelta, WorldUpdateError},
 };
 use winit::{
     application::ApplicationHandler,
@@ -22,6 +22,19 @@ pub struct App<'a> {
     surface_ready: bool,
 }
 
+#[derive(Debug)]
+enum FrameError {
+    UpdateError(WorldUpdateError),
+    SurfaceError(wgpu::SurfaceError),
+    RenderError,
+}
+
+impl From<WorldUpdateError> for FrameError {
+    fn from(value: WorldUpdateError) -> Self {
+        FrameError::UpdateError(value)
+    }
+}
+
 impl<'a> App<'a> {
     pub fn new() -> Self {
         Self {
@@ -34,23 +47,23 @@ impl<'a> App<'a> {
         }
     }
 
-    fn run_frame(&mut self) {
-        unsafe {
-            let deltas = self.update_world().expect("update failure");
-            self.render();
-        }
+    fn run_frame(&mut self) -> Result<(), FrameError> {
+        let deltas = self.update_world()?;
+        self.render(deltas);
+        Ok(())
     }
 
-    fn update_world(&mut self) -> Result<(), WorldUpdateError> {
+    fn update_world(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
         unsafe { self.world.as_mut().unwrap_unchecked().update() }
     }
 
-    fn render(&mut self) {
+    fn render(&mut self, deltas: Vec<WorldUpdateDelta>) {
         unsafe {
-            let _ = self.renderer.as_mut().unwrap_unchecked().render(
-                &self.app_config.as_ref().unwrap_unchecked().device,
-                &self.app_config.as_ref().unwrap_unchecked().surface,
-            );
+            let _ = self
+                .renderer
+                .as_mut()
+                .unwrap_unchecked()
+                .render(&self.app_config.as_ref().unwrap_unchecked(), deltas);
         }
     }
 }
@@ -104,16 +117,10 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 if !self.surface_ready {
                     return;
                 }
-                let config = self.app_config.as_ref().unwrap();
 
-                match self
-                    .renderer
-                    .as_ref()
-                    .unwrap()
-                    .render(&config.device, &config.surface)
-                {
+                match self.run_frame() {
                     Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    Err(FrameError::SurfaceError(_)) => {
                         let size = self.window.as_ref().unwrap().inner_size();
                         self.app_config
                             .as_mut()
@@ -121,7 +128,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                             .resize(PhysicalSize::new(size.width, size.height));
                     }
                     Err(e) => {
-                        panic!("unable to render! {}", e);
+                        panic!("unable to render! {:?}", e);
                     }
                 }
             }
