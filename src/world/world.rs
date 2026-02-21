@@ -47,12 +47,6 @@ pub enum WorldUpdateDelta {
     EntityDidLoad(EntityHandle),
 }
 
-impl WorldUpdateDelta {
-    fn from_loaded_asset(la: &LoadedAsset, entity_handle: EntityHandle) -> Self {
-        Self::EntityDidLoad(entity_handle)
-    }
-}
-
 pub struct World {
     camera: Camera,
     scene: Scene,
@@ -88,6 +82,12 @@ impl World {
         })
     }
 
+    pub fn get_loaded_asset_for(&self, entity_handle: EntityHandle) -> Vec<&LoadedAsset> {
+        let assets = self.entity_manager.assets_of(entity_handle);
+        let loaded_asset_refs = self.asset_manager.get_loaded_assets(assets);
+        loaded_asset_refs
+    }
+
     pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
         let mut deltas = Vec::<WorldUpdateDelta>::new();
         if self.scene.is_dirty() {
@@ -109,11 +109,8 @@ impl World {
                 for entity_handle in entities {
                     let assets = self.entity_manager.assets_of(entity_handle);
                     self.asset_manager
-                        .set_minumum_load_level(assets.into_iter().collect(), scene_load_level)?
-                        .iter()
-                        .for_each(|la_ref| {
-                            deltas.push(WorldUpdateDelta::from_loaded_asset(la_ref, entity_handle));
-                        });
+                        .set_minumum_load_level(assets.into_iter().collect(), scene_load_level)?;
+                    deltas.push(WorldUpdateDelta::EntityDidLoad(entity_handle));
                 }
             }
         }

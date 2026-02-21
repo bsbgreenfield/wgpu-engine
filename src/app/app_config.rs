@@ -3,8 +3,6 @@ use std::sync::Arc;
 use anyhow::{Ok, Result};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::app::renderer::Renderer;
-
 pub struct AppConfig<'a> {
     pub size: PhysicalSize<u32>,
     pub surface: wgpu::Surface<'a>,

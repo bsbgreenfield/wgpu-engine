@@ -1,7 +1,12 @@
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
 use crate::{
-    app::{app_config::AppConfig, app_state::AppState, renderer::Renderer},
+    app::{
+        app_config::AppConfig,
+        app_state::AppState,
+        render::{VMValue, renderer::Renderer},
+    },
+    asset_manager::asset_manager::LoadedAsset,
     world::world::{World, WorldUpdateDelta, WorldUpdateError},
 };
 use winit::{
@@ -35,7 +40,7 @@ impl From<WorldUpdateError> for FrameError {
     }
 }
 
-impl<'a> App<'a> {
+impl App<'_> {
     pub fn new() -> Self {
         Self {
             window: None,
@@ -47,9 +52,22 @@ impl<'a> App<'a> {
         }
     }
 
-    fn run_frame(&mut self) -> Result<(), FrameError> {
+    fn run_frame<'frame>(&'frame mut self) -> Result<(), FrameError> {
         let deltas = self.update_world()?;
-        self.render(deltas);
+        let mut constants = Vec::<VMValue<'frame>>::new();
+        for delta in deltas.iter() {
+            match delta {
+                WorldUpdateDelta::EntityDidLoad(eh) => {
+                    let las: Vec<&'frame LoadedAsset> =
+                        self.world.as_ref().unwrap().get_loaded_asset_for(*eh);
+                    for la in las {
+                        constants.push(VMValue::LoadedAsset(la));
+                    }
+                }
+            }
+        }
+        self.renderer.as_mut().unwrap().update(constants, vec![]);
+
         Ok(())
     }
 
@@ -57,13 +75,10 @@ impl<'a> App<'a> {
         unsafe { self.world.as_mut().unwrap_unchecked().update() }
     }
 
-    fn render(&mut self, deltas: Vec<WorldUpdateDelta>) {
+    fn render(&mut self, constants: Vec<VMValue>) {
         unsafe {
-            let _ = self
-                .renderer
-                .as_mut()
-                .unwrap_unchecked()
-                .render(&self.app_config.as_ref().unwrap_unchecked(), deltas);
+            let renderer = self.renderer.as_mut().unwrap_unchecked();
+            renderer.update(constants, vec![]);
         }
     }
 }
@@ -86,7 +101,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let world =
                 World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
             self.world = Some(world);
-            self.renderer = Some(Renderer::new(&self.app_config.as_ref().unwrap().device))
+            self.renderer = Some(Renderer::new(self.app_config.as_ref().unwrap()))
         }
     }
 
@@ -121,11 +136,11 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 match self.run_frame() {
                     Ok(_) => {}
                     Err(FrameError::SurfaceError(_)) => {
-                        let size = self.window.as_ref().unwrap().inner_size();
-                        self.app_config
-                            .as_mut()
-                            .unwrap()
-                            .resize(PhysicalSize::new(size.width, size.height));
+                        // let size = self.window.as_ref().unwrap().inner_size();
+                        // self.app_config
+                        //     .as_mut()
+                        //     .unwrap()
+                        //     .resize(PhysicalSize::new(size.width, size.height));
                     }
                     Err(e) => {
                         panic!("unable to render! {:?}", e);

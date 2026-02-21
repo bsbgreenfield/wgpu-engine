@@ -7,7 +7,6 @@ use crate::{
     world::scene::SceneLoadLevel,
 };
 use std::{
-    any::{Any, TypeId},
     collections::HashMap,
     ops::{Deref, DerefMut},
 };
@@ -40,7 +39,7 @@ impl From<GltfLoadError> for AssetLoadError {
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum AssetResidencyLevel {
     Registered,
-    CPU(u16),
+    CPU(usize),
     GPU,
 }
 impl PartialEq<SceneLoadLevel> for AssetResidencyLevel {
@@ -172,8 +171,7 @@ impl AssetManager {
         &mut self,
         assets: Vec<AssetHandle>,
         load_level: SceneLoadLevel,
-    ) -> Result<Vec<&LoadedAsset>, AssetLoadError> {
-        let mut loaded_assets = Vec::<&LoadedAsset>::new();
+    ) -> Result<(), AssetLoadError> {
         let mut loaded_asset_indices = Vec::<usize>::new();
         for asset in assets {
             if self
@@ -187,15 +185,27 @@ impl AssetManager {
                 let loaded_asset: LoadedAsset = registered_asset.load_asset()?;
                 let la_index = self.loaded_assets.len().clone();
                 self.loaded_assets.push(loaded_asset);
-                registered_asset.set_residency_level(AssetResidencyLevel::CPU(la_index as u16));
+                registered_asset.set_residency_level(AssetResidencyLevel::CPU(la_index));
                 loaded_asset_indices.push(la_index);
                 self.registered_assets.insert(asset, registered_asset);
             }
         }
-        for lai in loaded_asset_indices {
-            loaded_assets.push(&self.loaded_assets[lai]);
+        Ok(())
+    }
+
+    pub fn get_loaded_assets(&self, handles: Vec<AssetHandle>) -> Vec<&LoadedAsset> {
+        let mut loaded_asset_refs = Vec::new();
+        for handle in handles {
+            let a = self.registered_assets.get(&handle).unwrap();
+            let res_level = a.get_residency_level();
+            match res_level {
+                AssetResidencyLevel::CPU(la_index) => {
+                    loaded_asset_refs.push(&self.loaded_assets[la_index]);
+                }
+                _ => {}
+            }
         }
-        Ok(loaded_assets)
+        loaded_asset_refs
     }
 
     pub fn register_asset<A>(&mut self, source: &str) -> Result<AssetHandle, AssetLoadError>
