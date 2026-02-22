@@ -88,7 +88,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidencyLevel {
 
 #[derive(Debug)]
 pub struct LoadedAsset {
-    gltf_mesh_data: GltfLoadResult,
+    pub gltf_mesh_data: GltfLoadResult,
 }
 
 struct CPUVertexData<V: ModelVertex> {

@@ -20,14 +20,24 @@ pub(super) enum Instruction {
     ConstIdx(u8),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Operations {
     AddEntity,
     MoveEntity,
 }
+
 pub(super) enum VMValue<'frame> {
     Transform(Mat4F32),
     LoadedAsset(&'frame LoadedAsset),
+}
+
+impl<'frame> VMValue<'frame> {
+    fn unwrap_loaded_asset(&self) -> &'frame LoadedAsset {
+        match self {
+            VMValue::LoadedAsset(la) => la,
+            _ => panic!("value is not a loaded asset ref"),
+        }
+    }
 }
 
 struct DrawItem<'v> {

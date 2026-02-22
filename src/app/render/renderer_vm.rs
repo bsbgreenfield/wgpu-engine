@@ -2,21 +2,39 @@ use std::{iter::Peekable, slice::Iter};
 
 use crate::app::render::{Instruction, Operations, VMValue, renderer::Renderer};
 
-struct InstructionSet<'frame> {
-    instructions: Peekable<Iter<'frame, Instruction>>,
-    pointer: usize,
-}
-
+type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 impl<'frame> Renderer<'frame> {
-    pub(super) fn interpret(&mut self, constants: Vec<VMValue>, instructions: Vec<Instruction>) {
-        let mut stack: Vec<VMValue> = Vec::with_capacity(256);
-        let mut pointer = 0;
-        let mut instr_peek = instructions.iter().peekable();
-
-        while instr_peek.peek().is_some() {}
+    unsafe fn get_asset_ref(instr_peek: &mut Peekable<Iter<'_, Instruction>>) {
+        let a: &Instruction = instr_peek.next().unwrap().try_into().unwrap();
     }
 
-    fn doo_wop(instructions: &[Instruction], stack: &mut Vec<VMValue>, op: Operations) {
+    fn get_constant_idx(instructions: &mut InstructionSet) -> u8 {
+        let instr = instructions.next().expect("should define a constant idx");
+        match instr {
+            Instruction::ConstIdx(idx) => *idx,
+            _ => panic!("expected a constant idx"),
+        }
+    }
+    pub(super) fn interpret(&mut self, constants: Vec<VMValue>, instructions: Vec<Instruction>) {
+        let mut instr_peek = instructions.iter().peekable();
+
+        while instr_peek.peek().is_some() {
+            let instr = instr_peek.next().unwrap();
+            match instr {
+                Instruction::Op(op) => match op {
+                    Operations::AddEntity => {
+                        let const_idx = Self::get_constant_idx(&mut instr_peek);
+                        let val = constants[const_idx as usize].unwrap_loaded_asset();
+                    }
+                    _ => todo!(),
+                },
+                Instruction::Byte(byte) => {}
+                Instruction::ConstIdx(idx) => {}
+            }
+        }
+    }
+
+    fn doo_wop(instruction: &Instruction, stack: &mut Vec<VMValue>, op: Operations) {
         match op {
             Operations::AddEntity => {}
             Operations::MoveEntity => {

@@ -1,4 +1,4 @@
-use std::mem::MaybeUninit;
+use std::{mem::MaybeUninit, ops::Range};
 
 use wgpu::BufferSlice;
 
@@ -46,6 +46,22 @@ impl<'group> Renderer<'group> {
                 include_str!("../../shader.wgsl"), //remove hardcoded shader path
             ),
             pnu_mesh_arena: GPUMeshArena::new(&config.device, vertex_size, vertex_size / 4),
+        }
+    }
+
+    pub(super) fn set_la_data(&mut self, la: &LoadedAsset) {
+        let gltf_data = &la.gltf_mesh_data;
+        for primitive in gltf_data
+            .mesh_data
+            .iter()
+            .flat_map(|md| md.meshes.iter().flat_map(|m| &m.primitives))
+        {
+            let job = super::UploadMeshJob {
+                vertices: &gltf_data.pnujw_vertices
+                    [primitive.vertices.start as usize..primitive.vertices.end as usize],
+                indices: &gltf_data.indices
+                    [primitive.indices.start as usize..primitive.indices.end as usize],
+            };
         }
     }
 }
