@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use super::scene::Scene;
 use crate::{
+    app::render::renderer::RenderUpdateDelta,
     asset_manager::asset_manager::{
         AssetHandle, AssetLoadError, AssetManager, GltfAsset, LoadedAsset,
     },
@@ -82,7 +83,7 @@ impl World {
         })
     }
 
-    pub fn get_loaded_asset_for(&self, entity_handle: EntityHandle) -> Vec<&LoadedAsset> {
+    pub fn get_loaded_assets_for(&self, entity_handle: EntityHandle) -> Vec<&LoadedAsset> {
         let assets = self.entity_manager.assets_of(entity_handle);
         let loaded_asset_refs = self.asset_manager.get_loaded_assets(assets);
         loaded_asset_refs
@@ -115,6 +116,21 @@ impl World {
             }
         }
         Ok(deltas)
+    }
+
+    fn set_min_load_level(&mut self, assets: Vec<AssetHandle>, load_level: SceneLoadLevel) {
+        todo!()
+    }
+
+    pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDelta]) {
+        for delta in render_deltas {
+            match delta {
+                RenderUpdateDelta::AssetGPULoaded(mesh_handle) => self
+                    .asset_manager
+                    .register_asset_gpu_residency(mesh_handle)
+                    .expect("Asset not found"),
+            }
+        }
     }
 }
 

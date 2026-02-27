@@ -1,10 +1,13 @@
 use crate::{
-    app::{app_config::AppConfig, render::OpaquePass},
+    app::{
+        app_config::AppConfig,
+        render::{OpaquePass, render_group::RenderGroupType},
+    },
     util::types::{GlobalTransform, InstanceData, ModelVertex, PNUJWVertex},
     world::camera::Camera,
 };
 
-impl super::RenderGroupType for OpaquePass {
+impl RenderGroupType for OpaquePass {
     fn create_pass<'pass>() -> wgpu::RenderPass<'pass> {
         todo!()
     }

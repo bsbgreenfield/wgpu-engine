@@ -4,7 +4,10 @@ use crate::{
     app::{
         app_config::AppConfig,
         app_state::AppState,
-        render::{VMValue, renderer::Renderer},
+        render::{
+            VMValue,
+            renderer::{RenderUpdateDelta, Renderer},
+        },
     },
     asset_manager::asset_manager::LoadedAsset,
     world::world::{World, WorldUpdateDelta, WorldUpdateError},
@@ -57,16 +60,31 @@ impl App<'_> {
         let mut constants = Vec::<VMValue<'frame>>::new();
         for delta in deltas.iter() {
             match delta {
-                WorldUpdateDelta::EntityDidLoad(eh) => {
-                    let las: Vec<&'frame LoadedAsset> =
-                        self.world.as_ref().unwrap().get_loaded_asset_for(*eh);
+                WorldUpdateDelta::EntityDidLoad(entity_handle) => {
+                    // las is actually borrowed for less than the duration of this function call,
+                    // as it is dropped before world.post_frame_update()
+                    let las: Vec<&LoadedAsset> = self
+                        .world
+                        .as_ref()
+                        .unwrap()
+                        .get_loaded_assets_for(*entity_handle);
+
                     for la in las {
                         constants.push(VMValue::LoadedAsset(la));
                     }
                 }
             }
         }
-        self.renderer.as_mut().unwrap().update(constants, vec![]);
+        let render_deltas = self.renderer.as_mut().unwrap().update(
+            constants,
+            vec![],
+            &self.app_config.as_ref().unwrap().queue,
+        );
+
+        self.world
+            .as_mut()
+            .unwrap()
+            .post_frame_update(&render_deltas);
 
         Ok(())
     }
@@ -78,7 +96,7 @@ impl App<'_> {
     fn render(&mut self, constants: Vec<VMValue>) {
         unsafe {
             let renderer = self.renderer.as_mut().unwrap_unchecked();
-            renderer.update(constants, vec![]);
+            todo!()
         }
     }
 }

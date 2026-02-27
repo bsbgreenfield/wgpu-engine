@@ -1,4 +1,5 @@
 use crate::{
+    app::render::GPUMeshHandle,
     asset_manager::gltf_assets::{
         gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
         model_builder_new::{GltfBuilder, GltfLoadResult, ModelBuilderError},
@@ -88,6 +89,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidencyLevel {
 
 #[derive(Debug)]
 pub struct LoadedAsset {
+    pub handle: AssetHandle,
     pub gltf_mesh_data: GltfLoadResult,
 }
 
@@ -138,7 +140,6 @@ impl<I: IndexType> CPUIndexData<I> {
 }
 
 pub struct AssetManager {
-    gpu_upload_queue: Vec<AssetHandle>,
     registered_handles: Vec<AssetHandle>,
     pnujw_vertex_data: CPUVertexData<PNUJWVertex>,
     pnu_vertex_data: CPUVertexData<PNUVertex>,
@@ -151,7 +152,6 @@ pub struct AssetManager {
 impl AssetManager {
     pub fn new() -> Self {
         Self {
-            gpu_upload_queue: Vec::new(),
             registered_handles: Vec::new(),
             pnujw_vertex_data: CPUVertexData::<PNUJWVertex>::new(),
             pnu_vertex_data: CPUVertexData::<PNUVertex>::new(),
@@ -166,30 +166,51 @@ impl AssetManager {
             id: self.registered_handles.len() as u32,
         }
     }
+    fn res_level_of(
+        &self,
+        asset_handle: &AssetHandle,
+    ) -> Result<AssetResidencyLevel, AssetLoadError> {
+        Ok(self
+            .registered_assets
+            .get(asset_handle)
+            .ok_or(AssetLoadError::AssetNotFound)?
+            .get_residency_level())
+    }
 
     pub fn set_minumum_load_level(
         &mut self,
         assets: Vec<AssetHandle>,
         load_level: SceneLoadLevel,
-    ) -> Result<(), AssetLoadError> {
+    ) -> Result<SceneLoadLevel, AssetLoadError> {
         let mut loaded_asset_indices = Vec::<usize>::new();
+        let mut res = load_level;
         for asset in assets {
-            if self
-                .registered_assets
-                .get(&asset)
-                .ok_or(AssetLoadError::AssetNotFound)?
-                .get_residency_level()
-                < load_level
-            {
-                let mut registered_asset = self.registered_assets.remove(&asset).unwrap();
-                let loaded_asset: LoadedAsset = registered_asset.load_asset()?;
-                let la_index = self.loaded_assets.len().clone();
-                self.loaded_assets.push(loaded_asset);
-                registered_asset.set_residency_level(AssetResidencyLevel::CPU(la_index));
-                loaded_asset_indices.push(la_index);
-                self.registered_assets.insert(asset, registered_asset);
+            if load_level > SceneLoadLevel::NotLoaded {
+                // load asset to CPU if it is not already loaded
+                if self.res_level_of(&asset)? < SceneLoadLevel::CPU {
+                    let mut registered_asset = self.registered_assets.remove(&asset).unwrap();
+                    let loaded_asset: LoadedAsset = registered_asset.load_asset(asset)?;
+                    let la_index = self.loaded_assets.len().clone();
+                    self.loaded_assets.push(loaded_asset);
+                    registered_asset.set_residency_level(AssetResidencyLevel::CPU(la_index));
+                    loaded_asset_indices.push(la_index);
+                    self.registered_assets.insert(asset, registered_asset);
+                    res = SceneLoadLevel::CPU;
+                }
             }
         }
+        Ok(res)
+    }
+
+    pub fn register_asset_gpu_residency(
+        &mut self,
+        gpu_mesh_handle: &GPUMeshHandle,
+    ) -> Result<(), AssetLoadError> {
+        self.registered_assets
+            .get_mut(&gpu_mesh_handle.handle)
+            .ok_or(AssetLoadError::AssetNotFound)?
+            .set_residency_level(AssetResidencyLevel::GPU);
+
         Ok(())
     }
 
@@ -225,7 +246,7 @@ pub trait AssetNew {
         Self: Sized;
     fn get_residency_level(&self) -> AssetResidencyLevel;
     fn set_residency_level(&mut self, level: AssetResidencyLevel);
-    fn load_asset(&self) -> Result<LoadedAsset, AssetLoadError>;
+    fn load_asset(&self, handle: AssetHandle) -> Result<LoadedAsset, AssetLoadError>;
 }
 
 pub struct GltfAsset {
@@ -253,8 +274,11 @@ impl AssetNew for GltfAsset {
             res_level: AssetResidencyLevel::Registered,
         })
     }
-    fn load_asset(&self) -> Result<LoadedAsset, AssetLoadError> {
+    fn load_asset(&self, handle: AssetHandle) -> Result<LoadedAsset, AssetLoadError> {
         let a = Self::load_gltf(&self.gltf, &self.bin).unwrap();
-        Ok(LoadedAsset { gltf_mesh_data: a })
+        Ok(LoadedAsset {
+            gltf_mesh_data: a,
+            handle,
+        })
     }
 }

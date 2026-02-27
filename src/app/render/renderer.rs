@@ -1,15 +1,20 @@
-use std::{mem::MaybeUninit, ops::Range};
-
 use wgpu::BufferSlice;
 
 use crate::{
     app::{
         app_config::AppConfig,
-        render::{Instruction, OpaquePass, RenderGroup, VMValue, arena::GPUMeshArena},
+        render::{
+            GPUMeshHandle, Instruction, OpaquePass, VMValue, arena::GPUMeshArena,
+            render_group::RenderGroup,
+        },
     },
-    asset_manager::asset_manager::LoadedAsset,
-    util::types::{PNUJWVertex, PNUVertex},
+    asset_manager::asset_manager::{AssetHandle, LoadedAsset},
+    util::types::{ModelVertex, PNUJWVertex, PNUVertex},
 };
+
+pub enum RenderUpdateDelta {
+    AssetGPULoaded(GPUMeshHandle),
+}
 
 struct DrawItem<'v> {
     mesh_id: u32,
@@ -23,8 +28,7 @@ struct RenderView<'v> {
 }
 
 pub struct Renderer<'group> {
-    pnujw_mesh_arena: GPUMeshArena<PNUJWVertex, u16>,
-    pnu_mesh_arena: GPUMeshArena<PNUVertex, u16>,
+    opaque_arena: GPUMeshArena,
     opaque_render_group: RenderGroup<'group, OpaquePass>,
 }
 
@@ -33,36 +37,49 @@ impl<'group> Renderer<'group> {
         todo!("RENDER");
     }
 
-    pub(in crate::app) fn update(&mut self, constants: Vec<VMValue>, ops: Vec<Instruction>) {
-        self.interpret(constants, ops);
+    pub(in crate::app) fn update(
+        &mut self,
+        constants: Vec<VMValue>,
+        ops: Vec<Instruction>,
+        queue: &wgpu::Queue,
+    ) -> Vec<RenderUpdateDelta> {
+        self.interpret(constants, ops, queue)
     }
 
     pub fn new(config: &AppConfig) -> Self {
         let vertex_size: u64 = 16 * 1024 * 1024;
         Renderer {
-            pnujw_mesh_arena: GPUMeshArena::new(&config.device, vertex_size, vertex_size / 4),
             opaque_render_group: RenderGroup::<OpaquePass>::new(
                 config,
                 include_str!("../../shader.wgsl"), //remove hardcoded shader path
             ),
-            pnu_mesh_arena: GPUMeshArena::new(&config.device, vertex_size, vertex_size / 4),
+            opaque_arena: GPUMeshArena::new(
+                Some("opaque arena"),
+                &config.device,
+                vertex_size,
+                vertex_size / 4,
+            ),
         }
     }
 
-    pub(super) fn set_la_data(&mut self, la: &LoadedAsset) {
+    pub(super) fn generate_draw_calls(&mut self) {
+        todo!()
+    }
+
+    pub(super) fn set_la_data(
+        &mut self,
+        la: &LoadedAsset,
+        queue: &wgpu::Queue,
+    ) -> Option<GPUMeshHandle> {
         let gltf_data = &la.gltf_mesh_data;
-        for primitive in gltf_data
-            .mesh_data
-            .iter()
-            .flat_map(|md| md.meshes.iter().flat_map(|m| &m.primitives))
-        {
-            let job = super::UploadMeshJob {
-                vertices: &gltf_data.pnujw_vertices
-                    [primitive.vertices.start as usize..primitive.vertices.end as usize],
-                indices: &gltf_data.indices
-                    [primitive.indices.start as usize..primitive.indices.end as usize],
-            };
-        }
+        // TODO: return GPU handle
+        self.opaque_arena.upload_mesh(
+            la.handle,
+            Some(&gltf_data.pnujw_vertices),
+            Some(&gltf_data.pnu_vertices),
+            Some(&gltf_data.indices),
+            queue,
+        )
     }
 }
 

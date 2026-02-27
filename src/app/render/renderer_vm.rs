@@ -1,6 +1,9 @@
 use std::{iter::Peekable, slice::Iter};
 
-use crate::app::render::{Instruction, Operations, VMValue, renderer::Renderer};
+use crate::app::render::{
+    Instruction, Operations, VMValue,
+    renderer::{RenderUpdateDelta, Renderer},
+};
 
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 impl<'frame> Renderer<'frame> {
@@ -15,7 +18,13 @@ impl<'frame> Renderer<'frame> {
             _ => panic!("expected a constant idx"),
         }
     }
-    pub(super) fn interpret(&mut self, constants: Vec<VMValue>, instructions: Vec<Instruction>) {
+    pub(super) fn interpret(
+        &mut self,
+        constants: Vec<VMValue>,
+        instructions: Vec<Instruction>,
+        queue: &wgpu::Queue,
+    ) -> Vec<RenderUpdateDelta> {
+        let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
 
         while instr_peek.peek().is_some() {
@@ -25,6 +34,9 @@ impl<'frame> Renderer<'frame> {
                     Operations::AddEntity => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
                         let val = constants[const_idx as usize].unwrap_loaded_asset();
+                        if let Some(mesh_handle) = self.set_la_data(val, queue) {
+                            res.push(RenderUpdateDelta::AssetGPULoaded(mesh_handle));
+                        }
                     }
                     _ => todo!(),
                 },
@@ -32,6 +44,8 @@ impl<'frame> Renderer<'frame> {
                 Instruction::ConstIdx(idx) => {}
             }
         }
+
+        res
     }
 
     fn doo_wop(instruction: &Instruction, stack: &mut Vec<VMValue>, op: Operations) {
