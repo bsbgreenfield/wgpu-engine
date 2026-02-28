@@ -1,9 +1,14 @@
+use std::marker::PhantomData;
+
 use crate::{
     app::{
         app_config::AppConfig,
-        render::{OpaquePass, render_group::RenderGroupType},
+        render::{
+            OpaquePass,
+            render_group::{RenderGroup, RenderGroupType, RenderView},
+        },
     },
-    util::types::{GlobalTransform, InstanceData, ModelVertex, PNUJWVertex},
+    util::types::{GlobalTransform, InstanceData, ModelVertex, PNUJWVertex, PNUVertex},
     world::camera::Camera,
 };
 

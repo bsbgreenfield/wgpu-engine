@@ -12,6 +12,7 @@ mod arena;
 mod opaque_pass;
 mod render_group;
 pub mod renderer;
+
 mod renderer_vm;
 
 #[derive(Clone, Copy)]
