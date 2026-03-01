@@ -33,14 +33,6 @@ pub(super) enum VMValue<'frame> {
     LoadedAsset(&'frame LoadedAsset),
 }
 
-impl<'frame> VMValue<'frame> {
-    fn unwrap_loaded_asset(&self) -> &'frame LoadedAsset {
-        match self {
-            VMValue::LoadedAsset(la) => la,
-            _ => panic!("value is not a loaded asset ref"),
-        }
-    }
-}
 pub(super) struct OpaquePass;
 #[derive(Debug)]
 enum RendererError {

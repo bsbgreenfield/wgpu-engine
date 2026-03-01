@@ -1,6 +1,9 @@
-use std::{error::Error, fmt::Display, marker::PhantomData};
+use std::{error::Error, fmt::Display, marker::PhantomData, ops::Range};
 
-use crate::{app::renderer_new::CHUNK_SIZE, util::types::ModelVertex};
+use crate::{
+    app::renderer_new::{CHUNK_SIZE, vertex_arena::VertexArenaError},
+    util::types::ModelVertex,
+};
 
 pub(super) struct FreeListAllocator<V: ModelVertex> {
     nodes: Vec<FreeListNode>,
@@ -22,7 +25,7 @@ impl<'chunk> FreeListNode {
 }
 
 #[derive(Debug)]
-enum FreeListAllocError {
+pub(super) enum FreeListAllocError {
     NoRoomLeft(u64, u64),
 }
 
@@ -52,14 +55,16 @@ impl<V: ModelVertex> FreeListAllocator<V> {
         }
     }
 
-    fn find_first(&self, size: u64) -> Result<usize, FreeListAllocError> {
+    fn find_first(&self, size: u64) -> Result<(usize, usize), FreeListAllocError> {
+        let mut offset = 0;
         let mut node_idx = self.head;
 
         loop {
             let node = &self.nodes[node_idx];
             if node.block_size >= size {
-                return Ok(node_idx);
+                return Ok((offset, node_idx));
             } else {
+                offset += node.block_size as usize;
                 if let Some(next_idx) = node.next {
                     node_idx = next_idx;
                     continue;
@@ -74,13 +79,16 @@ impl<V: ModelVertex> FreeListAllocator<V> {
         ))
     }
 
-    fn alloc_first(&mut self, size: u64) -> Result<(), FreeListAllocError> {
-        let node_idx = self.find_first(size)?;
-        let remaining_node_space = self.nodes[node_idx].block_size - size;
+    pub(super) fn alloc_first(&mut self, size: u64) -> Result<u64, FreeListAllocError> {
+        // TODO: account for alignemnt and padding
+        let (offset, node_idx) = self.find_first(size)?;
+        let node = &mut self.nodes[node_idx];
+        let remaining_node_space = node.block_size - size;
+        node.block_size -= remaining_node_space;
         let new_node = FreeListNode::new(remaining_node_space, None);
         self.nodes.push(new_node);
         self.nodes[node_idx].next = Some(self.nodes.len() - 1);
 
-        Ok(())
+        Ok(offset as u64)
     }
 }

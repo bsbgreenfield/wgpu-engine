@@ -1,5 +1,8 @@
 use crate::{
-    app::renderer_new::vertex_arena::VertexArenaNew,
+    app::{
+        render::{Instruction, VMValue, renderer::RenderUpdateDelta},
+        renderer_new::vertex_arena::VertexArenaNew,
+    },
     util::types::{PNUJWVertex, PNUVertex},
 };
 
@@ -74,11 +77,20 @@ pub struct RendererNew {
 }
 
 impl RendererNew {
-    fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
         Self {
             vertex_arenas: VertexArenaCollection::new(device),
             pipelines: PipelineCollection::new(),
             passes: Vec::new(),
         }
+    }
+
+    pub fn update(
+        &mut self,
+        constants: Vec<VMValue>,
+        ops: Vec<Instruction>,
+        queue: &wgpu::Queue,
+    ) -> Vec<RenderUpdateDelta> {
+        self.interpret(constants, ops, queue)
     }
 }
