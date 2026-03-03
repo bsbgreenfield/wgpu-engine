@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, rc::Rc};
+use std::{error::Error, fmt::Display, iter::FlatMap, ops::Range, rc::Rc};
 
 use wgpu::RenderPass;
 
@@ -7,10 +7,10 @@ use crate::{
         app_config::AppConfig,
         render::{Instruction, VMValue, renderer::RenderUpdateDelta},
         renderer_new::vertex_arena::{
-            AllocationHandle, UploadMeshJob, VertexArenaError, VertexArenaNew,
+            AllocationHandle, GPUArenaNew, UploadMeshJob, VertexArenaError,
         },
     },
-    util::types::{ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
 };
 
 #[derive(Debug)]
@@ -126,15 +126,15 @@ impl PipelineCollection {
 }
 
 struct VertexArenaCollection {
-    static_arena: VertexArenaNew<PNUVertex>,
-    skinned_arena: VertexArenaNew<PNUJWVertex>,
+    static_arena: GPUArenaNew<PNUVertex>,
+    skinned_arena: GPUArenaNew<PNUJWVertex>,
 }
 
 impl VertexArenaCollection {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
-            static_arena: VertexArenaNew::new(device),
-            skinned_arena: VertexArenaNew::new(device),
+            static_arena: GPUArenaNew::<PNUVertex>::new(device),
+            skinned_arena: GPUArenaNew::<PNUJWVertex>::new(device),
         }
     }
 }
@@ -170,6 +170,7 @@ impl ArenaSelector<PNUVertex> for RendererNew {
 }
 
 pub struct RendererNew {
+    local_transform_arena: GPUArenaNew<LocalTransform>,
     vertex_arenas: VertexArenaCollection,
     pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
@@ -178,6 +179,7 @@ pub struct RendererNew {
 impl RendererNew {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
+            local_transform_arena: GPUArenaNew::<LocalTransform>::new(device),
             vertex_arenas: VertexArenaCollection::new(device),
             pipelines: PipelineCollection::new(),
             passes: Vec::new(),
@@ -204,6 +206,10 @@ impl RendererNew {
         self.upload(mesh_job, queue)
     }
 
+    pub(super) fn upload_local_transform_data<'frame>(&mut self, queue: &wgpu::Queue) {
+        todo!()
+    }
+
     pub fn render(&self, config: &AppConfig) -> Result<(), RenderError> {
         for pass in &self.passes {
             let output = config.surface.get_current_texture()?;
@@ -222,10 +228,19 @@ impl RendererNew {
                     RenderCategory::OpaqueStatic => {
                         let ref pipeline = self.pipelines.opaque_static;
                         render_pass.set_pipeline(&pipeline.pipeline);
+                        let draw_iter = self.vertex_arenas.static_arena.get_chunk_draws();
+                        for (buf, vertex_ranges) in draw_iter {
+                            render_pass.set_vertex_buffer(0, buf.slice(..));
+                            for vertex_range in vertex_ranges {
+                                render_pass.draw(vertex_range.clone(), 0..1);
+                            }
+                        }
                         for draw_call in pipeline.draw_items.iter() {
                             // TODO: check cache!
-                            let vertex_range =
+                            let (vertex_range, buffer) =
                                 self.vertex_arenas.static_arena.resolve(draw_call.as_ref());
+                            // TODO dont change buffer if not necessary!
+                            render_pass.set_vertex_buffer(0, buffer.slice(..));
                             render_pass.draw(vertex_range, 0..1);
                         }
                     }

@@ -12,7 +12,7 @@ pub struct PrimitiveVerticesData {
     pub weights: Option<Vec<u8>>,
     pub count: usize,
 }
-pub trait ModelVertex: NoUninit + Debug {
+pub trait ModelVertex: Debug + bytemuck::Pod {
     fn from_primitive_data(p: &PrimitiveVerticesData) -> Vec<Self>;
     fn normalize_f32_to_u8(input: Vec<f32>) -> Vec<u8> {
         input
@@ -35,6 +35,10 @@ impl IndexType for u16 {
     const GLTF_INDEX_TYPE: gltf::accessor::DataType = gltf::accessor::DataType::U16;
     const BYTE_SIZE: usize = 2;
 }
+
+#[repr(C)]
+#[derive(bytemuck::Pod, Clone, Copy, bytemuck::Zeroable)]
+pub struct LocalTransform(Mat4F32);
 
 // ************************* PNUJ *************************
 #[repr(C)]

@@ -5,12 +5,11 @@ use crate::{
     util::types::ModelVertex,
 };
 
-pub(super) struct FreeListAllocator<V: ModelVertex> {
+pub(super) struct FreeListAllocator {
     nodes: Vec<FreeListNode>,
     chunk_size: u32,
     used: u32,
     head: usize,
-    _v: PhantomData<V>,
 }
 
 struct FreeListNode {
@@ -49,7 +48,7 @@ impl Display for FreeListAllocError {
     }
 }
 
-impl<V: ModelVertex> FreeListAllocator<V> {
+impl FreeListAllocator {
     #[inline]
     pub(super) fn resolve(&self, node_id: usize) -> Range<u32> {
         let node = &self.nodes[node_id];
@@ -57,8 +56,8 @@ impl<V: ModelVertex> FreeListAllocator<V> {
     }
 
     #[inline]
-    pub(super) fn offset_of(&self, node_id: usize) -> u32 {
-        self.nodes[node_id].offset
+    pub(super) fn offset_of(&self, node_id: usize) -> u64 {
+        self.nodes[node_id].offset as u64
     }
     pub(super) fn new() -> Self {
         Self {
@@ -66,7 +65,6 @@ impl<V: ModelVertex> FreeListAllocator<V> {
             chunk_size: CHUNK_SIZE,
             used: 0,
             head: 0,
-            _v: PhantomData,
         }
     }
 

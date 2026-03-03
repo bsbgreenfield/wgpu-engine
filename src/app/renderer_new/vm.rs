@@ -68,9 +68,10 @@ impl<'frame> RendererNew {
                 Instruction::Op(op) => match op {
                     Operations::AddEntity => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        let val = constants[const_idx as usize].unwrap_loaded_asset();
-                        let skinned_job: UploadMeshJob<PNUJWVertex> = val.to_raw_vertices();
-                        let static_job: UploadMeshJob<PNUJWVertex> = val.to_raw_vertices();
+                        let loaded_asset = constants[const_idx as usize].unwrap_loaded_asset();
+                        let skinned_job: UploadMeshJob<PNUJWVertex> =
+                            loaded_asset.to_raw_vertices();
+                        let static_job: UploadMeshJob<PNUJWVertex> = loaded_asset.to_raw_vertices();
                         let skinned_handle = self
                             .upload_mesh_data(skinned_job, queue)
                             .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()))?;
