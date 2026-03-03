@@ -34,22 +34,25 @@ impl Display for VertexArenaError {
     }
 }
 
-struct GPUChunk<T> {
+struct GPUChunk<T: bytemuck::Pod> {
     remaining_space: u32,
     buffer: wgpu::Buffer,
+    bind_group: Option<wgpu::BindGroup>,
     allocator: FreeListAllocator,
     _t: PhantomData<T>,
 }
 
+#[derive(Hash, PartialEq, Eq)]
 pub(super) struct AllocationHandle {
-    pub(super) cache_id: usize,
-    alloc_id: usize,
+    global_alloc_id: u32,
+    pipeline_alloc_id: u32,
 }
 
 impl GPUChunk<LocalTransform> {
     fn new(device: &wgpu::Device) -> Self {
         Self {
             remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
+            bind_group: None,
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: CHUNK_SIZE as u64,
@@ -84,6 +87,7 @@ impl<T: ModelVertex> GPUChunk<T> {
     fn new(device: &wgpu::Device) -> Self {
         Self {
             remaining_space: CHUNK_SIZE,
+            bind_group: None,
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: CHUNK_SIZE as u64,
@@ -106,31 +110,28 @@ impl AllocMetaData {
     }
 }
 
-struct DrawCacheChunk {
-    pub(super) vertex_ranges: Vec<Range<u32>>,
-    valid: bool,
-}
-
-pub(super) struct GPUArenaNew<T> {
+pub(super) struct GPUArenaNew<T: bytemuck::Pod> {
     max_chunks: usize,
-    pub(super) chunk_caches: Vec<DrawCacheChunk>,
     chunks: Vec<GPUChunk<T>>,
-    alloc_table: HashMap<usize, AllocMetaData>,
+    alloc_table: HashMap<u32, AllocMetaData>,
 }
 
 pub struct UploadMeshJob<'frame, V: ModelVertex> {
     pub verts: &'frame [V],
+    pub(super) primitive_ranges: Vec<Range<u32>>,
+    pub(super) per_model_primitive_count: Vec<u32>,
+    pub(super) global_alloc_id: u32,
+    pub(super) mesh_ids: Vec<u32>,
 }
 
 pub trait MeshUploadable<V: ModelVertex> {
-    fn to_raw_vertices(&self) -> UploadMeshJob<V>;
+    fn as_mesh_job(&self, global_alloc_id: u32) -> UploadMeshJob<V>;
 }
 
 impl GPUArenaNew<LocalTransform> {
     pub(super) fn new(device: &wgpu::Device) -> Self {
         Self {
             max_chunks: 1,
-            chunk_caches: vec![],
             chunks: vec![GPUChunk::<LocalTransform>::new(device)],
             alloc_table: HashMap::new(),
         }
@@ -141,41 +142,33 @@ impl<V: ModelVertex> GPUArenaNew<V> {
     pub(super) fn new(device: &wgpu::Device) -> Self {
         Self {
             max_chunks: 16,
-            chunk_caches: vec![],
             chunks: vec![GPUChunk::<V>::new(device)],
             alloc_table: HashMap::new(),
         }
     }
-    pub(super) fn get_chunk_draws<'frame>(
-        &'frame self,
-    ) -> impl Iterator<Item = (&wgpu::Buffer, &[Range<u32>])> {
-        self.chunk_caches
-            .iter()
-            .zip(self.chunks.iter())
-            .map(|(a, b)| {
-                return (&b.buffer, &a.vertex_ranges[..]);
-            })
-    }
 
     pub(super) fn resolve(&self, handle: &AllocationHandle) -> (Range<u32>, &wgpu::Buffer) {
-        let meta = self.alloc_table.get(&handle.alloc_id).unwrap();
+        let meta = self.alloc_table.get(&handle.pipeline_alloc_id).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         (range, &self.chunks[meta.chunk_id].buffer)
     }
 
     pub(super) fn upload_mesh(
         &mut self,
-        mesh_data: UploadMeshJob<V>,
+        mesh_data: &[V],
+        global_alloc_id: u32,
         queue: &wgpu::Queue,
     ) -> Result<AllocationHandle, VertexArenaError> {
         'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
-            match chunk.gpu_alloc(mesh_data.verts, queue) {
-                Ok((node_idx, range)) => {
-                    let k = self.alloc_table.len(); // TODO: algorithm for assigning keys
+            match chunk.gpu_alloc(mesh_data, queue) {
+                Ok((node_idx, _)) => {
+                    let pipeline_alloc_id = self.alloc_table.len() as u32; // TODO: algorithm for assigning keys
                     self.alloc_table
-                        .insert(k, AllocMetaData::new(chunk_idx, node_idx));
-                    self.chunk_caches[chunk_idx].vertex_ranges.push(range);
-                    break 'outer;
+                        .insert(pipeline_alloc_id, AllocMetaData::new(chunk_idx, node_idx));
+                    return Ok(AllocationHandle {
+                        global_alloc_id,
+                        pipeline_alloc_id,
+                    });
                 }
 
                 Err(e) => match e {
@@ -186,9 +179,8 @@ impl<V: ModelVertex> GPUArenaNew<V> {
                 },
             }
         }
-        Ok(AllocationHandle {
-            cache_id: 0, //TODO: implement cache
-            alloc_id: 0,
-        })
+        Err(VertexArenaError::DataTooLarge(
+            (mesh_data.len() * size_of::<V>()) as u32,
+        ))
     }
 }

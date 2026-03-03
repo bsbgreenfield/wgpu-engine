@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, iter::FlatMap, ops::Range, rc::Rc};
+use std::{collections::HashMap, error::Error, fmt::Display, iter::FlatMap, ops::Range, rc::Rc};
 
 use wgpu::RenderPass;
 
@@ -97,10 +97,25 @@ impl EngineRenderPass {
     }
 }
 
+struct DrawMap {
+    map: HashMap<AllocationHandle, Vec<DrawItem>>,
+}
+
+struct DrawItem {
+    primitive_range: Range<u32>,
+}
+impl DrawItem {
+    #[inline]
+    fn within(&self, range: &Range<u32>) -> Range<u32> {
+        let start = range.start + self.primitive_range.start;
+        start..(start + self.primitive_range.len() as u32)
+    }
+}
+
 struct EnginePipeline {
     pipeline: wgpu::RenderPipeline,
     category: RenderCategory,
-    draw_items: Vec<Rc<AllocationHandle>>,
+    draw_map: HashMap<AllocationHandle, Vec<DrawItem>>,
 }
 
 struct PipelineCollection {
@@ -144,7 +159,7 @@ trait ArenaSelector<V: ModelVertex> {
         &mut self,
         mesh_job: UploadMeshJob<V>,
         queue: &wgpu::Queue,
-    ) -> Result<AllocationHandle, VertexArenaError>;
+    ) -> Result<(), VertexArenaError>;
 }
 
 impl ArenaSelector<PNUJWVertex> for RendererNew {
@@ -152,10 +167,19 @@ impl ArenaSelector<PNUJWVertex> for RendererNew {
         &mut self,
         mesh_job: UploadMeshJob<PNUJWVertex>,
         queue: &wgpu::Queue,
-    ) -> Result<AllocationHandle, VertexArenaError> {
-        self.vertex_arenas
-            .skinned_arena
-            .upload_mesh(mesh_job, queue)
+    ) -> Result<(), VertexArenaError> {
+        let mut draws = Vec::<DrawItem>::new();
+        for primitive_range in mesh_job.primitive_ranges {
+            draws.push(DrawItem { primitive_range });
+        }
+        let handle = self.vertex_arenas.skinned_arena.upload_mesh(
+            mesh_job.verts,
+            mesh_job.global_alloc_id,
+            queue,
+        )?;
+
+        self.pipelines.opaque_skinned.draw_map.insert(handle, draws);
+        Ok(())
     }
 }
 
@@ -164,9 +188,28 @@ impl ArenaSelector<PNUVertex> for RendererNew {
         &mut self,
         mesh_job: UploadMeshJob<PNUVertex>,
         queue: &wgpu::Queue,
-    ) -> Result<AllocationHandle, VertexArenaError> {
-        self.vertex_arenas.static_arena.upload_mesh(mesh_job, queue)
+    ) -> Result<(), VertexArenaError> {
+        let mut draws = Vec::<DrawItem>::new();
+        for primitive_range in mesh_job.primitive_ranges {
+            draws.push(DrawItem { primitive_range });
+        }
+        let handle = self.vertex_arenas.static_arena.upload_mesh(
+            mesh_job.verts,
+            mesh_job.global_alloc_id,
+            queue,
+        )?;
+
+        self.pipelines.opaque_static.draw_map.insert(handle, draws);
+        Ok(())
     }
+}
+
+struct RenderModel {
+    model_id: usize,
+    meshes_ids: Vec<usize>,
+}
+struct RenderModelManager {
+    render_models: Vec<RenderModel>,
 }
 
 pub struct RendererNew {
@@ -199,7 +242,7 @@ impl RendererNew {
         &mut self,
         mesh_job: UploadMeshJob<'frame, V>,
         queue: &wgpu::Queue,
-    ) -> Result<AllocationHandle, VertexArenaError>
+    ) -> Result<(), VertexArenaError>
     where
         Self: ArenaSelector<V>,
     {
@@ -228,20 +271,14 @@ impl RendererNew {
                     RenderCategory::OpaqueStatic => {
                         let ref pipeline = self.pipelines.opaque_static;
                         render_pass.set_pipeline(&pipeline.pipeline);
-                        let draw_iter = self.vertex_arenas.static_arena.get_chunk_draws();
-                        for (buf, vertex_ranges) in draw_iter {
-                            render_pass.set_vertex_buffer(0, buf.slice(..));
-                            for vertex_range in vertex_ranges {
-                                render_pass.draw(vertex_range.clone(), 0..1);
+                        // iterate over per asset allocations for this pipeline
+                        for (allocation_handle, draws) in pipeline.draw_map.iter() {
+                            let (alloc_range, vertex_buf) =
+                                self.vertex_arenas.static_arena.resolve(allocation_handle);
+                            render_pass.set_vertex_buffer(0, vertex_buf.slice(..));
+                            for draw in draws {
+                                render_pass.draw(draw.within(&alloc_range), 0..1);
                             }
-                        }
-                        for draw_call in pipeline.draw_items.iter() {
-                            // TODO: check cache!
-                            let (vertex_range, buffer) =
-                                self.vertex_arenas.static_arena.resolve(draw_call.as_ref());
-                            // TODO dont change buffer if not necessary!
-                            render_pass.set_vertex_buffer(0, buffer.slice(..));
-                            render_pass.draw(vertex_range, 0..1);
                         }
                     }
                     RenderCategory::OpaqueSkinned => {
