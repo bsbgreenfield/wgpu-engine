@@ -9,7 +9,7 @@ use crate::{
         },
     },
     asset_manager::asset_manager::LoadedAsset,
-    util::types::{PNUJWVertex, PNUVertex},
+    util::types::{ModelVertex, PNUJWVertex, PNUVertex},
 };
 
 pub enum RenderUpdateDeltaNew {
@@ -28,24 +28,10 @@ type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 
 impl MeshUploadable<PNUJWVertex> for LoadedAsset {
     fn as_mesh_job(&self, global_alloc_id: u32) -> super::vertex_arena::UploadMeshJob<PNUJWVertex> {
-        let mut primitive_ranges = Vec::<Range<u32>>::new();
-        let mut per_model_primitive_count = Vec::<u32>::new();
-        for (idx, mesh_data) in self.gltf_mesh_data.mesh_data.iter().enumerate() {
-            per_model_primitive_count.push(0);
-            for mesh in mesh_data.meshes.iter() {
-                let ranges: Vec<Range<u32>> = mesh
-                    .primitives
-                    .iter()
-                    .filter(|primitive| primitive.vertex_type == TypeId::of::<PNUJWVertex>())
-                    .map(|primitive| primitive.vertices.clone())
-                    .collect();
-                per_model_primitive_count[idx] = ranges.len() as u32;
-                primitive_ranges.extend(ranges);
-            }
-        }
+        let (mesh_ids, primitive_ranges) = self.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
         UploadMeshJob {
+            mesh_ids,
             global_alloc_id,
-            per_model_primitive_count,
             primitive_ranges,
             verts: &self.gltf_mesh_data.pnujw_vertices,
         }
@@ -53,24 +39,10 @@ impl MeshUploadable<PNUJWVertex> for LoadedAsset {
 }
 impl MeshUploadable<PNUVertex> for LoadedAsset {
     fn as_mesh_job(&self, global_alloc_id: u32) -> super::vertex_arena::UploadMeshJob<PNUVertex> {
-        let mut primitive_ranges = Vec::<Range<u32>>::new();
-        let mut per_model_primitive_count = Vec::<u32>::new();
-        for (idx, mesh_data) in self.gltf_mesh_data.mesh_data.iter().enumerate() {
-            per_model_primitive_count.push(0);
-            for m in mesh_data.meshes.iter() {
-                let ranges: Vec<Range<u32>> = m
-                    .primitives
-                    .iter()
-                    .filter(|prim| prim.vertex_type == TypeId::of::<PNUVertex>())
-                    .map(|prim| prim.vertices.clone())
-                    .collect();
-                per_model_primitive_count[idx] = ranges.len() as u32;
-                primitive_ranges.extend(ranges);
-            }
-        }
+        let (mesh_ids, primitive_ranges) = self.mesh_ids_and_prim_ranges_of::<PNUVertex>();
         UploadMeshJob {
+            mesh_ids,
             global_alloc_id,
-            per_model_primitive_count,
             primitive_ranges,
             verts: &self.gltf_mesh_data.pnu_vertices,
         }
@@ -107,8 +79,12 @@ impl<'frame> RendererNew {
                         let loaded_asset = constants[const_idx as usize].unwrap_loaded_asset();
                         // TODO: GET GLOBAL ALLOC ID WHICH WILL BE COMMON BETWEEN JOBS
                         // USE THIS TO INDEX INTO LOCAL TRANSFORM BUFFER PER MESH ID
-                        let skinned_job: UploadMeshJob<PNUJWVertex> = loaded_asset.as_mesh_job();
-                        let static_job: UploadMeshJob<PNUJWVertex> = loaded_asset.as_mesh_job();
+                        let global_allocation_id = self.get_global_alloc_id();
+                        let skinned_job: UploadMeshJob<PNUJWVertex> =
+                            loaded_asset.as_mesh_job(global_allocation_id);
+                        let static_job: UploadMeshJob<PNUJWVertex> =
+                            loaded_asset.as_mesh_job(global_allocation_id);
+                        // TODO: extract local transform data
                         let skinned_handle = self
                             .upload_mesh_data(skinned_job, queue)
                             .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()))?;

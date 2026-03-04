@@ -93,6 +93,34 @@ pub struct LoadedAsset {
     pub gltf_mesh_data: GltfLoadResult,
 }
 
+use std::any::TypeId;
+use std::ops::Range;
+impl LoadedAsset {
+    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(&self) -> (Vec<u32>, Vec<Range<u32>>) {
+        let mut primitive_ranges = Vec::<Range<u32>>::new();
+        let mut per_model_primitive_count = Vec::<u32>::new();
+        let mut mesh_ids = Vec::<u32>::new();
+        for (idx, mesh_data) in self.gltf_mesh_data.mesh_data.iter().enumerate() {
+            per_model_primitive_count.push(0);
+            let me = mesh_data.meshes.iter().filter(|m| {
+                m.primitives
+                    .iter()
+                    .any(|p| p.vertex_type == TypeId::of::<V>())
+            });
+            for filtered_mesh in me {
+                for candidate_primitive in filtered_mesh.primitives.iter() {
+                    if candidate_primitive.vertex_type == TypeId::of::<V>() {
+                        mesh_ids.push(filtered_mesh.id);
+                        // ADD PRIMITIVE COUNT FOR MODEL IF NECESSARY HERE
+                        primitive_ranges.push(candidate_primitive.vertices.clone());
+                    }
+                }
+            }
+        }
+        (mesh_ids, primitive_ranges)
+    }
+}
+
 struct CPUVertexData<V: ModelVertex> {
     vertices: Vec<V>,
 }

@@ -102,6 +102,9 @@ struct DrawMap {
 }
 
 struct DrawItem {
+    /// "local" refers to the allocation
+    local_mesh_id: u32,
+
     primitive_range: Range<u32>,
 }
 impl DrawItem {
@@ -154,50 +157,60 @@ impl VertexArenaCollection {
     }
 }
 
-trait ArenaSelector<V: ModelVertex> {
-    fn upload(
+trait VertexArenaSelector<V: ModelVertex> {
+    fn upload_mesh(
         &mut self,
         mesh_job: UploadMeshJob<V>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError>;
 }
 
-impl ArenaSelector<PNUJWVertex> for RendererNew {
-    fn upload(
+impl VertexArenaSelector<PNUJWVertex> for RendererNew {
+    fn upload_mesh(
         &mut self,
         mesh_job: UploadMeshJob<PNUJWVertex>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        let mut draws = Vec::<DrawItem>::new();
-        for primitive_range in mesh_job.primitive_ranges {
-            draws.push(DrawItem { primitive_range });
-        }
         let handle = self.vertex_arenas.skinned_arena.upload_mesh(
             mesh_job.verts,
             mesh_job.global_alloc_id,
             queue,
         )?;
+        let mut draws = Vec::<DrawItem>::new();
+        for (primitive_range, local_mesh_id) in
+            mesh_job.primitive_ranges.into_iter().zip(mesh_job.mesh_ids)
+        {
+            draws.push(DrawItem {
+                primitive_range,
+                local_mesh_id,
+            });
+        }
 
         self.pipelines.opaque_skinned.draw_map.insert(handle, draws);
         Ok(())
     }
 }
 
-impl ArenaSelector<PNUVertex> for RendererNew {
-    fn upload(
+impl VertexArenaSelector<PNUVertex> for RendererNew {
+    fn upload_mesh(
         &mut self,
         mesh_job: UploadMeshJob<PNUVertex>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        let mut draws = Vec::<DrawItem>::new();
-        for primitive_range in mesh_job.primitive_ranges {
-            draws.push(DrawItem { primitive_range });
-        }
         let handle = self.vertex_arenas.static_arena.upload_mesh(
             mesh_job.verts,
             mesh_job.global_alloc_id,
             queue,
         )?;
+        let mut draws = Vec::<DrawItem>::new();
+        for (primitive_range, local_mesh_id) in
+            mesh_job.primitive_ranges.into_iter().zip(mesh_job.mesh_ids)
+        {
+            draws.push(DrawItem {
+                primitive_range,
+                local_mesh_id,
+            });
+        }
 
         self.pipelines.opaque_static.draw_map.insert(handle, draws);
         Ok(())
@@ -229,6 +242,11 @@ impl RendererNew {
         }
     }
 
+    pub(super) fn get_global_alloc_id(&self) -> u32 {
+        //TODO: manage global alloc ids
+        0
+    }
+
     pub fn update(
         &mut self,
         constants: Vec<VMValue>,
@@ -244,13 +262,19 @@ impl RendererNew {
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError>
     where
-        Self: ArenaSelector<V>,
+        Self: VertexArenaSelector<V>,
     {
-        self.upload(mesh_job, queue)
+        self.upload_mesh(mesh_job, queue)
     }
 
-    pub(super) fn upload_local_transform_data<'frame>(&mut self, queue: &wgpu::Queue) {
-        todo!()
+    pub(super) fn upload_local_transform_data<'frame>(
+        &mut self,
+        local_transforms: &[LocalTransform],
+        global_alloc_id: u32,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError> {
+        self.local_transform_arena
+            .upload(local_transforms, global_alloc_id, queue)
     }
 
     pub fn render(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -277,6 +301,10 @@ impl RendererNew {
                                 self.vertex_arenas.static_arena.resolve(allocation_handle);
                             render_pass.set_vertex_buffer(0, vertex_buf.slice(..));
                             for draw in draws {
+                                let lt_index = self.local_transform_arena.resolve_lt_index(
+                                    draw.local_mesh_id,
+                                    allocation_handle.global_alloc_id,
+                                );
                                 render_pass.draw(draw.within(&alloc_range), 0..1);
                             }
                         }

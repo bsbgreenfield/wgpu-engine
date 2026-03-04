@@ -1,10 +1,11 @@
-use std::{collections::HashMap, fmt::Display, marker::PhantomData, ops::Range};
+use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, ops::Range};
 
 use crate::{
     app::renderer_new::{
         CHUNK_SIZE,
         free_list::{FreeListAllocError, FreeListAllocator},
     },
+    asset_manager::gltf_assets::model_builder_new::GltfMeshData,
     util::types::{LocalTransform, ModelVertex},
 };
 
@@ -44,7 +45,7 @@ struct GPUChunk<T: bytemuck::Pod> {
 
 #[derive(Hash, PartialEq, Eq)]
 pub(super) struct AllocationHandle {
-    global_alloc_id: u32,
+    pub(super) global_alloc_id: u32,
     pipeline_alloc_id: u32,
 }
 
@@ -119,7 +120,6 @@ pub(super) struct GPUArenaNew<T: bytemuck::Pod> {
 pub struct UploadMeshJob<'frame, V: ModelVertex> {
     pub verts: &'frame [V],
     pub(super) primitive_ranges: Vec<Range<u32>>,
-    pub(super) per_model_primitive_count: Vec<u32>,
     pub(super) global_alloc_id: u32,
     pub(super) mesh_ids: Vec<u32>,
 }
@@ -135,6 +135,28 @@ impl GPUArenaNew<LocalTransform> {
             chunks: vec![GPUChunk::<LocalTransform>::new(device)],
             alloc_table: HashMap::new(),
         }
+    }
+
+    pub(super) fn upload(
+        &mut self,
+        local_transforms: &[LocalTransform],
+        global_alloc_id: u32,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError> {
+        let (node_id, _range) = self.chunks[0].gpu_alloc(local_transforms, queue)?;
+        self.alloc_table.insert(
+            global_alloc_id,
+            AllocMetaData {
+                chunk_id: 0,
+                node_id,
+            },
+        );
+
+        Ok(())
+    }
+
+    pub(super) fn resolve_lt_index(&self, local_mesh_id: u32, global_alloc_id: u32) -> u32 {
+        todo!()
     }
 }
 

@@ -11,7 +11,7 @@ use crate::{
             primitive::{GltfValidationError, PrimitiveData},
         },
     },
-    util::types::{IndexType, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{IndexType, LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
 };
 
 #[derive(Debug)]
@@ -74,6 +74,7 @@ pub trait GltfBuilder {
     }
     fn get_model_data(gltf: &gltf::Gltf) -> Result<Vec<ModelDataNew>, GltfLoadError> {
         let mut model_data_vec = Vec::<ModelDataNew>::new();
+        let mut local_transforms = Vec::<LocalTransform>::new();
         let root_nodes = Self::get_root_nodes(gltf)?;
         for (idx, rid) in root_nodes.iter().enumerate() {
             let root_node = gltf
