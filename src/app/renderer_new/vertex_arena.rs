@@ -50,16 +50,25 @@ pub(super) struct AllocationHandle {
 }
 
 impl GPUChunk<LocalTransform> {
-    fn new(device: &wgpu::Device) -> Self {
+    fn new(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> Self {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: CHUNK_SIZE as u64,
+            usage: wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let new_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("lt bind group"),
+            layout: bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 1,
+                resource: buf.as_entire_binding(),
+            }],
+        });
         Self {
             remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
-            bind_group: None,
-            buffer: device.create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                size: CHUNK_SIZE as u64,
-                usage: wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            }),
+            bind_group: Some(new_bg),
+            buffer: buf,
             allocator: FreeListAllocator::new(),
             _t: PhantomData,
         }
@@ -115,6 +124,7 @@ pub(super) struct GPUArenaNew<T: bytemuck::Pod> {
     max_chunks: usize,
     chunks: Vec<GPUChunk<T>>,
     alloc_table: HashMap<u32, AllocMetaData>,
+    bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
 pub struct UploadMeshJob<'frame, V: ModelVertex> {
@@ -130,10 +140,24 @@ pub trait MeshUploadable<V: ModelVertex> {
 
 impl GPUArenaNew<LocalTransform> {
     pub(super) fn new(device: &wgpu::Device) -> Self {
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some(" lt bind group LAYOUT"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                count: None,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                visibility: wgpu::ShaderStages::VERTEX,
+            }],
+        });
         Self {
             max_chunks: 1,
-            chunks: vec![GPUChunk::<LocalTransform>::new(device)],
+            chunks: vec![GPUChunk::<LocalTransform>::new(device, &bgl)],
             alloc_table: HashMap::new(),
+            bind_group_layout: Some(bgl),
         }
     }
 
@@ -155,14 +179,26 @@ impl GPUArenaNew<LocalTransform> {
         Ok(())
     }
 
+    pub(super) fn get_bind_group(&self) -> &wgpu::BindGroup {
+        return self.chunks[0].bind_group.as_ref().unwrap();
+    }
+
     pub(super) fn resolve_lt_index(&self, local_mesh_id: u32, global_alloc_id: u32) -> u32 {
-        todo!()
+        let node_id = self.alloc_table.get(&global_alloc_id).unwrap().node_id;
+        let allocation_range = self.chunks[0].allocator.resolve(node_id);
+
+        // the local mesh id should be "local" to the given allocation.
+        // therefore, the "global" mesh id should be the local id + the global offset
+        // we can obtain the index offset by dividing by the byte size of LocalTransform
+        // which is 128
+        (allocation_range.start / size_of::<LocalTransform>() as u32) + local_mesh_id
     }
 }
 
 impl<V: ModelVertex> GPUArenaNew<V> {
     pub(super) fn new(device: &wgpu::Device) -> Self {
         Self {
+            bind_group_layout: None,
             max_chunks: 16,
             chunks: vec![GPUChunk::<V>::new(device)],
             alloc_table: HashMap::new(),

@@ -1,6 +1,7 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Index};
 
 use bytemuck::{AnyBitPattern, NoUninit};
+use wgpu::naga::front;
 
 pub type Mat4F32 = [[f32; 4]; 4];
 
@@ -37,8 +38,22 @@ impl IndexType for u16 {
 }
 
 #[repr(C)]
-#[derive(bytemuck::Pod, Clone, Copy, bytemuck::Zeroable)]
+#[derive(bytemuck::Pod, Clone, Copy, bytemuck::Zeroable, Debug)]
 pub struct LocalTransform(Mat4F32);
+
+impl From<Mat4F32> for LocalTransform {
+    fn from(value: Mat4F32) -> Self {
+        Self(value)
+    }
+}
+
+pub fn mat4_from_cgmath(value: cgmath::Matrix4<f32>) -> Mat4F32 {
+    let x: [f32; 4] = value.x.into();
+    let y: [f32; 4] = value.y.into();
+    let z: [f32; 4] = value.z.into();
+    let w: [f32; 4] = value.w.into();
+    [x, y, z, w]
+}
 
 // ************************* PNUJ *************************
 #[repr(C)]

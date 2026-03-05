@@ -84,7 +84,12 @@ impl<'frame> RendererNew {
                             loaded_asset.as_mesh_job(global_allocation_id);
                         let static_job: UploadMeshJob<PNUJWVertex> =
                             loaded_asset.as_mesh_job(global_allocation_id);
-                        // TODO: extract local transform data
+                        self.upload_local_transform_data(
+                            &loaded_asset.gltf_mesh_data.local_transforms,
+                            global_allocation_id,
+                            queue,
+                        )
+                        .map_err(|_| RenderUpdateError::LocalTransformUpdateFailed)?;
                         let skinned_handle = self
                             .upload_mesh_data(skinned_job, queue)
                             .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()))?;

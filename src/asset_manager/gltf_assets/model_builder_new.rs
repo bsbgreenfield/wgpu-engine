@@ -11,7 +11,9 @@ use crate::{
             primitive::{GltfValidationError, PrimitiveData},
         },
     },
-    util::types::{IndexType, LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{
+        IndexType, LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex, mat4_from_cgmath,
+    },
 };
 
 #[derive(Debug)]
@@ -34,7 +36,6 @@ impl From<GltfValidationError> for ModelBuilderError {
 pub struct ModelDataNew {
     id: usize,
     mesh_ids: Vec<usize>,
-    local_transforms: Vec<Mat4F32>,
     joint_data: Option<ModelJointDataNew>,
 }
 
@@ -43,7 +44,6 @@ impl ModelDataNew {
         Self {
             id,
             mesh_ids: Vec::new(),
-            local_transforms: Vec::new(),
             joint_data: None,
         }
     }
@@ -72,9 +72,12 @@ pub trait GltfBuilder {
         let ids: Vec<usize> = mesh_node_iter.map(|node| node.index()).collect();
         Ok(ids)
     }
-    fn get_model_data(gltf: &gltf::Gltf) -> Result<Vec<ModelDataNew>, GltfLoadError> {
+    fn get_model_data(
+        gltf: &gltf::Gltf,
+    ) -> Result<(Vec<ModelDataNew>, Vec<LocalTransform>), GltfLoadError> {
         let mut model_data_vec = Vec::<ModelDataNew>::new();
-        let mut local_transforms = Vec::<LocalTransform>::new();
+        let mesh_count = gltf.meshes().len();
+        let mut local_transforms = Vec::<LocalTransform>::with_capacity(mesh_count);
         let root_nodes = Self::get_root_nodes(gltf)?;
         for (idx, rid) in root_nodes.iter().enumerate() {
             let root_node = gltf
@@ -82,25 +85,31 @@ pub trait GltfBuilder {
                 .find(|root_node| root_node.index() == *rid)
                 .ok_or(ModelBuilderError::NodeNotFound(*rid))?;
             let mut model_data = ModelDataNew::new(idx);
-            model_data =
-                Self::process_root_node(&root_node, cgmath::Matrix4::identity(), model_data)?;
+            model_data = Self::process_root_node(
+                &root_node,
+                cgmath::Matrix4::identity(),
+                &mut local_transforms,
+                model_data,
+            )?;
             model_data_vec.push(model_data);
         }
-        Ok(model_data_vec)
+        Ok((model_data_vec, local_transforms))
     }
     fn process_root_node(
         root_node: &gltf::Node,
         base_transform: cgmath::Matrix4<f32>,
+        local_transforms: &mut Vec<LocalTransform>,
         mut model_data: ModelDataNew,
     ) -> Result<ModelDataNew, ModelBuilderError> {
         let cg_trans = cgmath::Matrix4::<f32>::from(root_node.transform().matrix());
         let new_trans = base_transform * cg_trans;
         if let Some(mesh) = root_node.mesh() {
             model_data.mesh_ids.push(mesh.index());
-            model_data.local_transforms.push(new_trans.into());
+            local_transforms.insert(mesh.index(), mat4_from_cgmath(new_trans).into());
         }
         for child_node in root_node.children() {
-            model_data = Self::process_root_node(&child_node, base_transform, model_data)?;
+            model_data =
+                Self::process_root_node(&child_node, base_transform, local_transforms, model_data)?;
         }
 
         Ok(model_data)
@@ -188,6 +197,7 @@ pub trait GltfBuilder {
         bin_source: &BinarySource,
         index_ranges: &Vec<Range<usize>>,
         buffer_offsets: &Vec<usize>,
+        local_transforms: Vec<LocalTransform>,
         model_data_vec: &Vec<ModelDataNew>,
         primitive_data_map: &HashMap<usize, Vec<PrimitiveData>>,
     ) -> Result<GltfLoadResult, ModelBuilderError> {
@@ -265,10 +275,7 @@ pub trait GltfBuilder {
                 }
             }
 
-            mesh_data.push(GltfMeshData {
-                local_transforms: model_data.local_transforms.clone(),
-                meshes,
-            });
+            mesh_data.push(GltfMeshData { meshes });
         }
 
         let mut index_data = Vec::<u16>::new();
@@ -276,6 +283,7 @@ pub trait GltfBuilder {
         Ok(GltfLoadResult {
             pnujw_vertices,
             pnu_vertices,
+            local_transforms,
             indices: index_data,
             mesh_data,
         })
@@ -286,13 +294,14 @@ pub trait GltfBuilder {
         bin_source: &BinarySource,
     ) -> Result<GltfLoadResult, AssetLoadError> {
         let buffer_offsets = Self::get_buffer_offsets(gltf);
-        let model_data_vec = Self::get_model_data(gltf)?;
+        let (model_data_vec, local_transforms) = Self::get_model_data(gltf)?;
         let primitive_data = Self::get_primitive_data_map(gltf, &model_data_vec)?;
         let index_range_vec = Self::get_index_range_vec(&primitive_data, &buffer_offsets)?;
         let load_result = Self::build_all_models(
             bin_source,
             &index_range_vec,
             &buffer_offsets,
+            local_transforms,
             &model_data_vec,
             &primitive_data,
         )?;
@@ -306,11 +315,11 @@ pub struct GltfLoadResult {
     pub pnujw_vertices: Vec<PNUJWVertex>,
     pub pnu_vertices: Vec<PNUVertex>,
     pub indices: Vec<u16>,
+    pub local_transforms: Vec<LocalTransform>,
     pub mesh_data: Vec<GltfMeshData>,
 }
 
 #[derive(Debug)]
 pub struct GltfMeshData {
-    pub local_transforms: Vec<Mat4F32>,
     pub meshes: Vec<Mesh>,
 }

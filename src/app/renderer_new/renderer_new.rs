@@ -16,6 +16,7 @@ use crate::{
 #[derive(Debug)]
 pub enum RenderUpdateError {
     MeshUploadFailed(String),
+    LocalTransformUpdateFailed,
 }
 
 #[derive(Debug)]
@@ -33,6 +34,9 @@ impl Display for RenderUpdateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MeshUploadFailed(desc) => desc.fmt(f),
+            Self::LocalTransformUpdateFailed => {
+                f.write_str("Local Transform data could not be uploaded")
+            }
         }
     }
 }
@@ -226,6 +230,7 @@ struct RenderModelManager {
 }
 
 pub struct RendererNew {
+    allocations: Vec<u32>,
     local_transform_arena: GPUArenaNew<LocalTransform>,
     vertex_arenas: VertexArenaCollection,
     pipelines: PipelineCollection,
@@ -235,6 +240,7 @@ pub struct RendererNew {
 impl RendererNew {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
+            allocations: Vec::new(),
             local_transform_arena: GPUArenaNew::<LocalTransform>::new(device),
             vertex_arenas: VertexArenaCollection::new(device),
             pipelines: PipelineCollection::new(),
@@ -242,9 +248,9 @@ impl RendererNew {
         }
     }
 
-    pub(super) fn get_global_alloc_id(&self) -> u32 {
-        //TODO: manage global alloc ids
-        0
+    pub(super) fn get_global_alloc_id(&mut self) -> u32 {
+        self.allocations.push(self.allocations.len() as u32);
+        (self.allocations.len() - 1) as u32
     }
 
     pub fn update(
@@ -290,6 +296,7 @@ impl RendererNew {
                         label: Some(format!("Render Encoder for {}", pass.label).as_str()),
                     });
             let mut render_pass = pass.create_pass(&mut encoder, &view)?;
+            render_pass.set_bind_group(0, self.local_transform_arena.get_bind_group(), &[]);
             for render_category in &pass.categories {
                 match render_category {
                     RenderCategory::OpaqueStatic => {
