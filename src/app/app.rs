@@ -4,10 +4,8 @@ use crate::{
     app::{
         app_config::AppConfig,
         app_state::AppState,
-        render::{
-            VMValue,
-            renderer::{RenderUpdateDelta, Renderer},
-        },
+        render::renderer::{RenderUpdateDelta, Renderer},
+        renderer_new::VMValue,
     },
     asset_manager::asset_manager::LoadedAsset,
     world::world::{World, WorldUpdateDelta, WorldUpdateError},

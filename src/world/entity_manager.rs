@@ -54,14 +54,6 @@ impl EntityManager {
         return Ok(res);
     }
 
-    //pub fn create_all_entities_from_asset<C: ExtractComponents>(
-    //    &mut self,
-    //    asset_handle: &AssetHandle,
-    //) -> Result<EntityHandle, AssetLoadError> {
-    //    let a = C::extract_from(&mut self.asset_manager, asset_handle)?;
-    //    todo!()
-    //}
-
     pub fn new() -> Self {
         Self {
             available_ids: vec![],

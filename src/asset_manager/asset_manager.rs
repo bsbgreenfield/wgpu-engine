@@ -2,7 +2,7 @@ use crate::{
     app::render::GPUMeshHandle,
     asset_manager::gltf_assets::{
         gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
-        model_builder_new::{GltfBuilder, GltfLoadResult, ModelBuilderError},
+        model_builder_new::{GltfBuilder, GltfLoadResult, GltfMeshData, ModelBuilderError},
     },
     util::types::{IndexType, ModelVertex, PNUJWVertex, PNUVertex},
     world::scene::SceneLoadLevel,
@@ -96,11 +96,13 @@ pub struct LoadedAsset {
 use std::any::TypeId;
 use std::ops::Range;
 impl LoadedAsset {
-    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(&self) -> (Vec<u32>, Vec<Range<u32>>) {
+    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(
+        mesh_data: &[GltfMeshData],
+    ) -> (Vec<u32>, Vec<Range<u32>>) {
         let mut primitive_ranges = Vec::<Range<u32>>::new();
         let mut per_model_primitive_count = Vec::<u32>::new();
         let mut mesh_ids = Vec::<u32>::new();
-        for (idx, mesh_data) in self.gltf_mesh_data.mesh_data.iter().enumerate() {
+        for (idx, mesh_data) in mesh_data.iter().enumerate() {
             per_model_primitive_count.push(0);
             let me = mesh_data.meshes.iter().filter(|m| {
                 m.primitives

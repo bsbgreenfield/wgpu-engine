@@ -15,23 +15,23 @@ pub mod renderer;
 
 mod renderer_vm;
 
-#[derive(Clone, Copy)]
-pub(super) enum Instruction {
-    Op(Operations),
-    Byte(u8),
-    ConstIdx(u8),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Operations {
-    AddEntity,
-    MoveEntity,
-}
-
-pub(super) enum VMValue<'frame> {
-    Transform(Mat4F32),
-    LoadedAsset(&'frame LoadedAsset),
-}
+//#[derive(Clone, Copy)]
+//pub(super) enum Instruction {
+//    Op(Operations),
+//    Byte(u8),
+//    ConstIdx(u8),
+//}
+//
+//#[derive(Clone, Copy, PartialEq, Eq)]
+//pub(super) enum Operations {
+//    AddEntity,
+//    MoveEntity,
+//}
+//
+//pub(super) enum VMValue<'frame> {
+//    Transform(Mat4F32),
+//    LoadedAsset(&'frame LoadedAsset),
+//}
 
 pub(super) struct OpaquePass;
 #[derive(Debug)]

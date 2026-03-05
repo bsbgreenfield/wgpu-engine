@@ -127,17 +127,6 @@ pub(super) struct GPUArenaNew<T: bytemuck::Pod> {
     bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
-pub struct UploadMeshJob<'frame, V: ModelVertex> {
-    pub verts: &'frame [V],
-    pub(super) primitive_ranges: Vec<Range<u32>>,
-    pub(super) global_alloc_id: u32,
-    pub(super) mesh_ids: Vec<u32>,
-}
-
-pub trait MeshUploadable<V: ModelVertex> {
-    fn as_mesh_job(&self, global_alloc_id: u32) -> UploadMeshJob<V>;
-}
-
 impl GPUArenaNew<LocalTransform> {
     pub(super) fn new(device: &wgpu::Device) -> Self {
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

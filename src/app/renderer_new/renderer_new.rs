@@ -1,13 +1,15 @@
-use std::{collections::HashMap, error::Error, fmt::Display, iter::FlatMap, ops::Range, rc::Rc};
+use std::{error::Error, fmt::Display};
 
 use wgpu::RenderPass;
 
 use crate::{
     app::{
         app_config::AppConfig,
-        render::{Instruction, VMValue, renderer::RenderUpdateDelta},
-        renderer_new::vertex_arena::{
-            AllocationHandle, GPUArenaNew, UploadMeshJob, VertexArenaError,
+        renderer_new::{
+            Instruction, VMValue,
+            pipeline::{DrawItem, PipelineCollection},
+            vertex_arena::{GPUArenaNew, VertexArenaError},
+            vm::{RenderUpdateDeltaNew, UploadMeshJob},
         },
     },
     util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
@@ -17,6 +19,19 @@ use crate::{
 pub enum RenderUpdateError {
     MeshUploadFailed(String),
     LocalTransformUpdateFailed,
+}
+
+impl From<VertexArenaError> for RenderUpdateError {
+    fn from(value: VertexArenaError) -> Self {
+        match value {
+            VertexArenaError::DataTooLarge(size) => Self::MeshUploadFailed(format!(
+                "upload failed because data of size {size} was too large"
+            )),
+            VertexArenaError::FreeListError(e) => {
+                Self::MeshUploadFailed(format!("Upload failed due to allocation error {}", e))
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -51,7 +66,7 @@ impl Display for RenderError {
 
 impl Error for RenderUpdateError {}
 
-enum RenderCategory {
+pub(super) enum RenderCategory {
     OpaqueStatic,
     OpaqueSkinned,
 }
@@ -97,52 +112,6 @@ impl EngineRenderPass {
         Self {
             label: label.to_owned(),
             categories,
-        }
-    }
-}
-
-struct DrawMap {
-    map: HashMap<AllocationHandle, Vec<DrawItem>>,
-}
-
-struct DrawItem {
-    /// "local" refers to the allocation
-    local_mesh_id: u32,
-
-    primitive_range: Range<u32>,
-}
-impl DrawItem {
-    #[inline]
-    fn within(&self, range: &Range<u32>) -> Range<u32> {
-        let start = range.start + self.primitive_range.start;
-        start..(start + self.primitive_range.len() as u32)
-    }
-}
-
-struct EnginePipeline {
-    pipeline: wgpu::RenderPipeline,
-    category: RenderCategory,
-    draw_map: HashMap<AllocationHandle, Vec<DrawItem>>,
-}
-
-struct PipelineCollection {
-    opaque_skinned: EnginePipeline,
-    opaque_static: EnginePipeline,
-}
-
-impl PipelineCollection {
-    fn new() -> Self {
-        use RenderCategory::*;
-        Self {
-            opaque_skinned: Self::create_pipeline(OpaqueStatic),
-            opaque_static: Self::create_pipeline(OpaqueSkinned),
-        }
-    }
-
-    fn create_pipeline(cat: RenderCategory) -> EnginePipeline {
-        match cat {
-            RenderCategory::OpaqueStatic => todo!(),
-            RenderCategory::OpaqueSkinned => todo!(),
         }
     }
 }
@@ -258,7 +227,7 @@ impl RendererNew {
         constants: Vec<VMValue>,
         ops: Vec<Instruction>,
         queue: &wgpu::Queue,
-    ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
+    ) -> Result<Vec<RenderUpdateDeltaNew>, RenderUpdateError> {
         self.interpret(constants, ops, queue)
     }
 

@@ -1,15 +1,12 @@
-use std::{any::TypeId, fmt::Display, iter::Peekable, ops::Range, slice::Iter};
+use std::{iter::Peekable, ops::Range, slice::Iter};
 
 use crate::{
-    app::{
-        render::{Instruction, Operations, VMValue, renderer::RenderUpdateDelta},
-        renderer_new::{
-            renderer_new::{RenderUpdateError, RendererNew},
-            vertex_arena::{MeshUploadable, UploadMeshJob},
-        },
+    app::renderer_new::{
+        Instruction, Operations, VMValue,
+        renderer_new::{RenderUpdateError, RendererNew},
     },
-    asset_manager::asset_manager::LoadedAsset,
-    util::types::{ModelVertex, PNUJWVertex, PNUVertex},
+    asset_manager::{asset_manager::LoadedAsset, gltf_assets::model_builder_new::GltfMeshData},
+    util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
 };
 
 pub enum RenderUpdateDeltaNew {
@@ -24,27 +21,35 @@ impl<'frame> VMValue<'frame> {
         }
     }
 }
+
+pub struct UploadMeshJob<'frame, V: ModelVertex> {
+    pub verts: &'frame [V],
+    pub(super) primitive_ranges: Vec<Range<u32>>,
+    pub(super) global_alloc_id: u32,
+    pub(super) mesh_ids: Vec<u32>,
+}
+
+pub trait MeshUploadable<V: ModelVertex> {
+    fn as_mesh_job<'frame>(
+        verts: &'frame [V],
+        mesh_data: &'frame [GltfMeshData],
+        global_alloc_id: u32,
+    ) -> UploadMeshJob<'frame, V>;
+}
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 
-impl MeshUploadable<PNUJWVertex> for LoadedAsset {
-    fn as_mesh_job(&self, global_alloc_id: u32) -> super::vertex_arena::UploadMeshJob<PNUJWVertex> {
-        let (mesh_ids, primitive_ranges) = self.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
+impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
+    fn as_mesh_job<'frame>(
+        verts: &'frame [V],
+        mesh_data: &'frame [GltfMeshData],
+        global_alloc_id: u32,
+    ) -> UploadMeshJob<'frame, V> {
+        let (mesh_ids, primitive_ranges) = Self::mesh_ids_and_prim_ranges_of::<V>(mesh_data);
         UploadMeshJob {
             mesh_ids,
             global_alloc_id,
             primitive_ranges,
-            verts: &self.gltf_mesh_data.pnujw_vertices,
-        }
-    }
-}
-impl MeshUploadable<PNUVertex> for LoadedAsset {
-    fn as_mesh_job(&self, global_alloc_id: u32) -> super::vertex_arena::UploadMeshJob<PNUVertex> {
-        let (mesh_ids, primitive_ranges) = self.mesh_ids_and_prim_ranges_of::<PNUVertex>();
-        UploadMeshJob {
-            mesh_ids,
-            global_alloc_id,
-            primitive_ranges,
-            verts: &self.gltf_mesh_data.pnu_vertices,
+            verts,
         }
     }
 }
@@ -66,36 +71,45 @@ impl<'frame> RendererNew {
         constants: Vec<VMValue>,
         instructions: Vec<Instruction>,
         queue: &wgpu::Queue,
-    ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
-        let mut res: Vec<RenderUpdateDelta> = Vec::new();
+    ) -> Result<Vec<RenderUpdateDeltaNew>, RenderUpdateError> {
+        let mut res: Vec<RenderUpdateDeltaNew> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
 
         while instr_peek.peek().is_some() {
             let instr = instr_peek.next().unwrap();
             match instr {
                 Instruction::Op(op) => match op {
-                    Operations::AddEntity => {
+                    Operations::AddAsset => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
                         let loaded_asset = constants[const_idx as usize].unwrap_loaded_asset();
-                        // TODO: GET GLOBAL ALLOC ID WHICH WILL BE COMMON BETWEEN JOBS
-                        // USE THIS TO INDEX INTO LOCAL TRANSFORM BUFFER PER MESH ID
+
                         let global_allocation_id = self.get_global_alloc_id();
-                        let skinned_job: UploadMeshJob<PNUJWVertex> =
-                            loaded_asset.as_mesh_job(global_allocation_id);
-                        let static_job: UploadMeshJob<PNUJWVertex> =
-                            loaded_asset.as_mesh_job(global_allocation_id);
+                        let skinned_job: UploadMeshJob<'_, PNUJWVertex> = LoadedAsset::as_mesh_job(
+                            &loaded_asset.gltf_mesh_data.pnujw_vertices,
+                            &loaded_asset.gltf_mesh_data.mesh_data,
+                            global_allocation_id,
+                        );
+                        let static_job: UploadMeshJob<'_, PNUVertex> = LoadedAsset::as_mesh_job(
+                            &loaded_asset.gltf_mesh_data.pnu_vertices,
+                            &loaded_asset.gltf_mesh_data.mesh_data,
+                            global_allocation_id,
+                        );
                         self.upload_local_transform_data(
                             &loaded_asset.gltf_mesh_data.local_transforms,
                             global_allocation_id,
                             queue,
-                        )
-                        .map_err(|_| RenderUpdateError::LocalTransformUpdateFailed)?;
-                        let skinned_handle = self
-                            .upload_mesh_data(skinned_job, queue)
-                            .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()))?;
-                        let static_handle = self
-                            .upload_mesh_data(static_job, queue)
-                            .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()));
+                        )?;
+                        self.upload_mesh_data(skinned_job, queue)?;
+                        self.upload_mesh_data(static_job, queue)?;
+                        todo!()
+                    }
+                    Operations::AddEntity => {
+                        // let skinned_handle = self
+                        //     .upload_mesh_data(skinned_job, queue)
+                        //     .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()))?;
+                        // let static_handle = self
+                        //     .upload_mesh_data(static_job, queue)
+                        //     .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()));
                     }
                     Operations::MoveEntity => todo!(),
                 },
