@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Range};
 
-use crate::app::renderer_new::{renderer_new::RenderCategory, vertex_arena::AllocationHandle};
+use super::AllocationHandle;
+use crate::app::renderer_new::renderer_new::RenderCategory;
 
 struct DrawMap {
     map: HashMap<AllocationHandle, Vec<DrawItem>>,

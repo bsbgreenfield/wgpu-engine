@@ -4,12 +4,12 @@ use super::scene::Scene;
 use crate::{
     app::render::renderer::RenderUpdateDelta,
     asset_manager::asset_manager::{
-        AssetHandle, AssetLoadError, AssetManager, GltfAsset, LoadedAsset,
+        AssetHandle, AssetLoadError, AssetLoadResult, AssetManager, GltfAsset, LoadedAsset,
     },
     util::types::Mat4F32,
     world::{
         camera::Camera,
-        components::{MeshCollectionComponent, ResourceBacking},
+        components::{MeshCollectionComponent, MeshCollectionDescriptor, ResourceBacking},
         entity_manager::{EntityHandle, EntityManager, EntityManagerError},
         scene::{SceneEvent, SceneLoadLevel},
     },
@@ -46,6 +46,7 @@ impl From<EntityManagerError> for WorldInitError {
 
 pub enum WorldUpdateDelta {
     EntityDidLoad(EntityHandle),
+    AssetDidLoad(AssetHandle),
 }
 
 pub struct World {
@@ -65,7 +66,11 @@ impl World {
 
         let box_asset = asset_manager.register_asset::<GltfAsset>("box")?;
 
-        let mesh = MeshCollectionComponent::new(ResourceBacking::new(box_asset, 0));
+        let mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
+            resource_backing: box_asset,
+            allocation_handle: None,
+            mesh_ids: &[0],
+        });
 
         let box_entity = entity_manager.new_entity()?;
 
@@ -108,10 +113,29 @@ impl World {
         match event {
             SceneEvent::EntitiesAdded(entities) => {
                 for entity_handle in entities {
+                    let mut entity_done_loading = true;
                     let assets = self.entity_manager.assets_of(entity_handle);
-                    self.asset_manager
-                        .set_minumum_load_level(assets.into_iter().collect(), scene_load_level)?;
-                    deltas.push(WorldUpdateDelta::EntityDidLoad(entity_handle));
+                    for asset_handle in assets {
+                        match self
+                            .asset_manager
+                            .set_minumum_load_level(asset_handle, scene_load_level)?
+                        {
+                            AssetLoadResult::PendingCPU => todo!("handle async cpu load"),
+                            AssetLoadResult::PendingGPU => {
+                                entity_done_loading = false;
+                                deltas.push(WorldUpdateDelta::AssetDidLoad(asset_handle));
+                            }
+                            AssetLoadResult::LoadedCPU => {
+                                // do nothing?
+                            }
+                            AssetLoadResult::LoadedGPU(allocation_handle) => {
+                                //
+                            }
+                        }
+                    }
+                    if entity_done_loading {
+                        deltas.push(WorldUpdateDelta::EntityDidLoad(entity_handle));
+                    }
                 }
             }
         }

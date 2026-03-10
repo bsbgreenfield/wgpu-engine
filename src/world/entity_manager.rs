@@ -34,7 +34,7 @@ impl EntityManager {
         let mut result: Vec<AssetHandle> = vec![];
         if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
         {
-            result.push(mesh_collection_component.resource_backing.asset_handle);
+            result.push(mesh_collection_component.resource_backing);
         }
         return result;
     }

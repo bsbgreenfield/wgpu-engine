@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display};
+use std::{collections::hash_set::Iter, error::Error, fmt::Display};
 
 use wgpu::RenderPass;
 
@@ -6,7 +6,7 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer_new::{
-            Instruction, VMValue,
+            AllocationHandle, Instruction, VMValue,
             pipeline::{DrawItem, PipelineCollection},
             vertex_arena::{GPUArenaNew, VertexArenaError},
             vm::{RenderUpdateDeltaNew, UploadMeshJob},

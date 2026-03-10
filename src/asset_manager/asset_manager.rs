@@ -1,5 +1,7 @@
+use gltf::json::Scene;
+
 use crate::{
-    app::render::GPUMeshHandle,
+    app::{render::GPUMeshHandle, renderer_new::AllocationHandle},
     asset_manager::gltf_assets::{
         gltf_loader::loader::{BinarySource, GltfLoadError, GltfLoader},
         model_builder_new::{GltfBuilder, GltfLoadResult, GltfMeshData, ModelBuilderError},
@@ -38,25 +40,25 @@ impl From<GltfLoadError> for AssetLoadError {
 }
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
-pub enum AssetResidencyLevel {
+pub enum AssetResidency {
     Registered,
     CPU(usize),
-    GPU,
+    GPU(AllocationHandle),
 }
-impl PartialEq<SceneLoadLevel> for AssetResidencyLevel {
+impl PartialEq<SceneLoadLevel> for AssetResidency {
     fn eq(&self, other: &SceneLoadLevel) -> bool {
         match self {
-            AssetResidencyLevel::Registered => {
+            AssetResidency::Registered => {
                 if *other == SceneLoadLevel::NotLoaded {
                     return true;
                 }
             }
-            AssetResidencyLevel::CPU(_) => {
+            AssetResidency::CPU(_) => {
                 if *other == SceneLoadLevel::CPU {
                     return true;
                 }
             }
-            AssetResidencyLevel::GPU => {
+            AssetResidency::GPU(_) => {
                 if *other == SceneLoadLevel::GPU {
                     return true;
                 }
@@ -66,20 +68,20 @@ impl PartialEq<SceneLoadLevel> for AssetResidencyLevel {
     }
 }
 
-impl PartialOrd<SceneLoadLevel> for AssetResidencyLevel {
+impl PartialOrd<SceneLoadLevel> for AssetResidency {
     fn partial_cmp(&self, other: &SceneLoadLevel) -> Option<std::cmp::Ordering> {
         use std::cmp::Ordering;
         match self {
-            AssetResidencyLevel::Registered => match other {
+            AssetResidency::Registered => match other {
                 SceneLoadLevel::NotLoaded => return Some(Ordering::Equal),
                 SceneLoadLevel::CPU | SceneLoadLevel::GPU => return Some(Ordering::Less),
             },
-            AssetResidencyLevel::CPU(_) => match other {
+            AssetResidency::CPU(_) => match other {
                 SceneLoadLevel::NotLoaded => return Some(Ordering::Greater),
                 SceneLoadLevel::CPU => return Some(Ordering::Equal),
                 SceneLoadLevel::GPU => return Some(Ordering::Less),
             },
-            AssetResidencyLevel::GPU => match other {
+            AssetResidency::GPU(_) => match other {
                 SceneLoadLevel::NotLoaded | SceneLoadLevel::CPU => return Some(Ordering::Greater),
                 SceneLoadLevel::GPU => return Some(Ordering::Equal),
             },
@@ -169,6 +171,13 @@ impl<I: IndexType> CPUIndexData<I> {
     }
 }
 
+pub enum AssetLoadResult {
+    LoadedCPU,
+    LoadedGPU(AllocationHandle),
+    PendingGPU,
+    PendingCPU,
+}
+
 pub struct AssetManager {
     registered_handles: Vec<AssetHandle>,
     pnujw_vertex_data: CPUVertexData<PNUJWVertex>,
@@ -176,7 +185,7 @@ pub struct AssetManager {
     u16_index_data: CPUIndexData<u16>,
     registered_assets: HashMap<AssetHandle, Box<dyn AssetNew>>,
     loaded_assets: Vec<LoadedAsset>,
-    load_levels: HashMap<AssetHandle, AssetResidencyLevel>,
+    load_levels: HashMap<AssetHandle, AssetResidency>,
 }
 
 impl AssetManager {
@@ -196,10 +205,7 @@ impl AssetManager {
             id: self.registered_handles.len() as u32,
         }
     }
-    fn res_level_of(
-        &self,
-        asset_handle: &AssetHandle,
-    ) -> Result<AssetResidencyLevel, AssetLoadError> {
+    fn res_level_of(&self, asset_handle: &AssetHandle) -> Result<AssetResidency, AssetLoadError> {
         Ok(self
             .registered_assets
             .get(asset_handle)
@@ -207,29 +213,50 @@ impl AssetManager {
             .get_residency_level())
     }
 
+    fn load_cpu(&mut self, asset: AssetHandle) -> Result<usize, AssetLoadError> {
+        let mut registered_asset = self.registered_assets.remove(&asset).unwrap();
+        let loaded_asset: LoadedAsset = registered_asset.load_asset(asset)?;
+        let la_index = self.loaded_assets.len().clone();
+        self.loaded_assets.push(loaded_asset);
+        registered_asset.set_residency_level(AssetResidency::CPU(la_index));
+        self.registered_assets.insert(asset, registered_asset);
+        Ok(la_index)
+    }
+
     pub fn set_minumum_load_level(
         &mut self,
-        assets: Vec<AssetHandle>,
+        asset: AssetHandle,
         load_level: SceneLoadLevel,
-    ) -> Result<SceneLoadLevel, AssetLoadError> {
-        let mut loaded_asset_indices = Vec::<usize>::new();
-        let mut res = load_level;
-        for asset in assets {
-            if load_level > SceneLoadLevel::NotLoaded {
-                // load asset to CPU if it is not already loaded
-                if self.res_level_of(&asset)? < SceneLoadLevel::CPU {
-                    let mut registered_asset = self.registered_assets.remove(&asset).unwrap();
-                    let loaded_asset: LoadedAsset = registered_asset.load_asset(asset)?;
-                    let la_index = self.loaded_assets.len().clone();
-                    self.loaded_assets.push(loaded_asset);
-                    registered_asset.set_residency_level(AssetResidencyLevel::CPU(la_index));
-                    loaded_asset_indices.push(la_index);
-                    self.registered_assets.insert(asset, registered_asset);
-                    res = SceneLoadLevel::CPU;
-                }
+    ) -> Result<AssetLoadResult, AssetLoadError> {
+        let asset_res_level: AssetResidency = self.res_level_of(&asset)?;
+        match load_level {
+            SceneLoadLevel::NotLoaded => {
+                todo!("unload assets")
             }
+            SceneLoadLevel::CPU => match asset_res_level {
+                AssetResidency::Registered => {
+                    self.load_cpu(asset)?;
+                    // TODO: start async operation and return PendingCPU
+                    return Ok(AssetLoadResult::LoadedCPU);
+                }
+                AssetResidency::CPU(la_id) => {
+                    return Ok(AssetLoadResult::LoadedCPU);
+                }
+                AssetResidency::GPU(_) => todo!("unload gpu?"),
+            },
+            SceneLoadLevel::GPU => match asset_res_level {
+                AssetResidency::Registered => {
+                    // TODO: return PendingCPU once async
+                    return Ok(AssetLoadResult::PendingGPU);
+                }
+                AssetResidency::CPU(loaded_asset_id) => {
+                    return Ok(AssetLoadResult::PendingGPU);
+                }
+                AssetResidency::GPU(allocation_handle) => {
+                    return Ok(AssetLoadResult::LoadedGPU(allocation_handle));
+                }
+            },
         }
-        Ok(res)
     }
 
     pub fn register_asset_gpu_residency(
@@ -239,7 +266,7 @@ impl AssetManager {
         self.registered_assets
             .get_mut(&gpu_mesh_handle.handle)
             .ok_or(AssetLoadError::AssetNotFound)?
-            .set_residency_level(AssetResidencyLevel::GPU);
+            .set_residency_level(AssetResidency::GPU);
 
         Ok(())
     }
@@ -250,7 +277,7 @@ impl AssetManager {
             let a = self.registered_assets.get(&handle).unwrap();
             let res_level = a.get_residency_level();
             match res_level {
-                AssetResidencyLevel::CPU(la_index) => {
+                AssetResidency::CPU(la_index) => {
                     loaded_asset_refs.push(&self.loaded_assets[la_index]);
                 }
                 _ => {}
@@ -274,23 +301,23 @@ pub trait AssetNew {
     fn new(dir_name: &str) -> Result<Self, AssetLoadError>
     where
         Self: Sized;
-    fn get_residency_level(&self) -> AssetResidencyLevel;
-    fn set_residency_level(&mut self, level: AssetResidencyLevel);
+    fn get_residency_level(&self) -> AssetResidency;
+    fn set_residency_level(&mut self, level: AssetResidency);
     fn load_asset(&self, handle: AssetHandle) -> Result<LoadedAsset, AssetLoadError>;
 }
 
 pub struct GltfAsset {
     gltf: gltf::Gltf,
     bin: BinarySource,
-    res_level: AssetResidencyLevel,
+    res_level: AssetResidency,
 }
 impl GltfBuilder for GltfAsset {}
 
 impl AssetNew for GltfAsset {
-    fn get_residency_level(&self) -> AssetResidencyLevel {
+    fn get_residency_level(&self) -> AssetResidency {
         self.res_level
     }
-    fn set_residency_level(&mut self, level: AssetResidencyLevel) {
+    fn set_residency_level(&mut self, level: AssetResidency) {
         self.res_level = level;
     }
     fn new(dir_name: &str) -> Result<Self, AssetLoadError>
@@ -301,7 +328,7 @@ impl AssetNew for GltfAsset {
         Ok(Self {
             gltf,
             bin,
-            res_level: AssetResidencyLevel::Registered,
+            res_level: AssetResidency::Registered,
         })
     }
     fn load_asset(&self, handle: AssetHandle) -> Result<LoadedAsset, AssetLoadError> {

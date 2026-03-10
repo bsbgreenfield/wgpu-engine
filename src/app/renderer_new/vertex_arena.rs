@@ -2,10 +2,9 @@ use std::{any::TypeId, collections::HashMap, fmt::Display, marker::PhantomData, 
 
 use crate::{
     app::renderer_new::{
-        CHUNK_SIZE,
+        AllocationHandle, CHUNK_SIZE,
         free_list::{FreeListAllocError, FreeListAllocator},
     },
-    asset_manager::gltf_assets::model_builder_new::GltfMeshData,
     util::types::{LocalTransform, ModelVertex},
 };
 
@@ -41,12 +40,6 @@ struct GPUChunk<T: bytemuck::Pod> {
     bind_group: Option<wgpu::BindGroup>,
     allocator: FreeListAllocator,
     _t: PhantomData<T>,
-}
-
-#[derive(Hash, PartialEq, Eq)]
-pub(super) struct AllocationHandle {
-    pub(super) global_alloc_id: u32,
-    pipeline_alloc_id: u32,
 }
 
 impl GPUChunk<LocalTransform> {

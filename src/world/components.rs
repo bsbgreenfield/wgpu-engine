@@ -1,9 +1,9 @@
-use crate::asset_manager::asset_manager::AssetHandle;
+use crate::{app::renderer_new::AllocationHandle, asset_manager::asset_manager::AssetHandle};
 
 #[derive(Debug)]
 pub struct ResourceBacking {
     pub asset_handle: AssetHandle,
-    resource_index: u8,
+    pub resource_index: u8,
 }
 
 impl ResourceBacking {
@@ -17,13 +17,23 @@ impl ResourceBacking {
 
 #[derive(Debug)]
 pub struct MeshCollectionComponent {
-    pub resource_backing: ResourceBacking,
+    pub resource_backing: AssetHandle,
+    pub allocation_handle: Option<AllocationHandle>,
+    mesh_ids: Vec<u32>,
+}
+
+pub struct MeshCollectionDescriptor<'a> {
+    pub resource_backing: AssetHandle,
+    pub allocation_handle: Option<AllocationHandle>,
+    pub mesh_ids: &'a [u32],
 }
 
 impl MeshCollectionComponent {
-    pub fn new(resource: ResourceBacking) -> Self {
+    pub fn new(descriptor: MeshCollectionDescriptor) -> Self {
         Self {
-            resource_backing: resource,
+            resource_backing: descriptor.resource_backing,
+            allocation_handle: descriptor.allocation_handle,
+            mesh_ids: descriptor.mesh_ids.to_vec(),
         }
     }
 }
