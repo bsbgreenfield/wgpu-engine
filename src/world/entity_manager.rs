@@ -6,9 +6,10 @@ use std::{
 };
 
 use crate::{
+    app::renderer_new::AllocationHandle,
     asset_manager::{
         self,
-        asset_manager::{AssetHandle, AssetLoadError, AssetManager},
+        asset_manager::{AssetHandle, AssetLoadError, AssetLoadResult, AssetManager},
     },
     world::components::MeshCollectionComponent,
 };
@@ -30,11 +31,25 @@ pub struct EntityManager {
 }
 
 impl EntityManager {
-    pub fn assets_of(&self, entity_handle: EntityHandle) -> Vec<AssetHandle> {
-        let mut result: Vec<AssetHandle> = vec![];
-        if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
+    pub(super) fn saturate_rbcs(
+        &mut self,
+        entity: EntityHandle,
+        allocation_handles: HashMap<AssetHandle, AllocationHandle>,
+    ) {
+        if let Some(mcc) = self.mesh_collections.get_mut(entity.0 as usize)
+            && let Some(alloc_handle) = allocation_handles.get(&mcc.resource_backing)
         {
-            result.push(mesh_collection_component.resource_backing);
+            mcc.allocation_handle.insert(*alloc_handle);
+        }
+        // TODO: saturate other rbcs
+    }
+
+    pub fn unallocated_assets_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
+        let mut result = HashSet::<AssetHandle>::new();
+        if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
+            && mesh_collection_component.allocation_handle.is_none()
+        {
+            result.insert(mesh_collection_component.resource_backing);
         }
         return result;
     }
@@ -114,6 +129,15 @@ impl<T, const N: usize> SparseSet<T, N> {
     fn get(&self, id: usize) -> Option<&T> {
         if self.contains(id) {
             unsafe { return Some(self.dense[self.sparse[id]].assume_init_ref()) }
+        }
+        None
+    }
+
+    fn get_mut(&mut self, id: usize) -> Option<&mut T> {
+        if self.contains(id) {
+            unsafe {
+                return Some(self.dense[self.sparse[id]].assume_init_mut());
+            }
         }
         None
     }

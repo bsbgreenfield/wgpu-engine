@@ -5,7 +5,7 @@ use crate::{
         app_config::AppConfig,
         app_state::AppState,
         render::renderer::{RenderUpdateDelta, Renderer},
-        renderer_new::VMValue,
+        renderer_new::{Instruction, Operations, VMValue},
     },
     asset_manager::asset_manager::LoadedAsset,
     world::world::{World, WorldUpdateDelta, WorldUpdateError},
@@ -56,21 +56,21 @@ impl App<'_> {
     fn run_frame<'frame>(&'frame mut self) -> Result<(), FrameError> {
         let deltas = self.update_world()?;
         let mut constants = Vec::<VMValue<'frame>>::new();
+        let mut instructions = Vec::<Instruction>::new();
         for delta in deltas.iter() {
             match delta {
-                WorldUpdateDelta::EntityDidLoad(entity_handle) => {
-                    // las is actually borrowed for less than the duration of this function call,
-                    // as it is dropped before world.post_frame_update()
-                    let las: Vec<&LoadedAsset> = self
+                WorldUpdateDelta::AssetDidLoad(asset_handle) => {
+                    // if the asset is either just registered or already gpu resident
+                    let la = self
                         .world
-                        .as_ref()
                         .unwrap()
-                        .get_loaded_assets_for(*entity_handle);
-
-                    for la in las {
-                        constants.push(VMValue::LoadedAsset(la));
-                    }
+                        .get_loaded_asset_of(asset_handle)
+                        .expect("loaded asset should be exactly CPU resident!");
+                    constants.push(VMValue::LoadedAsset(la));
+                    instructions.push(Instruction::Op(Operations::AddAsset));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                 }
+                WorldUpdateDelta::EntityDidLoad(entity_handle) => todo!(),
             }
         }
         let render_deltas = self.renderer.as_mut().unwrap().update(

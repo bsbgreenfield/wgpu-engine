@@ -286,6 +286,18 @@ impl AssetManager {
         loaded_asset_refs
     }
 
+    pub fn get_loaded_asset(&self, handle: &AssetHandle) -> Option<&LoadedAsset> {
+        let res_level = self
+            .registered_assets
+            .get(handle)
+            .unwrap()
+            .get_residency_level();
+        match res_level {
+            AssetResidency::CPU(la_index) => return Some(&self.loaded_assets[la_index]),
+            _ => None,
+        }
+    }
+
     pub fn register_asset<A>(&mut self, source: &str) -> Result<AssetHandle, AssetLoadError>
     where
         A: AssetNew + 'static,

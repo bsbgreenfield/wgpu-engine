@@ -66,4 +66,18 @@ With this method, we wont actually know the offsets until the gpu upload is actu
 so there isnt any point to managing offset data within the cpu. All we need to add an asset is a Vec<Vertex> and Vec<Index>
 
 
+## Event queues
+### Timeline of loading an asset into the world
 
+1. set scene load level gpu - set scene dirty
+2. world update: see that the scene is dirty, loop through scene events, process "load entities" command
+3. for each entity
+    - get all assets associated with the entity
+    - call asset manager.set_minumum_load_level()
+4. for each asset
+    - asset manager will immediately return the asset load state  
+        - pending CPU
+        - CPU
+        - pending GPU
+        - GPU
+    - if PendingCPU is returned, add 
