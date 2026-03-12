@@ -85,7 +85,7 @@ impl EntityManager {
             .insert(entity.0 as usize, mesh_collection);
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntityHandle(u32);
 pub struct Entity {
     handle: EntityHandle,

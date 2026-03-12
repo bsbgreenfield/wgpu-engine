@@ -6,10 +6,10 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer_new::{
-            AllocationHandle, Instruction, VMValue,
+            Instruction, RenderUpdateDeltaNew, VMValue,
             pipeline::{DrawItem, PipelineCollection},
             vertex_arena::{GPUArenaNew, VertexArenaError},
-            vm::{RenderUpdateDeltaNew, UploadMeshJob},
+            vm::UploadMeshJob,
         },
     },
     util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},

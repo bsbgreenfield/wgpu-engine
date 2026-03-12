@@ -1,15 +1,28 @@
-use crate::{asset_manager::asset_manager::LoadedAsset, util::types::Mat4F32};
+use crate::{
+    asset_manager::asset_manager::{AssetHandle, LoadedAsset},
+    util::types::Mat4F32,
+};
 
 mod free_list;
 mod pipeline;
-mod renderer_new;
+pub mod renderer_new;
 mod vertex_arena;
 mod vm;
 
 static CHUNK_SIZE: u32 = 1024 * 4;
 
+pub enum RenderUpdateDeltaNew {
+    AssetGPULoaded(GPUAllocationHandle),
+}
+
+#[derive(Clone)]
+pub struct GPUAllocationHandle {
+    global_allocation_id: u32,
+    pub asset_handle: AssetHandle,
+}
+
 #[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]
-pub struct AllocationHandle {
+struct PipelineAllocationHandle {
     pub(super) global_alloc_id: u32,
     pipeline_alloc_id: u32,
 }

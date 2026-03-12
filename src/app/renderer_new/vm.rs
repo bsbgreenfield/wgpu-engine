@@ -2,16 +2,13 @@ use std::{iter::Peekable, ops::Range, slice::Iter};
 
 use crate::{
     app::renderer_new::{
-        Instruction, Operations, VMValue,
+        GPUAllocationHandle, Instruction, Operations, PipelineAllocationHandle,
+        RenderUpdateDeltaNew, VMValue,
         renderer_new::{RenderUpdateError, RendererNew},
     },
     asset_manager::{asset_manager::LoadedAsset, gltf_assets::model_builder_new::GltfMeshData},
     util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
 };
-
-pub enum RenderUpdateDeltaNew {
-    AssetGPULoaded,
-}
 
 impl<'frame> VMValue<'frame> {
     fn unwrap_loaded_asset(&self) -> &'frame LoadedAsset {
@@ -99,9 +96,15 @@ impl<'frame> RendererNew {
                             global_allocation_id,
                             queue,
                         )?;
-                        self.upload_mesh_data(skinned_job, queue)?;
-                        self.upload_mesh_data(static_job, queue)?;
-                        todo!()
+
+                        // TODO: map global alloc id to pipeline alloc handle
+                        let _ = self.upload_mesh_data(skinned_job, queue)?;
+                        let _ = self.upload_mesh_data(static_job, queue)?;
+
+                        res.push(RenderUpdateDeltaNew::AssetGPULoaded(GPUAllocationHandle {
+                            asset_handle: loaded_asset.handle,
+                            global_allocation_id,
+                        }));
                     }
                     Operations::AddEntity => {
                         // let skinned_handle = self

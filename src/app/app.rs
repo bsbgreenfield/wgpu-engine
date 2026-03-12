@@ -4,10 +4,8 @@ use crate::{
     app::{
         app_config::AppConfig,
         app_state::AppState,
-        render::renderer::{RenderUpdateDelta, Renderer},
-        renderer_new::{Instruction, Operations, VMValue},
+        renderer_new::{Instruction, Operations, VMValue, renderer_new::RendererNew},
     },
-    asset_manager::asset_manager::LoadedAsset,
     world::world::{World, WorldUpdateDelta, WorldUpdateError},
 };
 use winit::{
@@ -23,7 +21,7 @@ pub struct App<'a> {
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
     pub world: Option<World>,
-    pub renderer: Option<Renderer<'a>>,
+    pub renderer: Option<RendererNew>,
     pub app_state: AppState,
     surface_ready: bool,
 }
@@ -117,7 +115,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let world =
                 World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
             self.world = Some(world);
-            self.renderer = Some(Renderer::new(self.app_config.as_ref().unwrap()))
+            self.renderer = Some(RendererNew::new(&self.app_config.as_ref().unwrap().device))
         }
     }
 
