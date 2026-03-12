@@ -6,11 +6,7 @@ use std::{
 };
 
 use crate::{
-    app::renderer_new::AllocationHandle,
-    asset_manager::{
-        self,
-        asset_manager::{AssetHandle, AssetLoadError, AssetLoadResult, AssetManager},
-    },
+    app::renderer_new::GPUAllocationHandle, asset_manager::asset_manager::AssetHandle,
     world::components::MeshCollectionComponent,
 };
 
@@ -34,12 +30,12 @@ impl EntityManager {
     pub(super) fn saturate_rbcs(
         &mut self,
         entity: EntityHandle,
-        allocation_handles: HashMap<AssetHandle, AllocationHandle>,
+        allocation_handles: HashMap<AssetHandle, GPUAllocationHandle>,
     ) {
         if let Some(mcc) = self.mesh_collections.get_mut(entity.0 as usize)
             && let Some(alloc_handle) = allocation_handles.get(&mcc.resource_backing)
         {
-            mcc.allocation_handle.insert(*alloc_handle);
+            mcc.allocation_handle.insert(alloc_handle);
         }
         // TODO: saturate other rbcs
     }

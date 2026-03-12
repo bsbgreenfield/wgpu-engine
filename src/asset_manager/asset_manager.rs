@@ -104,12 +104,17 @@ impl LoadedAsset {
         let mut mesh_ids = Vec::<u32>::new();
         for (idx, mesh_data) in mesh_data.iter().enumerate() {
             per_model_primitive_count.push(0);
-            let me = mesh_data.meshes.iter().filter(|m| {
+
+            // find all meshes which contain primitives of the correct type
+            let filtered_meshes = mesh_data.meshes.iter().filter(|m| {
                 m.primitives
                     .iter()
                     .any(|p| p.vertex_type == TypeId::of::<V>())
             });
-            for filtered_mesh in me {
+
+            // for each primitive in the mesh of the correct type, add a primitive range and a
+            // corresponding mesh id. This id is "local" to the specific asset from whence it came
+            for filtered_mesh in filtered_meshes {
                 for candidate_primitive in filtered_mesh.primitives.iter() {
                     if candidate_primitive.vertex_type == TypeId::of::<V>() {
                         mesh_ids.push(filtered_mesh.id);
@@ -178,9 +183,6 @@ pub enum AssetLoadResult {
 
 pub struct AssetManager {
     registered_handles: Vec<AssetHandle>,
-    pnujw_vertex_data: CPUVertexData<PNUJWVertex>,
-    pnu_vertex_data: CPUVertexData<PNUVertex>,
-    u16_index_data: CPUIndexData<u16>,
     registered_assets: HashMap<AssetHandle, Box<dyn AssetNew>>,
     loaded_assets: Vec<LoadedAsset>,
     load_levels: HashMap<AssetHandle, AssetResidency>,
@@ -190,9 +192,6 @@ impl AssetManager {
     pub fn new() -> Self {
         Self {
             registered_handles: Vec::new(),
-            pnujw_vertex_data: CPUVertexData::<PNUJWVertex>::new(),
-            pnu_vertex_data: CPUVertexData::<PNUVertex>::new(),
-            u16_index_data: CPUIndexData::<u16>::new(),
             loaded_assets: Vec::new(),
             registered_assets: HashMap::new(),
             load_levels: HashMap::new(),

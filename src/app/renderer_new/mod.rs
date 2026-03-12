@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{
     asset_manager::asset_manager::{AssetHandle, LoadedAsset},
     util::types::Mat4F32,
@@ -15,16 +17,17 @@ pub enum RenderUpdateDeltaNew {
     AssetGPULoaded(GPUAllocationHandle),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct GPUAllocationHandle {
     global_allocation_id: u32,
     pub asset_handle: AssetHandle,
 }
 
 #[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]
-struct PipelineAllocationHandle {
+struct AllocationHandle<T> {
     pub(super) global_alloc_id: u32,
     pipeline_alloc_id: u32,
+    _t: PhantomData<T>,
 }
 
 #[derive(Clone, Copy)]

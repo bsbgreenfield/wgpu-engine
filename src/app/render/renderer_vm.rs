@@ -1,9 +1,6 @@
 use std::{iter::Peekable, slice::Iter};
 
-use crate::app::render::{
-    Instruction, Operations, VMValue,
-    renderer::{RenderUpdateDelta, Renderer},
-};
+use crate::app::render::renderer::{RenderUpdateDelta, Renderer};
 
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 impl<'frame> Renderer<'frame> {

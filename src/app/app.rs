@@ -4,7 +4,10 @@ use crate::{
     app::{
         app_config::AppConfig,
         app_state::AppState,
-        renderer_new::{Instruction, Operations, VMValue, renderer_new::RendererNew},
+        renderer_new::{
+            Instruction, Operations, VMValue,
+            renderer_new::{RenderUpdateError, RendererNew},
+        },
     },
     world::world::{World, WorldUpdateDelta, WorldUpdateError},
 };
@@ -30,12 +33,18 @@ pub struct App<'a> {
 enum FrameError {
     UpdateError(WorldUpdateError),
     SurfaceError(wgpu::SurfaceError),
-    RenderError,
+    RenderError(RenderUpdateError),
 }
 
 impl From<WorldUpdateError> for FrameError {
     fn from(value: WorldUpdateError) -> Self {
         FrameError::UpdateError(value)
+    }
+}
+
+impl From<RenderUpdateError> for FrameError {
+    fn from(value: RenderUpdateError) -> Self {
+        FrameError::RenderError(value)
     }
 }
 
@@ -58,12 +67,17 @@ impl App<'_> {
         for delta in deltas.iter() {
             match delta {
                 WorldUpdateDelta::AssetDidLoad(asset_handle) => {
-                    // if the asset is either just registered or already gpu resident
+                    // it makes no sense to emit an "AssetDidLoad" event if either
+                    // 1. the asset didn't load to the CPU
+                    // 2. the asset is alread GPU resident.
+                    // So this is a panic
                     let la = self
                         .world
+                        .as_ref()
                         .unwrap()
                         .get_loaded_asset_of(asset_handle)
                         .expect("loaded asset should be exactly CPU resident!");
+                    // generate bytecode for renderer VM to load an asset
                     constants.push(VMValue::LoadedAsset(la));
                     instructions.push(Instruction::Op(Operations::AddAsset));
                     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
@@ -75,7 +89,7 @@ impl App<'_> {
             constants,
             vec![],
             &self.app_config.as_ref().unwrap().queue,
-        );
+        )?;
 
         self.world
             .as_mut()

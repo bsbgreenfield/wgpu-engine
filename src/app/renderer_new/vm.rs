@@ -2,9 +2,9 @@ use std::{iter::Peekable, ops::Range, slice::Iter};
 
 use crate::{
     app::renderer_new::{
-        GPUAllocationHandle, Instruction, Operations, PipelineAllocationHandle,
-        RenderUpdateDeltaNew, VMValue,
-        renderer_new::{RenderUpdateError, RendererNew},
+        AllocationHandle, GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew,
+        VMValue,
+        renderer_new::{RenderCategory, RenderUpdateError, RendererNew},
     },
     asset_manager::{asset_manager::LoadedAsset, gltf_assets::model_builder_new::GltfMeshData},
     util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
@@ -107,12 +107,7 @@ impl<'frame> RendererNew {
                         }));
                     }
                     Operations::AddEntity => {
-                        // let skinned_handle = self
-                        //     .upload_mesh_data(skinned_job, queue)
-                        //     .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()))?;
-                        // let static_handle = self
-                        //     .upload_mesh_data(static_job, queue)
-                        //     .map_err(|e| RenderUpdateError::MeshUploadFailed(e.to_string()));
+                        let global_alloc_id = 0;
                     }
                     Operations::MoveEntity => todo!(),
                 },
@@ -123,4 +118,12 @@ impl<'frame> RendererNew {
 
         Ok(res)
     }
+}
+
+struct RenderGroup {}
+
+struct RenderView {
+    global_alloc_id: u32,
+    category: RenderCategory,
+    draw_ranges: Vec<Range<usize>>,
 }

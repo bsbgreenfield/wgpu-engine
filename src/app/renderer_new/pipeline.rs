@@ -1,10 +1,13 @@
 use std::{collections::HashMap, ops::Range};
 
-use super::AllocationHandle;
-use crate::app::renderer_new::renderer_new::RenderCategory;
+use super::GPUAllocationHandle;
+use crate::app::renderer_new::{
+    AllocationHandle,
+    renderer_new::{RenderCategory, RenderGroup},
+};
 
 struct DrawMap {
-    map: HashMap<AllocationHandle, Vec<DrawItem>>,
+    map: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
 }
 
 pub(super) struct DrawItem {
@@ -23,8 +26,11 @@ impl DrawItem {
 struct EnginePipeline {
     pub(super) pipeline: wgpu::RenderPipeline,
     category: RenderCategory,
+    pub render_groups: Vec<RenderGroup>,
     pub(super) draw_map: HashMap<AllocationHandle, Vec<DrawItem>>,
 }
+
+impl EnginePipeline {}
 
 pub(super) struct PipelineCollection {
     pub(super) opaque_skinned: EnginePipeline,

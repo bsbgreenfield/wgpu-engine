@@ -1,4 +1,4 @@
-use crate::{app::renderer_new::AllocationHandle, asset_manager::asset_manager::AssetHandle};
+use crate::{app::renderer_new::GPUAllocationHandle, asset_manager::asset_manager::AssetHandle};
 
 #[derive(Debug)]
 pub struct ResourceBacking {
@@ -18,13 +18,13 @@ impl ResourceBacking {
 #[derive(Debug)]
 pub struct MeshCollectionComponent {
     pub resource_backing: AssetHandle,
-    pub allocation_handle: Option<AllocationHandle>,
+    pub allocation_handle: Option<GPUAllocationHandle>,
     mesh_ids: Vec<u32>,
 }
 
 pub struct MeshCollectionDescriptor<'a> {
     pub resource_backing: AssetHandle,
-    pub allocation_handle: Option<AllocationHandle>,
+    pub allocation_handle: Option<GPUAllocationHandle>,
     pub mesh_ids: &'a [u32],
 }
 

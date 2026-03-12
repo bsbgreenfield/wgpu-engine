@@ -1,4 +1,4 @@
-use std::{collections::hash_set::Iter, error::Error, fmt::Display};
+use std::{collections::hash_set::Iter, error::Error, fmt::Display, ops::Range};
 
 use wgpu::RenderPass;
 
@@ -6,7 +6,7 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer_new::{
-            Instruction, RenderUpdateDeltaNew, VMValue,
+            AllocationHandle, Instruction, RenderUpdateDeltaNew, VMValue,
             pipeline::{DrawItem, PipelineCollection},
             vertex_arena::{GPUArenaNew, VertexArenaError},
             vm::UploadMeshJob,
@@ -144,7 +144,7 @@ impl VertexArenaSelector<PNUJWVertex> for RendererNew {
         mesh_job: UploadMeshJob<PNUJWVertex>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        let handle = self.vertex_arenas.skinned_arena.upload_mesh(
+        let handle: AllocationHandle = self.vertex_arenas.skinned_arena.upload_mesh(
             mesh_job.verts,
             mesh_job.global_alloc_id,
             queue,
@@ -269,18 +269,36 @@ impl RendererNew {
             for render_category in &pass.categories {
                 match render_category {
                     RenderCategory::OpaqueStatic => {
-                        let ref pipeline = self.pipelines.opaque_static;
+                        let pipeline = &self.pipelines.opaque_static;
                         render_pass.set_pipeline(&pipeline.pipeline);
+                        for render_group in pipeline.render_groups.iter() {
+                            let draws = pipeline
+                                .draw_map
+                                .get(&render_group.global_alloc_id)
+                                .unwrap();
+                            let (alloc_range, vertex_buf) = self
+                                .vertex_arenas
+                                .static_arena
+                                .resolve(render_group.global_alloc_id);
+                            for view in render_group.views.iter() {
+                                for range in view.draws {
+                                    for draw_id in range {
+                                        let draw = draws[draw_id];
+                                    }
+                                }
+                            }
+                        }
+
                         // iterate over per asset allocations for this pipeline
                         for (allocation_handle, draws) in pipeline.draw_map.iter() {
                             let (alloc_range, vertex_buf) =
                                 self.vertex_arenas.static_arena.resolve(allocation_handle);
                             render_pass.set_vertex_buffer(0, vertex_buf.slice(..));
                             for draw in draws {
-                                let lt_index = self.local_transform_arena.resolve_lt_index(
-                                    draw.local_mesh_id,
-                                    allocation_handle.global_alloc_id,
-                                );
+                                let lt_index = self
+                                    .local_transform_arena
+                                    .resolve_lt_index(draw.local_mesh_id, *allocation_handle);
+                                render_pass.set_immediates(0, bytemuck::cast_slice(&[lt_index]));
                                 render_pass.draw(draw.within(&alloc_range), 0..1);
                             }
                         }
@@ -293,4 +311,13 @@ impl RendererNew {
         }
         Ok(())
     }
+}
+
+pub struct RenderGroup {
+    category: RenderCategory,
+    global_alloc_id: u32,
+    views: Vec<RenderView>,
+}
+struct RenderView {
+    draws: Vec<Range<usize>>,
 }

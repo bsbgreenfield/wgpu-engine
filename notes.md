@@ -73,11 +73,85 @@ so there isnt any point to managing offset data within the cpu. All we need to a
 2. world update: see that the scene is dirty, loop through scene events, process "load entities" command
 3. for each entity
     - get all assets associated with the entity
-    - call asset manager.set_minumum_load_level()
+    - call asset manager.set_minumum_load_level() on each asset
 4. for each asset
     - asset manager will immediately return the asset load state  
         - pending CPU
         - CPU
         - pending GPU
         - GPU
-    - if PendingCPU is returned, add 
+    - if PendingCPU is returned, add delta "AssetDidLoad"
+    - generate bytecode instructions to load the asset to the GPU
+5. In the GPU, generate a global allocation ID. Generally speaking, we want one global alloc id per Asset, until some sort of asset
+composition is implemented
+6. using the loaded asset ref, split up the data into discrete things that need to be uploaded
+    - these "mesh jobs" are unique per pipeline, and they contain
+    local mesh ids, as well as primitive ranges which correspond to the 
+
+7. emit a render delta event "AssetGPULoaded" that contains the GPUAllocationHandle for the asset
+    - register this asset as gpu resident in the asset manager
+8. next frame, loop through the entities that were queued to be loaded
+    - The queue will observe that the GPU resident asset is "done"
+    - once all assets are done, emit an world update delta event "EntityDidLoad"
+    - encode commands for renderer to generate draw calls for the entity
+
+
+In order to find the correct set of draw calls that correspond to a mesh collection
+- for each pipeline, use the global allocation id to get the set of all draw calls for the mesh collection
+- then, for each draw call in the set, select only the draw calls that have a mesh id which matches
+one of the mesh ids in the mesh collection
+
+The data containing the indexes of the draw calls to use should be collected in a structure "RenderView"
+The renderviews must be organized by pipeline/render category, so they can put into a "RenderGroup"
+
+render groups will map allocation id to Vec<RenderView>
+
+when rendering, for each pipeline 
+- locate the correct render group for the current set pipeline (1) 
+- for each global alloc id in the group (2)
+- for each render view associated with the global alloc id (3)
+- for each range of draw indices in the render view (4)
+- for each draw item index in the range (5)
+    - get the draw item
+    - resolve lt index with GAI and local mesh id, set immediates
+    - do material stuff
+    - draw using local offsets for he allocation
+
+
+
+## Allocating an asset in the GPU
+The payload needed for a gpu allocation right now is the "LoadedAsset"
+```rust
+    pub struct LoadedAsset {
+        pub handle: AssetHandle,
+        pub gltf_mesh_data: GltfLoadResult,
+    }
+```
+where
+```rust
+    pub struct GltfLoadResult {
+        pub pnujw_vertices: Vec<PNUJWVertex>,
+        pub pnu_vertices: Vec<PNUVertex>,
+        pub indices: Vec<u16>,
+        pub local_transforms: Vec<LocalTransform>,
+        pub mesh_data: Vec<GltfMeshData>,
+    }
+```
+Each Operation::AddAsset indicates a unique "Allocation".
+An Allocation is basically a reference frame, or even namespace for asset data. Within this namespace,
+allocations can define mesh ids, local transform indices, vertex offsets, and anything else that refers to "local" asset data.
+
+Allocations are unique, meaning they can only be defined once for their lifespan. All references to local asset data, like mentioned above, must exist only for the lifetime of the allocation
+
+To create an allocation, The renderer VM generates a unique ID, then "UploadJob"s are created as distinct units to upload the data.
+
+We need to split up the data like this because an asset may need to store its data in many different locations in in GPU memory. For example, 
+an asset may have a mesh, and the vertices on that mesh may reference uv coordinates on a texture, which is also defined (or referenced) on that asset.
+
+In this case, the vertices and indices of the mesh must be stored in a vertex buffer, and the texture must be stored in a texture buffer, but the data that we insert into the vertex buffer and the texture buffer are still related; They belong to the same allocation. 
+
+To accomplish this persistent association between disparate data and and the global concept of an "allocation", the above mentioned Global allocation id is supplied to the various "Upload Jobs", before the latter are actually sent off to be uploaded.
+
+The data is routed to the proper allocator to actually store the data. The allocator is free to move this data around however it sees fit, so we cant rely on any static indices or offsets to reference the data inside of the arena. 
+
+Instead, after uploading, the allocator provides the caller with an "Allocation Handle". This handle must be used to retrieve the data for a specific allocation. For each pipeline that must use the data located within the arena, we store this Allocation Handle in a "Draw Map" 

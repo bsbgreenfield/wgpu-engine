@@ -198,18 +198,6 @@ impl World {
         })
     }
 
-    pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
-        let mut deltas = Vec::<WorldUpdateDelta>::new();
-        // check scenes
-        if self.scene.is_dirty() {
-            if let Some(scene_event) = self.scene.pop_event() {
-                deltas.extend(self.handle_scene_event(scene_event, self.scene.load_level)?);
-            }
-        }
-
-        Ok(deltas)
-    }
-
     fn enqueue_entity_load(
         &mut self,
         entity_handle: EntityHandle,
@@ -231,8 +219,8 @@ impl World {
     fn poll_assets_for_job(
         &mut self,
         entity_handle: &EntityHandle,
+        deltas: &mut Vec<WorldUpdateDelta>, // this may not work with async
     ) -> Result<(), WorldUpdateError> {
-        let mut deltas = Vec::new();
         let entity_job = self
             .asset_load_queue
             .entity_jobs
@@ -257,6 +245,22 @@ impl World {
         }
         Ok(())
     }
+    pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
+        let mut deltas = Vec::<WorldUpdateDelta>::new();
+        // check scenes
+        if self.scene.is_dirty() {
+            if let Some(scene_event) = self.scene.pop_event() {
+                deltas.extend(self.handle_scene_event(scene_event, self.scene.load_level)?);
+            }
+        }
+        if let Some(completed_entity_loads) = self.asset_load_queue.poll_entity_jobs() {
+            for completed_entity in completed_entity_loads {
+                deltas.push(WorldUpdateDelta::EntityDidLoad(completed_entity));
+            }
+        }
+
+        Ok(deltas)
+    }
 
     fn handle_scene_event(
         &mut self,
@@ -269,7 +273,7 @@ impl World {
                 for entity_handle in entities {
                     // TODO: handle failed job enqueue?
                     self.enqueue_entity_load(entity_handle, scene_load_level)?;
-                    self.poll_assets_for_job(&entity_handle);
+                    self.poll_assets_for_job(&entity_handle, &mut deltas);
                 }
             }
         }
