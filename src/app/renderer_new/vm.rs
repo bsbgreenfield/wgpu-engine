@@ -42,6 +42,7 @@ impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
         mesh_data: &'frame [GltfMeshData],
         global_alloc_id: u32,
     ) -> UploadMeshJob<'frame, V> {
+        // REMOVE
         let (mesh_ids, primitive_ranges) = Self::mesh_ids_and_prim_ranges_of::<V>(mesh_data);
         UploadMeshJob {
             mesh_ids,

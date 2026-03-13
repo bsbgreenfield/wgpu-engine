@@ -157,3 +157,53 @@ The data is routed to the proper allocator to actually store the data. The alloc
 Instead, after uploading, the allocator provides the caller with an "Allocation Handle". This handle must be used to retrieve the data for a specific allocation. For each pipeline that must use the data located within the arena, we store this Allocation Handle in a "Draw Map" 
 
 TODO!!!! see about removing the global alloc id from the allocator specific handles
+
+
+
+
+## CHANGE TO UPLOAD MESH
+
+upload mesh jobs should only be the raw data payload needed to allocate into that arena
+
+when we go to "active" a mesh collection only THEN do we use the mesh_ids_and_prim_ranges_of() function to resolve the 
+primitive ranges for the mesh ids specified in the MeshCollection
+
+For a given entity that needs to be uploaded, we construct a RENDERVIEW that has
+
+- Global allocation ID
+- PNUJW mesh ids[N]    |  Vec<PNUJWDrawItems>
+- PNUJW prim ranges[N] |
+
+- PNU mesh ids[J]       | Vec<PNUDrawItems>
+- PNU prim ranges[J]    |
+
+- material, textures, etc
+
+when you go to draw, its 
+```rust
+for view in render_views {
+    let lt_index_range = local_transform_arena.resolve(view.alloc_handle);
+    // resolve materials
+    // resolve texures
+    for category in pass.render_categories {
+        match category {
+            PNUJW => {
+                set pnjuw pipeline;
+                let (allocation_range, buffer) = static_arena.resolve(view.alloc_handle);
+                for draw in view.pnujw_draw_items {
+                    pass.set_immediates(0, lt_index_range.0.start + draw.mesh_id)
+                    pass.draw(draw.within(allocation_range))
+                } 
+            }
+            PNU => {
+                // SAME AS ABOVE
+            }
+        } 
+    }
+}
+
+```
+
+In the future, if we want to drop the CPU loaded asset from memory, we can do that, but we would probably need to 
+create a function which CONSUMES the loaded_asset and creates a bunch of render views
+
