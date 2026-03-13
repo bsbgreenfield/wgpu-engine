@@ -1,4 +1,6 @@
-use std::marker::PhantomData;
+use std::{error::Error, marker::PhantomData, ops::Range};
+
+use bytemuck::Pod;
 
 use crate::{
     asset_manager::asset_manager::{AssetHandle, LoadedAsset},
@@ -47,4 +49,19 @@ pub enum Operations {
 pub enum VMValue<'frame> {
     Transform(Mat4F32),
     LoadedAsset(&'frame LoadedAsset),
+}
+
+trait GPUAllocator<T: Pod> {
+    type UploadJob<'a>;
+    type AllocationError: Error;
+
+    fn upload<'a>(
+        &mut self,
+        job: Self::UploadJob<'a>,
+        queue: &wgpu::Queue,
+    ) -> Result<AllocationHandle<T>, Self::AllocationError>;
+
+    fn resolve(&self, handle: AllocationHandle<T>) -> (Range<u32>, &wgpu::Buffer);
+
+    fn new(device: &wgpu::Device) -> Self;
 }

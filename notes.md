@@ -155,3 +155,5 @@ To accomplish this persistent association between disparate data and and the glo
 The data is routed to the proper allocator to actually store the data. The allocator is free to move this data around however it sees fit, so we cant rely on any static indices or offsets to reference the data inside of the arena. 
 
 Instead, after uploading, the allocator provides the caller with an "Allocation Handle". This handle must be used to retrieve the data for a specific allocation. For each pipeline that must use the data located within the arena, we store this Allocation Handle in a "Draw Map" 
+
+TODO!!!! see about removing the global alloc id from the allocator specific handles

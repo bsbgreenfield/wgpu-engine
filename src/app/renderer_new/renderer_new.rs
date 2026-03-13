@@ -6,9 +6,9 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer_new::{
-            AllocationHandle, Instruction, RenderUpdateDeltaNew, VMValue,
+            AllocationHandle, GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
             pipeline::{DrawItem, PipelineCollection},
-            vertex_arena::{GPUArenaNew, VertexArenaError},
+            vertex_arena::{GPUArenaNew, LocalTransformUploadJob, VertexArenaError},
             vm::UploadMeshJob,
         },
     },
@@ -144,11 +144,7 @@ impl VertexArenaSelector<PNUJWVertex> for RendererNew {
         mesh_job: UploadMeshJob<PNUJWVertex>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        let handle: AllocationHandle = self.vertex_arenas.skinned_arena.upload_mesh(
-            mesh_job.verts,
-            mesh_job.global_alloc_id,
-            queue,
-        )?;
+        let handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
         let mut draws = Vec::<DrawItem>::new();
         for (primitive_range, local_mesh_id) in
             mesh_job.primitive_ranges.into_iter().zip(mesh_job.mesh_ids)
@@ -170,11 +166,7 @@ impl VertexArenaSelector<PNUVertex> for RendererNew {
         mesh_job: UploadMeshJob<PNUVertex>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        let handle = self.vertex_arenas.static_arena.upload_mesh(
-            mesh_job.verts,
-            mesh_job.global_alloc_id,
-            queue,
-        )?;
+        let handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
         let mut draws = Vec::<DrawItem>::new();
         for (primitive_range, local_mesh_id) in
             mesh_job.primitive_ranges.into_iter().zip(mesh_job.mesh_ids)
@@ -244,12 +236,11 @@ impl RendererNew {
 
     pub(super) fn upload_local_transform_data<'frame>(
         &mut self,
-        local_transforms: &[LocalTransform],
-        global_alloc_id: u32,
+        job: LocalTransformUploadJob,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        self.local_transform_arena
-            .upload(local_transforms, global_alloc_id, queue)
+        self.local_transform_arena.upload(job, queue);
+        Ok(())
     }
 
     pub fn render(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -271,33 +262,16 @@ impl RendererNew {
                     RenderCategory::OpaqueStatic => {
                         let pipeline = &self.pipelines.opaque_static;
                         render_pass.set_pipeline(&pipeline.pipeline);
-                        for render_group in pipeline.render_groups.iter() {
-                            let draws = pipeline
-                                .draw_map
-                                .get(&render_group.global_alloc_id)
-                                .unwrap();
-                            let (alloc_range, vertex_buf) = self
-                                .vertex_arenas
-                                .static_arena
-                                .resolve(render_group.global_alloc_id);
-                            for view in render_group.views.iter() {
-                                for range in view.draws {
-                                    for draw_id in range {
-                                        let draw = draws[draw_id];
-                                    }
-                                }
-                            }
-                        }
 
                         // iterate over per asset allocations for this pipeline
                         for (allocation_handle, draws) in pipeline.draw_map.iter() {
                             let (alloc_range, vertex_buf) =
                                 self.vertex_arenas.static_arena.resolve(allocation_handle);
                             render_pass.set_vertex_buffer(0, vertex_buf.slice(..));
+                            let lt_index_range =
+                                self.local_transform_arena.resolve(allocation_handle);
                             for draw in draws {
-                                let lt_index = self
-                                    .local_transform_arena
-                                    .resolve_lt_index(draw.local_mesh_id, *allocation_handle);
+                                let lt_index = lt_index_range.0.start + draw.local_mesh_id;
                                 render_pass.set_immediates(0, bytemuck::cast_slice(&[lt_index]));
                                 render_pass.draw(draw.within(&alloc_range), 0..1);
                             }
@@ -313,6 +287,7 @@ impl RendererNew {
     }
 }
 
+// a render group is all of the
 pub struct RenderGroup {
     category: RenderCategory,
     global_alloc_id: u32,

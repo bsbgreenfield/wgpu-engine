@@ -5,6 +5,7 @@ use crate::{
         AllocationHandle, GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew,
         VMValue,
         renderer_new::{RenderCategory, RenderUpdateError, RendererNew},
+        vertex_arena::LocalTransformUploadJob,
     },
     asset_manager::{asset_manager::LoadedAsset, gltf_assets::model_builder_new::GltfMeshData},
     util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
@@ -91,11 +92,12 @@ impl<'frame> RendererNew {
                             &loaded_asset.gltf_mesh_data.mesh_data,
                             global_allocation_id,
                         );
-                        self.upload_local_transform_data(
-                            &loaded_asset.gltf_mesh_data.local_transforms,
-                            global_allocation_id,
-                            queue,
-                        )?;
+
+                        let lt_job: LocalTransformUploadJob = LocalTransformUploadJob {
+                            local_transforms: &loaded_asset.gltf_mesh_data.local_transforms,
+                            global_alloc_id: global_allocation_id,
+                        };
+                        self.upload_local_transform_data(lt_job, queue)?;
 
                         // TODO: map global alloc id to pipeline alloc handle
                         let _ = self.upload_mesh_data(skinned_job, queue)?;
