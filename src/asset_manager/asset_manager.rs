@@ -96,24 +96,16 @@ pub struct LoadedAsset {
 use std::any::TypeId;
 use std::ops::Range;
 impl LoadedAsset {
-    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(
-        mesh_data: &[GltfMeshData],
-    ) -> (Vec<u32>, Vec<Range<u32>>) {
-        let mut primitive_ranges = Vec::<Range<u32>>::new();
-        let mut per_model_primitive_count = Vec::<u32>::new();
+    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(&self) -> (Vec<u32>, Vec<Range<u32>>) {
         let mut mesh_ids = Vec::<u32>::new();
-        for (idx, mesh_data) in mesh_data.iter().enumerate() {
-            per_model_primitive_count.push(0);
-
+        let mut primitive_ranges = Vec::<Range<u32>>::new();
+        for mesh_data in self.gltf_mesh_data.mesh_data.iter() {
             // find all meshes which contain primitives of the correct type
             let filtered_meshes = mesh_data.meshes.iter().filter(|m| {
                 m.primitives
                     .iter()
                     .any(|p| p.vertex_type == TypeId::of::<V>())
             });
-
-            // for each primitive in the mesh of the correct type, add a primitive range and a
-            // corresponding mesh id. This id is "local" to the specific asset from whence it came
             for filtered_mesh in filtered_meshes {
                 for candidate_primitive in filtered_mesh.primitives.iter() {
                     if candidate_primitive.vertex_type == TypeId::of::<V>() {

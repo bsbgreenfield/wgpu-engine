@@ -2,8 +2,7 @@ use std::{iter::Peekable, ops::Range, slice::Iter};
 
 use crate::{
     app::renderer_new::{
-        AllocationHandle, GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew,
-        VMValue,
+        GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew, VMValue,
         renderer_new::{RenderCategory, RenderUpdateError, RendererNew},
         vertex_arena::LocalTransformUploadJob,
     },
@@ -22,32 +21,19 @@ impl<'frame> VMValue<'frame> {
 
 pub struct UploadMeshJob<'frame, V: ModelVertex> {
     pub verts: &'frame [V],
-    pub(super) primitive_ranges: Vec<Range<u32>>,
     pub(super) global_alloc_id: u32,
-    pub(super) mesh_ids: Vec<u32>,
 }
 
 pub trait MeshUploadable<V: ModelVertex> {
-    fn as_mesh_job<'frame>(
-        verts: &'frame [V],
-        mesh_data: &'frame [GltfMeshData],
-        global_alloc_id: u32,
-    ) -> UploadMeshJob<'frame, V>;
+    fn as_mesh_job<'frame>(verts: &'frame [V], global_alloc_id: u32) -> UploadMeshJob<'frame, V>;
 }
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 
 impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
-    fn as_mesh_job<'frame>(
-        verts: &'frame [V],
-        mesh_data: &'frame [GltfMeshData],
-        global_alloc_id: u32,
-    ) -> UploadMeshJob<'frame, V> {
+    fn as_mesh_job<'frame>(verts: &'frame [V], global_alloc_id: u32) -> UploadMeshJob<'frame, V> {
         // REMOVE
-        let (mesh_ids, primitive_ranges) = Self::mesh_ids_and_prim_ranges_of::<V>(mesh_data);
         UploadMeshJob {
-            mesh_ids,
             global_alloc_id,
-            primitive_ranges,
             verts,
         }
     }
@@ -83,14 +69,13 @@ impl<'frame> RendererNew {
                         let loaded_asset = constants[const_idx as usize].unwrap_loaded_asset();
 
                         let global_allocation_id = self.get_global_alloc_id();
+
                         let skinned_job: UploadMeshJob<'_, PNUJWVertex> = LoadedAsset::as_mesh_job(
                             &loaded_asset.gltf_mesh_data.pnujw_vertices,
-                            &loaded_asset.gltf_mesh_data.mesh_data,
                             global_allocation_id,
                         );
                         let static_job: UploadMeshJob<'_, PNUVertex> = LoadedAsset::as_mesh_job(
                             &loaded_asset.gltf_mesh_data.pnu_vertices,
-                            &loaded_asset.gltf_mesh_data.mesh_data,
                             global_allocation_id,
                         );
 
@@ -98,11 +83,10 @@ impl<'frame> RendererNew {
                             local_transforms: &loaded_asset.gltf_mesh_data.local_transforms,
                             global_alloc_id: global_allocation_id,
                         };
-                        self.upload_local_transform_data(lt_job, queue)?;
 
-                        // TODO: map global alloc id to pipeline alloc handle
-                        let _ = self.upload_mesh_data(skinned_job, queue)?;
-                        let _ = self.upload_mesh_data(static_job, queue)?;
+                        self.upload_local_transform_data(lt_job, queue)?;
+                        self.upload_mesh_data(skinned_job, queue)?;
+                        self.upload_mesh_data(static_job, queue)?;
 
                         res.push(RenderUpdateDeltaNew::AssetGPULoaded(GPUAllocationHandle {
                             asset_handle: loaded_asset.handle,

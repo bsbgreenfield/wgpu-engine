@@ -5,6 +5,7 @@ use bytemuck::Pod;
 use crate::{
     asset_manager::asset_manager::{AssetHandle, LoadedAsset},
     util::types::Mat4F32,
+    world::entity_manager::EntityHandle,
 };
 
 mod free_list;
@@ -17,6 +18,7 @@ static CHUNK_SIZE: u32 = 1024 * 4;
 
 pub enum RenderUpdateDeltaNew {
     AssetGPULoaded(GPUAllocationHandle),
+    EntityGPULoaded(EntityHandle),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -25,12 +27,12 @@ pub struct GPUAllocationHandle {
     pub asset_handle: AssetHandle,
 }
 
-#[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]
-struct AllocationHandle<T> {
-    pub(super) global_alloc_id: u32,
-    pipeline_alloc_id: u32,
-    _t: PhantomData<T>,
-}
+//#[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]
+//struct AllocationHandle<T> {
+//    pub(super) global_alloc_id: u32,
+//    pipeline_alloc_id: u32,
+//    _t: PhantomData<T>,
+//}
 
 #[derive(Clone, Copy)]
 pub(super) enum Instruction {
@@ -59,9 +61,9 @@ trait GPUAllocator<T: Pod> {
         &mut self,
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
-    ) -> Result<AllocationHandle<T>, Self::AllocationError>;
+    ) -> Result<(), Self::AllocationError>;
 
-    fn resolve(&self, handle: AllocationHandle<T>) -> (Range<u32>, &wgpu::Buffer);
+    fn resolve(&self, handle: GPUAllocationHandle) -> (Range<u32>, &wgpu::Buffer);
 
     fn new(device: &wgpu::Device) -> Self;
 }

@@ -6,8 +6,8 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer_new::{
-            AllocationHandle, GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
-            pipeline::{DrawItem, PipelineCollection},
+            GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
+            pipeline::PipelineCollection,
             vertex_arena::{GPUArenaNew, LocalTransformUploadJob, VertexArenaError},
             vm::UploadMeshJob,
         },
@@ -145,17 +145,6 @@ impl VertexArenaSelector<PNUJWVertex> for RendererNew {
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
         let handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
-        let mut draws = Vec::<DrawItem>::new();
-        for (primitive_range, local_mesh_id) in
-            mesh_job.primitive_ranges.into_iter().zip(mesh_job.mesh_ids)
-        {
-            draws.push(DrawItem {
-                primitive_range,
-                local_mesh_id,
-            });
-        }
-
-        self.pipelines.opaque_skinned.draw_map.insert(handle, draws);
         Ok(())
     }
 }
@@ -167,17 +156,7 @@ impl VertexArenaSelector<PNUVertex> for RendererNew {
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
         let handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
-        let mut draws = Vec::<DrawItem>::new();
-        for (primitive_range, local_mesh_id) in
-            mesh_job.primitive_ranges.into_iter().zip(mesh_job.mesh_ids)
-        {
-            draws.push(DrawItem {
-                primitive_range,
-                local_mesh_id,
-            });
-        }
-
-        self.pipelines.opaque_static.draw_map.insert(handle, draws);
+        // TODO handle?
         Ok(())
     }
 }
@@ -262,20 +241,7 @@ impl RendererNew {
                     RenderCategory::OpaqueStatic => {
                         let pipeline = &self.pipelines.opaque_static;
                         render_pass.set_pipeline(&pipeline.pipeline);
-
-                        // iterate over per asset allocations for this pipeline
-                        for (allocation_handle, draws) in pipeline.draw_map.iter() {
-                            let (alloc_range, vertex_buf) =
-                                self.vertex_arenas.static_arena.resolve(allocation_handle);
-                            render_pass.set_vertex_buffer(0, vertex_buf.slice(..));
-                            let lt_index_range =
-                                self.local_transform_arena.resolve(allocation_handle);
-                            for draw in draws {
-                                let lt_index = lt_index_range.0.start + draw.local_mesh_id;
-                                render_pass.set_immediates(0, bytemuck::cast_slice(&[lt_index]));
-                                render_pass.draw(draw.within(&alloc_range), 0..1);
-                            }
-                        }
+                        // PROCESS VIEW
                     }
                     RenderCategory::OpaqueSkinned => {
                         render_pass.set_pipeline(&self.pipelines.opaque_skinned.pipeline);
@@ -285,14 +251,4 @@ impl RendererNew {
         }
         Ok(())
     }
-}
-
-// a render group is all of the
-pub struct RenderGroup {
-    category: RenderCategory,
-    global_alloc_id: u32,
-    views: Vec<RenderView>,
-}
-struct RenderView {
-    draws: Vec<Range<usize>>,
 }

@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     app::{
@@ -82,7 +82,14 @@ impl App<'_> {
                     instructions.push(Instruction::Op(Operations::AddAsset));
                     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                 }
-                WorldUpdateDelta::EntityDidLoad(entity_handle) => todo!(),
+                WorldUpdateDelta::EntityDidLoad(entity_handle) => {
+                    let render_group = self
+                        .world
+                        .as_ref()
+                        .unwrap()
+                        .create_render_group(&entity_handle)?;
+                    // CREATE COMMANDS TO LOAD RENDER GROUP
+                }
             }
         }
         let render_deltas = self.renderer.as_mut().unwrap().update(

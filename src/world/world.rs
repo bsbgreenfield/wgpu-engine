@@ -1,7 +1,7 @@
+use core::panic;
 use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::{Rc, Weak},
+    collections::{HashMap, HashSet, hash_map::Entry},
+    ops::Range,
 };
 
 use super::scene::Scene;
@@ -10,7 +10,7 @@ use crate::{
     asset_manager::asset_manager::{
         AssetHandle, AssetLoadError, AssetLoadResult, AssetManager, GltfAsset, LoadedAsset,
     },
-    util::types::Mat4F32,
+    util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
         camera::Camera,
         components::{MeshCollectionComponent, MeshCollectionDescriptor},
@@ -18,6 +18,22 @@ use crate::{
         scene::{SceneEvent, SceneLoadLevel},
     },
 };
+
+pub struct DrawSet {
+    mesh_ids: Vec<u32>,
+    primtitive_ranges: Vec<Range<u32>>,
+}
+
+pub struct RenderView {
+    gpu_handle: GPUAllocationHandle,
+    pnujw_draws: DrawSet,
+    pnu_draws: DrawSet,
+}
+
+pub struct RenderGroup {
+    entity: EntityHandle,
+    views: Vec<RenderView>,
+}
 
 #[derive(Debug)]
 pub enum WorldInitError {
@@ -28,6 +44,9 @@ pub enum WorldInitError {
 #[derive(Debug)]
 pub enum WorldUpdateError {
     AssetLoadFailure(AssetLoadError),
+    AssetLoadNotComplete(AssetHandle),
+    EntityLoadNotFound(EntityHandle),
+    EntityLoadNotComplete(EntityHandle),
     EntityLoadAlreadyEnqeued(EntityHandle),
     SomethingIsWrong(String),
 }
@@ -63,15 +82,34 @@ struct AssetLoadJob {
     ref_count: usize,
 }
 struct AssetLoadQueue {
+    completed_queue: HashMap<EntityHandle, HashMap<AssetHandle, GPUAllocationHandle>>,
     entity_jobs: HashMap<EntityHandle, EntityLoadJob>,
     asset_jobs: HashMap<AssetHandle, AssetLoadJob>,
+}
+
+struct EntityLoadResult {
+    entity: EntityHandle,
+    allocations: HashMap<AssetHandle, GPUAllocationHandle>,
 }
 
 impl AssetLoadQueue {
     fn new() -> Self {
         Self {
+            completed_queue: HashMap::new(),
             entity_jobs: HashMap::new(),
             asset_jobs: HashMap::new(),
+        }
+    }
+
+    fn dequeue_completed(&mut self, entity: &EntityHandle) {
+        let completed = self.completed_queue.remove(&entity).unwrap();
+        // decrement all ref counts of asset jobs and remove any that are no longer referenced
+        for asset in completed.keys() {
+            let asset_job = self.asset_jobs.get_mut(asset).unwrap();
+            asset_job.ref_count -= 1;
+            if asset_job.ref_count == 0 {
+                self.asset_jobs.remove(asset);
+            }
         }
     }
 
@@ -107,44 +145,42 @@ impl AssetLoadQueue {
         Ok(self.entity_jobs.get(&entity).as_ref().unwrap())
     }
 
-    fn poll_entity_jobs(&mut self) -> Option<Vec<EntityHandle>> {
+    fn poll_entity_jobs(&mut self) {
         if self.entity_jobs.len() == 0 {
-            return None;
+            return;
         }
-        let mut completed = Vec::<EntityHandle>::new();
-        for entity in self.entity_jobs.keys() {
-            if self.poll_job(entity) {
-                completed.push(*entity);
-            }
-        }
-        for completed_handle in completed.iter() {
-            let completed_job = self.entity_jobs.remove(completed_handle).unwrap();
-            for asset in completed_job.asset_load_jobs {
-                let asset_job = self.asset_jobs.get_mut(&asset).unwrap();
-                asset_job.ref_count -= 1;
-                if asset_job.ref_count == 0 {
-                    self.asset_jobs.remove(&asset);
-                }
-            }
-        }
-        Some(completed)
-    }
+        let completed_jobs: Vec<(EntityHandle, HashMap<AssetHandle, GPUAllocationHandle>)> = self
+            .entity_jobs
+            .extract_if(|_, entity_job| {
+                entity_job.asset_load_jobs.iter().all(|asset_handle| {
+                    matches!(
+                        self.asset_jobs.get(asset_handle).unwrap().state,
+                        AssetLoadJobState::Done(_)
+                    )
+                })
+            })
+            .map(|(entity_handle, entity_job)| {
+                let allocations = entity_job
+                    .asset_load_jobs
+                    .into_iter()
+                    .map(|asset_handle| {
+                        let alloc = match &self.asset_jobs.get(&asset_handle).unwrap().state {
+                            AssetLoadJobState::Done(load_result) => match load_result {
+                                AssetLoadResult::LoadedGPU(alloc_handle) => alloc_handle.clone(),
+                                _ => todo!(),
+                            },
+                            _ => unreachable!(),
+                        };
 
-    fn poll_job(&self, entity: &EntityHandle) -> bool {
-        if let Some(entity_job) = self.entity_jobs.get(&entity) {
-            for asset in entity_job.asset_load_jobs.iter() {
-                let asset_job = self.asset_jobs.get(asset).unwrap();
-                match asset_job.state {
-                    AssetLoadJobState::Done(_) => {}
-                    AssetLoadJobState::Pending => return false,
-                }
-            }
-
-            //entity job is complete
-        } else {
-            panic!("Entity Job for {:?} not enqueued!", entity);
+                        (asset_handle, alloc)
+                    })
+                    .collect();
+                (entity_handle, allocations)
+            })
+            .collect();
+        for job in completed_jobs {
+            self.completed_queue.insert(job.0, job.1);
         }
-        true
     }
 }
 
@@ -162,6 +198,38 @@ pub struct World {
 }
 
 impl World {
+    pub fn create_render_group(
+        &self,
+        entity: &EntityHandle,
+    ) -> Result<RenderGroup, WorldUpdateError> {
+        let mut views = Vec::<RenderView>::new();
+        let completed_assets = self
+            .asset_load_queue
+            .completed_queue
+            .get(entity)
+            .ok_or(WorldUpdateError::EntityLoadNotComplete(*entity))?;
+        for (asset_handle, allocation_handle) in completed_assets.iter() {
+            let la = self.asset_manager.get_loaded_asset(asset_handle).unwrap();
+            let (pnujw_ids, pnujw_prims) = la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
+            let (pnu_ids, pnu_prims) = la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
+            let view = RenderView {
+                gpu_handle: allocation_handle.to_owned(),
+                pnujw_draws: DrawSet {
+                    mesh_ids: pnujw_ids,
+                    primtitive_ranges: pnujw_prims,
+                },
+                pnu_draws: DrawSet {
+                    mesh_ids: pnu_ids,
+                    primtitive_ranges: pnu_prims,
+                },
+            };
+            views.push(view);
+        }
+        Ok(RenderGroup {
+            entity: *entity,
+            views,
+        })
+    }
     pub fn get_loaded_asset_of(&self, asset_handle: &AssetHandle) -> Option<&LoadedAsset> {
         self.asset_manager.get_loaded_asset(asset_handle)
     }
@@ -253,10 +321,9 @@ impl World {
                 deltas.extend(self.handle_scene_event(scene_event, self.scene.load_level)?);
             }
         }
-        if let Some(completed_entity_loads) = self.asset_load_queue.poll_entity_jobs() {
-            for completed_entity in completed_entity_loads {
-                deltas.push(WorldUpdateDelta::EntityDidLoad(completed_entity));
-            }
+        self.asset_load_queue.poll_entity_jobs();
+        for entity in self.asset_load_queue.completed_queue.keys() {
+            deltas.push(WorldUpdateDelta::EntityDidLoad(*entity));
         }
 
         Ok(deltas)
@@ -283,10 +350,14 @@ impl World {
     pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDeltaNew]) {
         for delta in render_deltas {
             match delta {
-                RenderUpdateDeltaNew::AssetGPULoaded(allocation_handle) => self
-                    .asset_manager
-                    .register_asset_gpu_residency(allocation_handle)
-                    .expect("Asset not found"),
+                RenderUpdateDeltaNew::AssetGPULoaded(allocation_handle) => {
+                    self.asset_manager
+                        .register_asset_gpu_residency(allocation_handle)
+                        .expect("Asset not found");
+                }
+                RenderUpdateDeltaNew::EntityGPULoaded(entity_handle) => {
+                    self.asset_load_queue.dequeue_completed(entity_handle);
+                }
             }
         }
     }
