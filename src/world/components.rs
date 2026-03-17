@@ -1,4 +1,8 @@
-use crate::{app::renderer_new::GPUAllocationHandle, asset_manager::asset_manager::AssetHandle};
+use crate::{
+    app::renderer_new::GPUAllocationHandle,
+    asset_manager::asset_manager::AssetHandle,
+    util::types::{GlobalTransform, Mat4F32},
+};
 
 #[derive(Debug)]
 pub struct ResourceBacking {
@@ -38,6 +42,9 @@ impl MeshCollectionComponent {
     }
 }
 
+pub struct PhysicalPositionComponent {
+    pub world_transform: GlobalTransform,
+}
 //pub trait ExtractComponents {
 //    type Output;
 //

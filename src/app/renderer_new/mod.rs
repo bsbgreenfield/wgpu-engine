@@ -1,11 +1,15 @@
-use std::{error::Error, marker::PhantomData, ops::Range};
+use std::{error::Error, ops::Range};
 
 use bytemuck::Pod;
 
 use crate::{
     asset_manager::asset_manager::{AssetHandle, LoadedAsset},
     util::types::Mat4F32,
-    world::entity_manager::EntityHandle,
+    world::{
+        components::MeshCollectionComponent,
+        entity_manager::{EntityHandle, Renderables},
+        world::RenderGroup,
+    },
 };
 
 mod free_list;
@@ -51,6 +55,10 @@ pub enum Operations {
 pub enum VMValue<'frame> {
     Transform(Mat4F32),
     LoadedAsset(&'frame LoadedAsset),
+    RenderGroup(RenderGroup),
+    MeshCollectionComponent(&'frame MeshCollectionComponent),
+    EntityHandle(&'frame EntityHandle),
+    Renderables(Renderables<'frame>),
 }
 
 trait GPUAllocator<T: Pod> {
@@ -63,7 +71,10 @@ trait GPUAllocator<T: Pod> {
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError>;
 
-    fn resolve(&self, handle: GPUAllocationHandle) -> (Range<u32>, &wgpu::Buffer);
+    fn resolve(
+        &self,
+        handle: &GPUAllocationHandle,
+    ) -> (Range<u32>, &wgpu::Buffer, Option<&wgpu::BindGroup>);
 
     fn new(device: &wgpu::Device) -> Self;
 }

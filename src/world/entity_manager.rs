@@ -6,8 +6,10 @@ use std::{
 };
 
 use crate::{
-    app::renderer_new::GPUAllocationHandle, asset_manager::asset_manager::AssetHandle,
-    world::components::MeshCollectionComponent,
+    app::renderer_new::GPUAllocationHandle,
+    asset_manager::asset_manager::AssetHandle,
+    util::types::{GlobalTransform, Mat4F32},
+    world::components::{MeshCollectionComponent, PhysicalPositionComponent},
 };
 
 #[derive(Debug)]
@@ -24,9 +26,22 @@ impl Error for EntityManagerError {}
 pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent, 100>,
+    global_transforms: SparseSet<PhysicalPositionComponent, 100>,
+}
+
+pub struct Renderables<'frame> {
+    pub mesh_collections: Option<&'frame MeshCollectionComponent>,
+    pub global_transform: Option<&'frame PhysicalPositionComponent>,
 }
 
 impl EntityManager {
+    pub fn get_renderables<'frame>(&'frame self, entity: &EntityHandle) -> Renderables<'frame> {
+        Renderables {
+            mesh_collections: self.mesh_collections.get(entity.0 as usize),
+            global_transform: self.global_transforms.get(entity.0 as usize),
+        }
+    }
+
     pub(super) fn saturate_rbcs(
         &mut self,
         entity: EntityHandle,
@@ -68,7 +83,8 @@ impl EntityManager {
     pub fn new() -> Self {
         Self {
             available_ids: vec![],
-            mesh_collections: SparseSet::<MeshCollectionComponent, 100>::new(),
+            mesh_collections: SparseSet::new(),
+            global_transforms: SparseSet::new(),
         }
     }
 
@@ -79,6 +95,15 @@ impl EntityManager {
     ) {
         self.mesh_collections
             .insert(entity.0 as usize, mesh_collection);
+    }
+
+    pub fn add_physical_position_for_entity(&mut self, entity: EntityHandle, transform: Mat4F32) {
+        self.global_transforms.insert(
+            entity.0 as usize,
+            PhysicalPositionComponent {
+                world_transform: GlobalTransform::new(transform),
+            },
+        );
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

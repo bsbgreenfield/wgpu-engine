@@ -1,4 +1,4 @@
-use std::{collections::hash_set::Iter, error::Error, fmt::Display, ops::Range};
+use std::{error::Error, fmt::Display};
 
 use wgpu::RenderPass;
 
@@ -8,11 +8,17 @@ use crate::{
         renderer_new::{
             GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
             pipeline::PipelineCollection,
-            vertex_arena::{GPUArenaNew, LocalTransformUploadJob, VertexArenaError},
+            vertex_arena::{
+                GPUArenaNew, GlobalTransformUploadJob, LocalTransformUploadJob, VertexArenaError,
+            },
             vm::UploadMeshJob,
         },
     },
-    util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
+    world::{
+        entity_manager::EntityHandle,
+        world::{DrawSet, RenderGroup, RenderView},
+    },
 };
 
 #[derive(Debug)]
@@ -119,6 +125,8 @@ impl EngineRenderPass {
 struct VertexArenaCollection {
     static_arena: GPUArenaNew<PNUVertex>,
     skinned_arena: GPUArenaNew<PNUJWVertex>,
+    local_transform_arena: GPUArenaNew<LocalTransform>,
+    global_transform_arena: GPUArenaNew<GlobalTransform>,
 }
 
 impl VertexArenaCollection {
@@ -126,6 +134,8 @@ impl VertexArenaCollection {
         Self {
             static_arena: GPUArenaNew::<PNUVertex>::new(device),
             skinned_arena: GPUArenaNew::<PNUJWVertex>::new(device),
+            local_transform_arena: GPUArenaNew::<LocalTransform>::new(device),
+            global_transform_arena: GPUArenaNew::<GlobalTransform>::new(device),
         }
     }
 }
@@ -171,21 +181,25 @@ struct RenderModelManager {
 
 pub struct RendererNew {
     allocations: Vec<u32>,
-    local_transform_arena: GPUArenaNew<LocalTransform>,
     vertex_arenas: VertexArenaCollection,
     pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
+    groups: Vec<RenderGroup>,
 }
 
 impl RendererNew {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
             allocations: Vec::new(),
-            local_transform_arena: GPUArenaNew::<LocalTransform>::new(device),
             vertex_arenas: VertexArenaCollection::new(device),
             pipelines: PipelineCollection::new(),
             passes: Vec::new(),
+            groups: Vec::new(),
         }
+    }
+
+    pub(super) fn add_render_group(&mut self, views: Vec<RenderView>, entity: EntityHandle) {
+        self.groups.push(RenderGroup::new(entity, views));
     }
 
     pub(super) fn get_global_alloc_id(&mut self) -> u32 {
@@ -200,6 +214,17 @@ impl RendererNew {
         queue: &wgpu::Queue,
     ) -> Result<Vec<RenderUpdateDeltaNew>, RenderUpdateError> {
         self.interpret(constants, ops, queue)
+    }
+
+    pub(super) fn upload_global_transform_data<'frame>(
+        &mut self,
+        job: GlobalTransformUploadJob<'frame>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError> {
+        self.vertex_arenas
+            .global_transform_arena
+            .upload(job, queue)?;
+        Ok(())
     }
 
     pub(super) fn upload_mesh_data<'frame, V: ModelVertex>(
@@ -218,7 +243,7 @@ impl RendererNew {
         job: LocalTransformUploadJob,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        self.local_transform_arena.upload(job, queue);
+        self.vertex_arenas.local_transform_arena.upload(job, queue);
         Ok(())
     }
 
@@ -228,6 +253,7 @@ impl RendererNew {
             let view = output
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
+
             let mut encoder =
                 config
                     .device
@@ -235,7 +261,45 @@ impl RendererNew {
                         label: Some(format!("Render Encoder for {}", pass.label).as_str()),
                     });
             let mut render_pass = pass.create_pass(&mut encoder, &view)?;
-            render_pass.set_bind_group(0, self.local_transform_arena.get_bind_group(), &[]);
+            render_pass.set_bind_group(
+                0,
+                self.vertex_arenas.local_transform_arena.get_bind_group(),
+                &[],
+            );
+
+            for render_group in self.groups.iter() {
+                for render_view in render_group.views.iter() {
+                    let (lt_index_range, _, lt_bind_group) = self
+                        .vertex_arenas
+                        .local_transform_arena
+                        .resolve(&render_view.gpu_handle);
+                    for render_category in &pass.categories {
+                        match render_category {
+                            RenderCategory::OpaqueStatic => {
+                                let pipeline = &self.pipelines.opaque_static;
+                                render_pass.set_pipeline(&pipeline.pipeline);
+                                render_pass.set_bind_group(1, lt_bind_group, &[]);
+                                let (alloc_range, buffer, _) = self
+                                    .vertex_arenas
+                                    .static_arena
+                                    .resolve(&render_view.gpu_handle);
+                                render_pass.set_vertex_buffer(0, buffer.slice(..));
+                                let mesh_ids = &render_view.pnu_draws.mesh_ids;
+                                let prim_ranges = &render_view.pnu_draws.primtitive_ranges;
+                                for i in 0..render_view.pnu_draws.mesh_ids.len() {
+                                    render_pass.set_immediates(
+                                        0,
+                                        bytemuck::cast_slice(&[lt_index_range.start + mesh_ids[i]]),
+                                    );
+                                    render_pass
+                                        .draw(DrawSet::within(&prim_ranges[i], &alloc_range), 0..1);
+                                }
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                }
+            }
             for render_category in &pass.categories {
                 match render_category {
                     RenderCategory::OpaqueStatic => {

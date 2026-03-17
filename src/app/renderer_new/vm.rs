@@ -1,13 +1,19 @@
+use core::panic;
 use std::{iter::Peekable, ops::Range, slice::Iter};
 
 use crate::{
     app::renderer_new::{
         GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew, VMValue,
         renderer_new::{RenderCategory, RenderUpdateError, RendererNew},
-        vertex_arena::LocalTransformUploadJob,
+        vertex_arena::{GlobalTransformUploadJob, LocalTransformUploadJob},
     },
     asset_manager::{asset_manager::LoadedAsset, gltf_assets::model_builder_new::GltfMeshData},
     util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
+    world::{
+        components::MeshCollectionComponent,
+        entity_manager::{EntityHandle, Renderables},
+        world::{DrawSet, RenderGroup, RenderView},
+    },
 };
 
 impl<'frame> VMValue<'frame> {
@@ -15,6 +21,31 @@ impl<'frame> VMValue<'frame> {
         match self {
             VMValue::LoadedAsset(la) => la,
             _ => panic!("value is not a loaded asset ref"),
+        }
+    }
+    fn unwrap_entity_handle(&self) -> &'frame EntityHandle {
+        match self {
+            VMValue::EntityHandle(eh) => eh,
+            _ => panic!("value is not a entity handle ref"),
+        }
+    }
+    fn unwrap_mesh_collection(&self) -> &'frame MeshCollectionComponent {
+        match self {
+            VMValue::MeshCollectionComponent(mc) => mc,
+            _ => panic!("value is not a MCC ref"),
+        }
+    }
+    fn unwrap_render_group(&self) -> &RenderGroup {
+        match self {
+            VMValue::RenderGroup(group) => group,
+            _ => panic!("value is not a render group"),
+        }
+    }
+
+    fn unwrap_renderables(&'frame self) -> &Renderables<'frame> {
+        match self {
+            VMValue::Renderables(renderables) => renderables,
+            _ => panic!("value is not renderables"),
         }
     }
 }
@@ -94,7 +125,49 @@ impl<'frame> RendererNew {
                         }));
                     }
                     Operations::AddEntity => {
-                        let global_alloc_id = 0;
+                        // TODO: account for multiple unique assets
+                        let const_idx = Self::get_constant_idx(&mut instr_peek);
+                        let entity_handle = constants[const_idx as usize].unwrap_entity_handle();
+
+                        let renderables_idx = Self::get_constant_idx(&mut instr_peek);
+                        let renderables = constants[renderables_idx as usize].unwrap_renderables();
+
+                        if let Some(mesh_collection_component) = renderables.mesh_collections {
+                            let la_const_idx = Self::get_constant_idx(&mut instr_peek);
+                            let la = constants[la_const_idx as usize].unwrap_loaded_asset();
+
+                            let (pnujw_ids, pnujw_prims) =
+                                la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
+                            let (pnu_ids, pnu_prims) =
+                                la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
+                            let view = RenderView {
+                                gpu_handle: mesh_collection_component
+                                    .allocation_handle
+                                    .to_owned()
+                                    .unwrap(),
+                                pnu_draws: DrawSet {
+                                    mesh_ids: pnu_ids,
+                                    primtitive_ranges: pnu_prims,
+                                },
+                                pnujw_draws: DrawSet {
+                                    mesh_ids: pnujw_ids,
+                                    primtitive_ranges: pnujw_prims,
+                                },
+                            };
+                            self.add_render_group(vec![view], *entity_handle);
+                        }
+
+                        if let Some(global_transform) = renderables.global_transform {
+                            self.upload_global_transform_data(
+                                GlobalTransformUploadJob {
+                                    global_transforms: &[global_transform.world_transform],
+                                    global_alloc_id: (),
+                                },
+                                queue,
+                            );
+                        }
+
+                        res.push(RenderUpdateDeltaNew::EntityGPULoaded(*entity_handle));
                     }
                     Operations::MoveEntity => todo!(),
                 },
@@ -105,12 +178,4 @@ impl<'frame> RendererNew {
 
         Ok(res)
     }
-}
-
-struct RenderGroup {}
-
-struct RenderView {
-    global_alloc_id: u32,
-    category: RenderCategory,
-    draw_ranges: Vec<Range<usize>>,
 }

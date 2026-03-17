@@ -1,4 +1,7 @@
-use std::{fmt::Debug, ops::Index};
+use std::{
+    fmt::Debug,
+    ops::{Deref, Index},
+};
 
 use bytemuck::{AnyBitPattern, NoUninit};
 use wgpu::naga::front;
@@ -230,6 +233,13 @@ pub struct GlobalTransform {
 impl GlobalTransform {
     pub fn new(data: Mat4F32) -> Self {
         Self { transform: data }
+    }
+}
+
+impl Deref for GlobalTransform {
+    type Target = Mat4F32;
+    fn deref(&self) -> &Self::Target {
+        &self.transform
     }
 }
 

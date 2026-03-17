@@ -4,6 +4,8 @@ use std::{
     ops::Range,
 };
 
+use cgmath::SquareMatrix;
+
 use super::scene::Scene;
 use crate::{
     app::renderer_new::{GPUAllocationHandle, RenderUpdateDeltaNew},
@@ -20,19 +22,32 @@ use crate::{
 };
 
 pub struct DrawSet {
-    mesh_ids: Vec<u32>,
-    primtitive_ranges: Vec<Range<u32>>,
+    pub mesh_ids: Vec<u32>,
+    pub primtitive_ranges: Vec<Range<u32>>,
+}
+
+impl DrawSet {
+    #[inline]
+    pub const fn within(prim_range: &Range<u32>, range: &Range<u32>) -> Range<u32> {
+        let start = range.start + prim_range.start;
+        start..(start + (prim_range.end - prim_range.start) as u32)
+    }
 }
 
 pub struct RenderView {
-    gpu_handle: GPUAllocationHandle,
-    pnujw_draws: DrawSet,
-    pnu_draws: DrawSet,
+    pub gpu_handle: GPUAllocationHandle,
+    pub pnujw_draws: DrawSet,
+    pub pnu_draws: DrawSet,
 }
 
 pub struct RenderGroup {
     entity: EntityHandle,
-    views: Vec<RenderView>,
+    pub views: Vec<RenderView>,
+}
+impl RenderGroup {
+    pub fn new(entity: EntityHandle, views: Vec<RenderView>) -> Self {
+        Self { entity, views }
+    }
 }
 
 #[derive(Debug)]
@@ -193,43 +208,43 @@ pub struct World {
     camera: Camera,
     scene: Scene,
     asset_manager: AssetManager,
-    entity_manager: EntityManager,
+    pub entity_manager: EntityManager,
     asset_load_queue: AssetLoadQueue,
 }
 
 impl World {
-    pub fn create_render_group(
-        &self,
-        entity: &EntityHandle,
-    ) -> Result<RenderGroup, WorldUpdateError> {
-        let mut views = Vec::<RenderView>::new();
-        let completed_assets = self
-            .asset_load_queue
-            .completed_queue
-            .get(entity)
-            .ok_or(WorldUpdateError::EntityLoadNotComplete(*entity))?;
-        for (asset_handle, allocation_handle) in completed_assets.iter() {
-            let la = self.asset_manager.get_loaded_asset(asset_handle).unwrap();
-            let (pnujw_ids, pnujw_prims) = la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
-            let (pnu_ids, pnu_prims) = la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
-            let view = RenderView {
-                gpu_handle: allocation_handle.to_owned(),
-                pnujw_draws: DrawSet {
-                    mesh_ids: pnujw_ids,
-                    primtitive_ranges: pnujw_prims,
-                },
-                pnu_draws: DrawSet {
-                    mesh_ids: pnu_ids,
-                    primtitive_ranges: pnu_prims,
-                },
-            };
-            views.push(view);
-        }
-        Ok(RenderGroup {
-            entity: *entity,
-            views,
-        })
-    }
+    //pub fn create_render_group(
+    //    &self,
+    //    entity: &EntityHandle,
+    //) -> Result<RenderGroup, WorldUpdateError> {
+    //    let mut views = Vec::<RenderView>::new();
+    //    let completed_assets = self
+    //        .asset_load_queue
+    //        .completed_queue
+    //        .get(entity)
+    //        .ok_or(WorldUpdateError::EntityLoadNotComplete(*entity))?;
+    //    for (asset_handle, allocation_handle) in completed_assets.iter() {
+    //        let la = self.asset_manager.get_loaded_asset(asset_handle).unwrap();
+    //        let (pnujw_ids, pnujw_prims) = la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
+    //        let (pnu_ids, pnu_prims) = la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
+    //        let view = RenderView {
+    //            gpu_handle: allocation_handle.to_owned(),
+    //            pnujw_draws: DrawSet {
+    //                mesh_ids: pnujw_ids,
+    //                primtitive_ranges: pnujw_prims,
+    //            },
+    //            pnu_draws: DrawSet {
+    //                mesh_ids: pnu_ids,
+    //                primtitive_ranges: pnu_prims,
+    //            },
+    //        };
+    //        views.push(view);
+    //    }
+    //    Ok(RenderGroup {
+    //        entity: *entity,
+    //        views,
+    //    })
+    //}
     pub fn get_loaded_asset_of(&self, asset_handle: &AssetHandle) -> Option<&LoadedAsset> {
         self.asset_manager.get_loaded_asset(asset_handle)
     }
@@ -252,6 +267,10 @@ impl World {
         let box_entity = entity_manager.new_entity()?;
 
         entity_manager.add_mesh_collection_for_entity(box_entity, mesh);
+        entity_manager.add_physical_position_for_entity(
+            box_entity,
+            cgmath::Matrix4::<f32>::identity().into(),
+        );
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
