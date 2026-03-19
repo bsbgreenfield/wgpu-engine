@@ -13,10 +13,7 @@ use crate::{
     },
     util::types::Mat4F32,
     world::{
-        camera::Camera,
-        components::{MeshCollectionComponent, MeshCollectionDescriptor},
-        entity_manager::{EntityHandle, EntityManager, EntityManagerError},
-        scene::{SceneEvent, SceneLoadLevel},
+        camera::Camera, components::{MeshCollectionComponent, MeshCollectionDescriptor}, entity_manager::{EntityHandle, EntityManager, EntityManagerError}, instance_arena::{InstanceArena, InstanceData, InstanceHandle}, instance_manager::InstanceManager, scene::{SceneEvent, SceneLoadLevel}
     },
 };
 
@@ -40,12 +37,12 @@ pub struct RenderView {
 }
 
 pub struct RenderGroup {
-    entity: EntityHandle,
+    instance_handle: InstanceHandle
     pub views: Vec<RenderView>,
 }
 impl RenderGroup {
-    pub fn new(entity: EntityHandle, views: Vec<RenderView>) -> Self {
-        Self { entity, views }
+    pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>) -> Self {
+        Self { instance_handle , views }
     }
 }
 
@@ -199,9 +196,11 @@ impl AssetLoadQueue {
 }
 
 pub enum WorldUpdateDelta {
+    EntityDidSpawn(InstanceHandle),
     EntityDidLoad(EntityHandle),
     AssetDidLoad(AssetHandle),
 }
+
 
 pub struct World {
     camera: Camera,
@@ -209,6 +208,7 @@ pub struct World {
     asset_manager: AssetManager,
     pub entity_manager: EntityManager,
     asset_load_queue: AssetLoadQueue,
+    pub instance_manager: InstanceManager,
 }
 
 impl World {
@@ -249,7 +249,13 @@ impl World {
             asset_manager,
             entity_manager,
             asset_load_queue: AssetLoadQueue::new(),
+            instance_manager: InstanceManager::new(),
         })
+    }
+
+    pub fn spawn(&mut self, entity_handle: EntityHandle, data: InstanceData) -> &Vec<InstanceHandle> {
+        self.instance_manager.spawn(entity_handle, data)
+
     }
 
     fn enqueue_entity_load(
@@ -311,6 +317,8 @@ impl World {
         for entity in self.asset_load_queue.completed_queue.keys() {
             deltas.push(WorldUpdateDelta::EntityDidLoad(*entity));
         }
+
+        // TODO: emit EntityDidSpawn event when necessary
 
         Ok(deltas)
     }

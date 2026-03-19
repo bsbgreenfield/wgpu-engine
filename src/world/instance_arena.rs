@@ -2,12 +2,12 @@ use std::clone;
 
 use crate::util::types::GlobalTransform;
 
-struct InstanceData {
+pub struct InstanceData {
     global_transform: GlobalTransform,
 }
 
 #[derive(Clone)]
-struct InstanceHandle {
+pub struct InstanceHandle {
     instance_id: u32,
     generation: u32,
 }
@@ -17,7 +17,7 @@ struct Slot {
     generation: u32,
 }
 
-struct InstanceArena {
+pub struct InstanceArena {
     dense: Vec<InstanceData>,
     dense_to_handle: Vec<InstanceHandle>,
     slots: Vec<Slot>,
@@ -25,7 +25,15 @@ struct InstanceArena {
 }
 
 impl InstanceArena {
-    fn insert(&mut self, data: InstanceData) -> InstanceHandle {
+    pub fn new() -> Self {
+        Self {
+            dense: vec![],
+            dense_to_handle: vec![],
+            slots: vec![],
+            free_list: vec![],
+        }
+    }
+    pub fn insert(&mut self, data: InstanceData) -> InstanceHandle {
         let slot_index = if let Some(free) = self.free_list.pop() {
             free
         } else {

@@ -23,22 +23,10 @@ impl<'frame> VMValue<'frame> {
             _ => panic!("value is not a loaded asset ref"),
         }
     }
-    fn unwrap_entity_handle(&self) -> &'frame EntityHandle {
-        match self {
-            VMValue::EntityHandle(eh) => eh,
-            _ => panic!("value is not a entity handle ref"),
-        }
-    }
     fn unwrap_mesh_collection(&self) -> &'frame MeshCollectionComponent {
         match self {
             VMValue::MeshCollectionComponent(mc) => mc,
             _ => panic!("value is not a MCC ref"),
-        }
-    }
-    fn unwrap_render_group(&self) -> &RenderGroup {
-        match self {
-            VMValue::RenderGroup(group) => group,
-            _ => panic!("value is not a render group"),
         }
     }
 
@@ -127,7 +115,7 @@ impl<'frame> RendererNew {
                     Operations::AddEntity => {
                         // TODO: account for multiple unique assets
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        let entity_handle = constants[const_idx as usize].unwrap_entity_handle();
+                        let instance_handle = 
 
                         let renderables_idx = Self::get_constant_idx(&mut instr_peek);
                         let renderables = constants[renderables_idx as usize].unwrap_renderables();

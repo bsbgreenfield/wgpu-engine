@@ -15,6 +15,7 @@ use crate::{
     util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
         entity_manager::EntityHandle,
+        instance_arena::InstanceHandle,
         world::{DrawSet, RenderGroup, RenderView},
     },
 };
@@ -194,8 +195,12 @@ impl RendererNew {
         }
     }
 
-    pub(super) fn add_render_group(&mut self, views: Vec<RenderView>, entity: EntityHandle) {
-        self.groups.push(RenderGroup::new(entity, views));
+    pub(super) fn add_render_group(
+        &mut self,
+        views: Vec<RenderView>,
+        instance_handle: InstanceHandle,
+    ) {
+        self.groups.push(RenderGroup::new(instance_handle, views));
     }
 
     pub(super) fn get_global_alloc_id(&mut self) -> u32 {

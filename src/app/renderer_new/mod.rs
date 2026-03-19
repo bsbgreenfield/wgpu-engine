@@ -4,10 +4,11 @@ use bytemuck::Pod;
 
 use crate::{
     asset_manager::asset_manager::{AssetHandle, LoadedAsset},
-    util::types::Mat4F32,
+    util::types::{GlobalTransform, Mat4F32},
     world::{
         components::MeshCollectionComponent,
         entity_manager::{EntityHandle, Renderables},
+        instance_arena::InstanceHandle,
         world::RenderGroup,
     },
 };
@@ -50,15 +51,15 @@ pub enum Operations {
     AddAsset,
     AddEntity,
     MoveEntity,
+    SpawnEntityInstance,
 }
 
 pub enum VMValue<'frame> {
     Transform(Mat4F32),
     LoadedAsset(&'frame LoadedAsset),
-    RenderGroup(RenderGroup),
     MeshCollectionComponent(&'frame MeshCollectionComponent),
-    EntityHandle(&'frame EntityHandle),
     Renderables(Renderables<'frame>),
+    InstanceHandle(InstanceHandle),
 }
 
 trait GPUAllocator<T: Pod> {

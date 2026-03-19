@@ -9,7 +9,10 @@ use crate::{
             renderer_new::{RenderUpdateError, RendererNew},
         },
     },
-    world::world::{World, WorldUpdateDelta, WorldUpdateError},
+    world::{
+        self,
+        world::{World, WorldUpdateDelta, WorldUpdateError},
+    },
 };
 use winit::{
     application::ApplicationHandler,
@@ -82,35 +85,21 @@ impl App<'_> {
                     instructions.push(Instruction::Op(Operations::AddAsset));
                     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                 }
-                WorldUpdateDelta::EntityDidLoad(entity_handle) => {
-                    constants.push(VMValue::EntityHandle(entity_handle));
+
+                WorldUpdateDelta::EntityDidSpawn(instance_handle) => {
+                    let world = self.world.as_ref().unwrap();
+                    let entity_handle = world.instance_manager.entity_of(instance_handle);
+                    let renderables = world.entity_manager.get_renderables(&entity_handle);
+
+                    constants.push(VMValue::InstanceHandle(instance_handle.clone()));
+                    constants.push(VMValue::Renderables(renderables));
+
+                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 2) as u8));
                     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    let renderables = self
-                        .world
-                        .as_ref()
-                        .unwrap()
-                        .entity_manager
-                        .get_renderables(entity_handle);
-                    if let Some(mesh_collection) = renderables.mesh_collections {
-                        constants.push(VMValue::MeshCollectionComponent(mesh_collection));
-                        instructions.push(Instruction::Op(Operations::AddEntity));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-
-                        let la = self
-                            .world
-                            .as_ref()
-                            .unwrap()
-                            .get_loaded_asset_of(&mesh_collection.resource_backing)
-                            .expect(format!("All assets for this entity should be loaded to the GPU, but {:?} was not", 
-                                mesh_collection.resource_backing ).as_str());
-                        constants.push(VMValue::LoadedAsset(la));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    }
-
-                    if let Some(physical_position) = renderables.global_transform {
-                        constants.push(VMValue::Transform(*physical_position.world_transform));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    }
+                }
+                WorldUpdateDelta::EntityDidLoad(entity_handle) => {
+                    // TODO: remove entity from world load queue
                 }
             }
         }
