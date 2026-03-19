@@ -228,7 +228,7 @@ pub trait InstanceData {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GlobalTransform {
-    transform: Mat4F32,
+    pub transform: Mat4F32,
 }
 impl GlobalTransform {
     pub fn new(data: Mat4F32) -> Self {

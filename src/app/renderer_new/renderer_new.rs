@@ -251,52 +251,53 @@ impl RendererNew {
                 self.vertex_arenas.local_transform_arena.get_bind_group(),
                 &[],
             );
-
-            for render_group in self.groups.iter() {
-                for render_view in render_group.views.iter() {
-                    let (lt_index_range, _, lt_bind_group) = self
-                        .vertex_arenas
-                        .local_transform_arena
-                        .resolve(&render_view.gpu_handle);
-                    for render_category in &pass.categories {
-                        match render_category {
-                            RenderCategory::OpaqueStatic => {
-                                let pipeline = &self.pipelines.opaque_static;
-                                render_pass.set_pipeline(&pipeline.pipeline);
-                                render_pass.set_bind_group(1, lt_bind_group, &[]);
-                                let (alloc_range, buffer, _) = self
-                                    .vertex_arenas
-                                    .static_arena
-                                    .resolve(&render_view.gpu_handle);
-                                render_pass.set_vertex_buffer(0, buffer.slice(..));
-                                let mesh_ids = &render_view.pnu_draws.mesh_ids;
-                                let prim_ranges = &render_view.pnu_draws.primtitive_ranges;
-                                for i in 0..render_view.pnu_draws.mesh_ids.len() {
-                                    render_pass.set_immediates(
-                                        0,
-                                        bytemuck::cast_slice(&[lt_index_range.start + mesh_ids[i]]),
-                                    );
-                                    render_pass
-                                        .draw(DrawSet::within(&prim_ranges[i], &alloc_range), 0..1);
-                                }
-                            }
-                            _ => todo!(),
-                        }
-                    }
-                }
-            }
-            for render_category in &pass.categories {
-                match render_category {
-                    RenderCategory::OpaqueStatic => {
-                        let pipeline = &self.pipelines.opaque_static;
-                        render_pass.set_pipeline(&pipeline.pipeline);
-                        // PROCESS VIEW
-                    }
-                    RenderCategory::OpaqueSkinned => {
-                        render_pass.set_pipeline(&self.pipelines.opaque_skinned.pipeline);
-                    }
-                }
-            }
+            //
+            //            for render_group in self.groups.iter() {
+            //                for render_view in render_group.views.iter() {
+            //                    let (lt_index_range, _, lt_bind_group) = self
+            //                        .vertex_arenas
+            //                        .local_transform_arena
+            //                        .resolve(&render_view.gpu_handle);
+            //                    for render_category in &pass.categories {
+            //                        match render_category {
+            //                            RenderCategory::OpaqueStatic => {
+            //                                let pipeline = &self.pipelines.opaque_static;
+            //                                render_pass.set_pipeline(&pipeline.pipeline);
+            //                                render_pass.set_bind_group(1, lt_bind_group, &[]);
+            //                                let (alloc_range, buffer, _) = self
+            //                                    .vertex_arenas
+            //                                    .static_arena
+            //                                    .resolve(&render_view.gpu_handle);
+            //                                render_pass.set_vertex_buffer(0, buffer.slice(..));
+            //                                let mesh_ids = &render_view.pnu_draws.mesh_ids;
+            //                                let prim_ranges = &render_view.pnu_draws.primtitive_ranges;
+            //                                for i in 0..render_view.pnu_draws.mesh_ids.len() {
+            //                                    render_pass.set_immediates(
+            //                                        0,
+            //                                        bytemuck::cast_slice(&[lt_index_range.start + mesh_ids[i]]),
+            //                                    );
+            //                                    render_pass
+            //                                        .draw(DrawSet::within(&prim_ranges[i], &alloc_range), 0..1);
+            //                                }
+            //                            }
+            //                            _ => todo!(),
+            //                        }
+            //                    }
+            //                }
+            //            }
+            //            for render_category in &pass.categories {
+            //                match render_category {
+            //                    RenderCategory::OpaqueStatic => {
+            //                        let pipeline = &self.pipelines.opaque_static;
+            //                        render_pass.set_pipeline(&pipeline.pipeline);
+            //                        // PROCESS VIEW
+            //                    }
+            //                    RenderCategory::OpaqueSkinned => {
+            //                        render_pass.set_pipeline(&self.pipelines.opaque_skinned.pipeline);
+            //                    }
+            //                }
+            //            }
+            //        }
         }
         Ok(())
     }
