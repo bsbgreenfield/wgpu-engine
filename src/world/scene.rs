@@ -1,4 +1,4 @@
-use crate::world::entity_manager::{EntityHandle, EntityManager};
+use crate::world::entity_manager::EntityHandle;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum SceneLoadLevel {

@@ -207,3 +207,44 @@ for view in render_views {
 In the future, if we want to drop the CPU loaded asset from memory, we can do that, but we would probably need to 
 create a function which CONSUMES the loaded_asset and creates a bunch of render views
 
+
+
+
+## loading an entity vs "spawning"
+
+Loading an entity is the process of making all of its assets GPU resident. These assets contain exclusively STATIC data.
+
+The vertices, indices, local transforms, textures, materials, that belong to an entity do not change, even if they are modified by things like animations, and shading 
+this is not so for "instance" data. This is data that make sense only in the context of the game world. 
+
+Therefore, while "loading" an entity refers to the loading of static asset data, "spawning" refers to actually instantiating it within the world
+
+The world needs a way to keep track of "spawned" entities, and differentiate them from entities that are simply registered but not spawned. 
+
+The concept of "spawning" is also deeply tied to the concept of RenderGroups and RenderViews. A RenderGroup must exist for an entity if and only if that entity has been spawned into the world
+
+The fact that these two things - a world space abstraction of a spawned entity, and the renderer's RenderGroup-  can (and must) exist simultaneously neccesitates a single source of truth for the actualy "state" of these spanwed entities
+
+The obvious choice here is for the World to be the source of truth for this state. The Renderer should simply react to and try to represent the current state of the world.
+
+When an entity is spawned, it must spawned at a world location, so there must be an associated transform. There also must be a unique ID for the new instance so that we can keep track over the frames. The combination
+of InstanceHandle and world transform (along with other stuff, instance count, instance state?) is the Instance Data for a particular instance. This data must be kept in sync with the GPU representation of these values.
+
+### lifecycle of an entity spawn
+
+1. Add the entity handle to a list of active Instances on the World. An InstanceHandle is created. (this will later need to be changed to account for defragmentation of instance data as it moves around)
+
+2. The world transform for the instance is inserted into an array which can be accessed using the InstanceHandle
+
+3. Renderer VM bytecode is generated containing Renderable information (mesh collections, etc.) as well as InstanceData (handle and transform) 
+
+4. The renderer creates a rendergroup which stores the InstanceHandle as well as the RenderViews (basically references to the static Renderable data of the entity). In the future we will probably want RenderGroups to be able to share RenderViews
+
+5. The renderer uses the InstanceHandle to write the transform into the global transform buffer
+
+6. When rendering, we obtain the instance index / range with a call to global_transform_arena.resolve(group.instance_handle) which is later used in render_pass.draw(). 
+
+If a new instance is created of a new entity, the renderer creates a new render group. If the instance is destroyed, the renderer deletes the rendergroup and the global_transform_arena dealloates.
+For each frame, when instances move, a staging buffer is written to, and the renderer swaps in the new buffer. Because the global_transform_arena is responsible for associating instance handles (which are static) with dynamic 
+instance indices/ranges, this is just a matter of the arena resolve() algorithm
+

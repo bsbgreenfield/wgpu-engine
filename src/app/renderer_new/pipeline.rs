@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Range};
 
 use super::GPUAllocationHandle;
-use crate::app::renderer_new::renderer_new::{RenderCategory, RenderGroup};
+use crate::app::renderer_new::renderer_new::RenderCategory;
 
 struct DrawMap {
     map: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
@@ -23,7 +23,7 @@ impl DrawItem {
 struct EnginePipeline {
     pub(super) pipeline: wgpu::RenderPipeline,
     category: RenderCategory,
-    pub render_groups: Vec<RenderGroup>,
+    pub render_groups: Vec<crate::world::world::RenderGroup>,
 }
 
 impl EnginePipeline {}

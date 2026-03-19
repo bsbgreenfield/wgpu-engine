@@ -8,9 +8,7 @@ use crate::{
         renderer_new::{
             GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
             pipeline::PipelineCollection,
-            vertex_arena::{
-                GPUArenaNew, GlobalTransformUploadJob, LocalTransformUploadJob, VertexArenaError,
-            },
+            vertex_arena::{GPUArenaNew, LocalTransformUploadJob, VertexArenaError},
             vm::UploadMeshJob,
         },
     },
@@ -126,7 +124,6 @@ struct VertexArenaCollection {
     static_arena: GPUArenaNew<PNUVertex>,
     skinned_arena: GPUArenaNew<PNUJWVertex>,
     local_transform_arena: GPUArenaNew<LocalTransform>,
-    global_transform_arena: GPUArenaNew<GlobalTransform>,
 }
 
 impl VertexArenaCollection {
@@ -135,7 +132,6 @@ impl VertexArenaCollection {
             static_arena: GPUArenaNew::<PNUVertex>::new(device),
             skinned_arena: GPUArenaNew::<PNUJWVertex>::new(device),
             local_transform_arena: GPUArenaNew::<LocalTransform>::new(device),
-            global_transform_arena: GPUArenaNew::<GlobalTransform>::new(device),
         }
     }
 }
@@ -214,17 +210,6 @@ impl RendererNew {
         queue: &wgpu::Queue,
     ) -> Result<Vec<RenderUpdateDeltaNew>, RenderUpdateError> {
         self.interpret(constants, ops, queue)
-    }
-
-    pub(super) fn upload_global_transform_data<'frame>(
-        &mut self,
-        job: GlobalTransformUploadJob<'frame>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), VertexArenaError> {
-        self.vertex_arenas
-            .global_transform_arena
-            .upload(job, queue)?;
-        Ok(())
     }
 
     pub(super) fn upload_mesh_data<'frame, V: ModelVertex>(

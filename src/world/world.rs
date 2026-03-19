@@ -1,6 +1,5 @@
-use core::panic;
 use std::{
-    collections::{HashMap, HashSet, hash_map::Entry},
+    collections::{HashMap, HashSet},
     ops::Range,
 };
 
@@ -12,7 +11,7 @@ use crate::{
     asset_manager::asset_manager::{
         AssetHandle, AssetLoadError, AssetLoadResult, AssetManager, GltfAsset, LoadedAsset,
     },
-    util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::Mat4F32,
     world::{
         camera::Camera,
         components::{MeshCollectionComponent, MeshCollectionDescriptor},
@@ -213,38 +212,6 @@ pub struct World {
 }
 
 impl World {
-    //pub fn create_render_group(
-    //    &self,
-    //    entity: &EntityHandle,
-    //) -> Result<RenderGroup, WorldUpdateError> {
-    //    let mut views = Vec::<RenderView>::new();
-    //    let completed_assets = self
-    //        .asset_load_queue
-    //        .completed_queue
-    //        .get(entity)
-    //        .ok_or(WorldUpdateError::EntityLoadNotComplete(*entity))?;
-    //    for (asset_handle, allocation_handle) in completed_assets.iter() {
-    //        let la = self.asset_manager.get_loaded_asset(asset_handle).unwrap();
-    //        let (pnujw_ids, pnujw_prims) = la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
-    //        let (pnu_ids, pnu_prims) = la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
-    //        let view = RenderView {
-    //            gpu_handle: allocation_handle.to_owned(),
-    //            pnujw_draws: DrawSet {
-    //                mesh_ids: pnujw_ids,
-    //                primtitive_ranges: pnujw_prims,
-    //            },
-    //            pnu_draws: DrawSet {
-    //                mesh_ids: pnu_ids,
-    //                primtitive_ranges: pnu_prims,
-    //            },
-    //        };
-    //        views.push(view);
-    //    }
-    //    Ok(RenderGroup {
-    //        entity: *entity,
-    //        views,
-    //    })
-    //}
     pub fn get_loaded_asset_of(&self, asset_handle: &AssetHandle) -> Option<&LoadedAsset> {
         self.asset_manager.get_loaded_asset(asset_handle)
     }

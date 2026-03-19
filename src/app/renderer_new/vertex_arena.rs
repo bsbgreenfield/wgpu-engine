@@ -148,58 +148,6 @@ impl AllocMetaData {
     }
 }
 
-pub(super) struct GlobalTransformUploadJob<'a> {
-    pub(super) global_transforms: &'a [GlobalTransform],
-}
-impl GPUAllocator<GlobalTransform> for GPUArenaNew<GlobalTransform> {
-    type UploadJob<'a> = GlobalTransformUploadJob<'a>;
-    type AllocationError = VertexArenaError;
-
-    fn new(device: &wgpu::Device) -> Self {
-        Self {
-            max_chunks: 1,
-            chunks: vec![GPUChunk::<GlobalTransform>::new(device)],
-            alloc_table: HashMap::new(),
-            bind_group_layout: None,
-        }
-    }
-
-    fn upload<'a>(
-        &mut self,
-        job: Self::UploadJob<'a>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), Self::AllocationError> {
-        let (node_id, range) = self.chunks[0].gpu_alloc(job.global_transforms, queue)?;
-        self.alloc_table.insert(
-            job.global_alloc_id,
-            AllocMetaData {
-                chunk_id: 0,
-                node_id,
-            },
-        );
-
-        Ok(())
-    }
-
-    fn resolve(
-        &self,
-        handle: &GPUAllocationHandle,
-    ) -> (Range<u32>, &wgpu::Buffer, Option<&wgpu::BindGroup>) {
-        let node_id = self
-            .alloc_table
-            .get(&handle.global_allocation_id)
-            .unwrap()
-            .node_id;
-
-        let mut allocation_range = self.chunks[0].allocator.resolve(node_id);
-
-        allocation_range.start = allocation_range.start / size_of::<GlobalTransform>() as u32;
-        allocation_range.end = allocation_range.end / size_of::<GlobalTransform>() as u32;
-
-        (allocation_range, &self.chunks[0].buffer, None)
-    }
-}
-
 pub(super) struct LocalTransformUploadJob<'frame> {
     pub(super) local_transforms: &'frame [LocalTransform],
     pub(super) global_alloc_id: u32,

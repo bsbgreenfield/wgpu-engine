@@ -5,7 +5,7 @@ use crate::{
     app::renderer_new::{
         GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew, VMValue,
         renderer_new::{RenderCategory, RenderUpdateError, RendererNew},
-        vertex_arena::{GlobalTransformUploadJob, LocalTransformUploadJob},
+        vertex_arena::LocalTransformUploadJob,
     },
     asset_manager::{asset_manager::LoadedAsset, gltf_assets::model_builder_new::GltfMeshData},
     util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
@@ -157,15 +157,7 @@ impl<'frame> RendererNew {
                             self.add_render_group(vec![view], *entity_handle);
                         }
 
-                        if let Some(global_transform) = renderables.global_transform {
-                            self.upload_global_transform_data(
-                                GlobalTransformUploadJob {
-                                    global_transforms: &[global_transform.world_transform],
-                                    global_alloc_id: (),
-                                },
-                                queue,
-                            );
-                        }
+                        // TODO: something something global transform instancing
 
                         res.push(RenderUpdateDeltaNew::EntityGPULoaded(*entity_handle));
                     }
