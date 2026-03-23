@@ -1,7 +1,13 @@
+use std::{
+    any::TypeId,
+    collections::{HashMap, HashSet},
+};
+
 use crate::{
     app::renderer_new::GPUAllocationHandle,
     asset_manager::asset_manager::AssetHandle,
     util::types::{GlobalTransform, Mat4F32},
+    world::entity_manager::EntityHandle,
 };
 
 #[derive(Debug)]
@@ -42,43 +48,38 @@ impl MeshCollectionComponent {
     }
 }
 
-pub struct PhysicalPositionComponent {
-    pub world_transform: GlobalTransform,
+pub struct PhysicalPositionComponent;
+
+#[derive(Debug)]
+pub enum ComponentDataType {
+    PhysicalPosition,
+    Void,
 }
-//pub trait ExtractComponents {
-//    type Output;
-//
-//    fn extract_from(
-//        asset_manager: &mut AssetManager,
-//        asset: &AssetHandle,
-//    ) -> Result<Self::Output, AssetLoadError>;
-//}
-//
-//impl ExtractComponents for (MeshCollectionComponent,) {
-//    type Output = Vec<Rc<MeshCollectionComponent>>;
-//
-//    // TODO: This is perhaps not ideal. If we want to extract a single mesh collection from an
-//    // asset we need to get and clone all of them.
-//    // question: when and how often do we need to extract components for entities?
-//    // question 2: how to create multiple entites from a single LoadedAsset?
-//    fn extract_from(
-//        asset_manager: &mut AssetManager,
-//        asset: &AssetHandle,
-//    ) -> Result<Self::Output, AssetLoadError> {
-//        let loaded_asset = asset_manager.get_components_for(asset)?;
-//        let mesh_collection_refs = loaded_asset
-//            .get(&TypeId::of::<MeshCollectionComponent>())
-//            .ok_or(AssetLoadError::ComponentNotFound)?;
-//        let mut res = Vec::new();
-//        for mc_ref in mesh_collection_refs {
-//            res.push(
-//                mc_ref
-//                    .downcast::<MeshCollectionComponent>()
-//                    .unwrap()
-//                    .clone(),
-//            );
-//        }
-//
-//        Ok(res)
-//    }
-//}
+
+pub trait ComponentData {
+    fn get_data_type(&self) -> ComponentDataType;
+}
+
+impl ComponentData for GlobalTransform {
+    fn get_data_type(&self) -> ComponentDataType {
+        ComponentDataType::PhysicalPosition
+    }
+}
+struct VoidComponentData {}
+impl ComponentData for VoidComponentData {
+    fn get_data_type(&self) -> ComponentDataType {
+        ComponentDataType::Void
+    }
+}
+
+pub trait Component {
+    type ComponentData: ComponentData;
+}
+
+impl Component for PhysicalPositionComponent {
+    type ComponentData = GlobalTransform;
+}
+
+impl Component for MeshCollectionComponent {
+    type ComponentData = VoidComponentData;
+}

@@ -1,10 +1,11 @@
-use std::clone;
+use std::{any::TypeId, clone, collections::HashMap, mem::MaybeUninit};
 
-use crate::util::types::GlobalTransform;
+use crate::{
+    util::types::GlobalTransform,
+    world::components::{ComponentData, ComponentDataType},
+};
 
-pub struct InstanceData {
-    global_transform: GlobalTransform,
-}
+pub struct InstanceData(Vec<(u8, u8)>);
 
 #[derive(Clone)]
 pub struct InstanceHandle {
@@ -22,6 +23,12 @@ pub struct InstanceArena {
     dense_to_handle: Vec<InstanceHandle>,
     slots: Vec<Slot>,
     free_list: Vec<u32>,
+    grid: InstanceDataGrid,
+}
+
+#[derive(Default)]
+struct InstanceDataGrid {
+    global_transforms: Vec<GlobalTransform>,
 }
 
 impl InstanceArena {
@@ -31,6 +38,7 @@ impl InstanceArena {
             dense_to_handle: vec![],
             slots: vec![],
             free_list: vec![],
+            grid: InstanceDataGrid::default(),
         }
     }
     pub fn insert(&mut self, data: InstanceData) -> InstanceHandle {

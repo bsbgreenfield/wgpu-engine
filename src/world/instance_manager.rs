@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::world::{
+    components::ComponentData,
     entity_manager::EntityHandle,
     instance_arena::{InstanceArena, InstanceHandle},
 };
@@ -20,7 +21,7 @@ impl InstanceManager {
     pub(super) fn spawn(
         &mut self,
         entity_handle: EntityHandle,
-        data: crate::world::instance_arena::InstanceData,
+        data: Vec<Box<dyn ComponentData>>,
     ) -> &Vec<InstanceHandle> {
         let instance_handle = self.arena.insert(data);
         if self.entity_to_instance.contains_key(&entity_handle) {

@@ -13,7 +13,15 @@ use crate::{
     },
     util::types::Mat4F32,
     world::{
-        camera::Camera, components::{MeshCollectionComponent, MeshCollectionDescriptor}, entity_manager::{EntityHandle, EntityManager, EntityManagerError}, instance_arena::{InstanceArena, InstanceData, InstanceHandle}, instance_manager::InstanceManager, scene::{SceneEvent, SceneLoadLevel}
+        camera::Camera,
+        components::{
+            ComponentData, ComponentDataType, ComponentInitializer, MeshCollectionComponent,
+            MeshCollectionDescriptor,
+        },
+        entity_manager::{EntityHandle, EntityManager, EntityManagerError},
+        instance_arena::{InstanceArena, InstanceData, InstanceHandle},
+        instance_manager::InstanceManager,
+        scene::{SceneEvent, SceneLoadLevel},
     },
 };
 
@@ -37,12 +45,15 @@ pub struct RenderView {
 }
 
 pub struct RenderGroup {
-    instance_handle: InstanceHandle
+    instance_handle: InstanceHandle,
     pub views: Vec<RenderView>,
 }
 impl RenderGroup {
     pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>) -> Self {
-        Self { instance_handle , views }
+        Self {
+            instance_handle,
+            views,
+        }
     }
 }
 
@@ -58,6 +69,7 @@ pub enum WorldUpdateError {
     AssetLoadNotComplete(AssetHandle),
     EntityLoadNotFound(EntityHandle),
     EntityLoadNotComplete(EntityHandle),
+    EntityLoadFailed(EntityHandle),
     EntityLoadAlreadyEnqeued(EntityHandle),
     SomethingIsWrong(String),
 }
@@ -201,7 +213,6 @@ pub enum WorldUpdateDelta {
     AssetDidLoad(AssetHandle),
 }
 
-
 pub struct World {
     camera: Camera,
     scene: Scene,
@@ -223,21 +234,20 @@ impl World {
         let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        let box_asset = asset_manager.register_asset::<GltfAsset>("box")?;
+        // ************************** CREATE BOX ********************************
+        let box_asset = asset_manager.register_asset::<GltfAsset>("box")?; // asset
+
+        let box_entity = entity_manager.new_entity()?;
 
         let mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
+            // MeshCollection
             resource_backing: box_asset,
             allocation_handle: None,
             mesh_ids: &[0],
         });
 
-        let box_entity = entity_manager.new_entity()?;
-
-        entity_manager.add_mesh_collection_for_entity(box_entity, mesh);
-        entity_manager.add_physical_position_for_entity(
-            box_entity,
-            cgmath::Matrix4::<f32>::identity().into(),
-        );
+        entity_manager.add_mesh_collection_for_entity(box_entity, mesh); // mesh
+        entity_manager.add_physical_position_for_entity(box_entity); // position
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
@@ -253,9 +263,18 @@ impl World {
         })
     }
 
-    pub fn spawn(&mut self, entity_handle: EntityHandle, data: InstanceData) -> &Vec<InstanceHandle> {
-        self.instance_manager.spawn(entity_handle, data)
-
+    pub fn spawn(
+        &mut self,
+        entity_handle: EntityHandle,
+        initialization_list: Vec<Box<dyn ComponentData>>,
+    ) -> Result<&Vec<InstanceHandle>, WorldUpdateError> {
+        match self
+            .entity_manager
+            .validate_init_data_for(&entity_handle, &initialization_list)
+        {
+            Ok(_) => Ok(self.instance_manager.spawn(entity_handle, data)),
+            Err(e) => Err(WorldUpdateError::EntityLoadFailed(entity_handle)),
+        }
     }
 
     fn enqueue_entity_load(
