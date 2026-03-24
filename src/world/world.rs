@@ -14,13 +14,9 @@ use crate::{
     util::types::Mat4F32,
     world::{
         camera::Camera,
-        components::{
-            ComponentData, ComponentDataType, ComponentInitializer, MeshCollectionComponent,
-            MeshCollectionDescriptor,
-        },
+        components::{MeshCollectionComponent, MeshCollectionDescriptor},
         entity_manager::{EntityHandle, EntityManager, EntityManagerError},
-        instance_arena::{InstanceArena, InstanceData, InstanceHandle},
-        instance_manager::InstanceManager,
+        instance_manager::{APosition, Archetype, InstanceHandle, InstanceManager},
         scene::{SceneEvent, SceneLoadLevel},
     },
 };
@@ -163,6 +159,8 @@ impl AssetLoadQueue {
                         state: AssetLoadJobState::Pending,
                     },
                 );
+            } else {
+                self.asset_jobs.get_mut(asset).unwrap().ref_count += 1;
             }
         }
         Ok(self.entity_jobs.get(&entity).as_ref().unwrap())
@@ -263,18 +261,12 @@ impl World {
         })
     }
 
-    pub fn spawn(
-        &mut self,
+    pub fn spawn<A: Archetype>(
+        instance_manager: &mut InstanceManager,
         entity_handle: EntityHandle,
-        initialization_list: Vec<Box<dyn ComponentData>>,
+        archetype: A,
     ) -> Result<&Vec<InstanceHandle>, WorldUpdateError> {
-        match self
-            .entity_manager
-            .validate_init_data_for(&entity_handle, &initialization_list)
-        {
-            Ok(_) => Ok(self.instance_manager.spawn(entity_handle, data)),
-            Err(e) => Err(WorldUpdateError::EntityLoadFailed(entity_handle)),
-        }
+        Ok(instance_manager.spawn(entity_handle, archetype))
     }
 
     fn enqueue_entity_load(
@@ -328,13 +320,19 @@ impl World {
         let mut deltas = Vec::<WorldUpdateDelta>::new();
         // check scenes
         if self.scene.is_dirty() {
-            if let Some(scene_event) = self.scene.pop_event() {
-                deltas.extend(self.handle_scene_event(scene_event, self.scene.load_level)?);
-            }
+            deltas.extend(self.handle_scene_event()?); // TODO: allow for multiple scenes
         }
         self.asset_load_queue.poll_entity_jobs();
         for entity in self.asset_load_queue.completed_queue.keys() {
-            deltas.push(WorldUpdateDelta::EntityDidLoad(*entity));
+            // TODO: allow spawning of multiple instances
+            let instances = Self::spawn(
+                &mut self.instance_manager,
+                *entity,
+                APosition {
+                    position: cgmath::Matrix4::<f32>::identity().into(),
+                },
+            )?;
+            deltas.push(WorldUpdateDelta::EntityDidSpawn(instances[0].clone()));
         }
 
         // TODO: emit EntityDidSpawn event when necessary
@@ -342,18 +340,31 @@ impl World {
         Ok(deltas)
     }
 
-    fn handle_scene_event(
-        &mut self,
-        event: SceneEvent,
-        scene_load_level: SceneLoadLevel,
-    ) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
+    fn handle_scene_event(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
         let mut deltas: Vec<WorldUpdateDelta> = Vec::new();
-        match event {
-            SceneEvent::EntitiesAdded(entities) => {
-                for entity_handle in entities {
-                    // TODO: handle failed job enqueue?
-                    self.enqueue_entity_load(entity_handle, scene_load_level)?;
-                    self.poll_assets_for_job(&entity_handle, &mut deltas);
+        loop {
+            let maybe_event = self.scene.pop_event();
+            if maybe_event.is_none() {
+                break;
+            } else {
+                match maybe_event.unwrap() {
+                    SceneEvent::EntitiesAdded(entities) => {
+                        todo!()
+                        // for entity_handle in entities {
+                        //     // TODO: handle failed job enqueue?
+                        //     self.enqueue_entity_load(entity_handle, scene_load_level)?;
+                        //     self.poll_assets_for_job(&entity_handle, &mut deltas);
+                        // }
+                    }
+                    SceneEvent::LoadLevelChanged(old, new) => {
+                        if new > old {
+                            let entities = self.scene.entitites.clone();
+                            for entity in entities {
+                                self.enqueue_entity_load(entity, new)?;
+                                self.poll_assets_for_job(&entity, &mut deltas)?;
+                            }
+                        }
+                    }
                 }
             }
         }

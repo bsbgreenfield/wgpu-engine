@@ -32,31 +32,10 @@ pub struct EntityManager {
 }
 
 pub struct Renderables<'frame> {
-    pub mesh_collections: Option<&'frame MeshCollectionComponent>,
-    pub global_transform: Option<&'frame PhysicalPositionComponent>,
+    pub mesh_collection: Option<&'frame MeshCollectionComponent>,
 }
 
 impl EntityManager {
-    pub fn validate_init_data_for(
-        &self,
-        entity: &EntityHandle,
-        data: &Vec<Box<dyn ComponentData>>,
-    ) -> Result<(), EntityManagerError> {
-        for datum in data {
-            let ty = datum.get_data_type();
-            match ty {
-                ComponentDataType::PhysicalPosition => {
-                    if !self.global_transforms.contains(entity.0 as usize) {
-                        return Err(EntityManagerError::InvalidInitialization(ty));
-                    }
-                }
-                ComponentDataType::Void => {
-                    return Err(EntityManagerError::InvalidInitialization(ty));
-                }
-            }
-        }
-        Ok(())
-    }
     pub fn component_data_types_of(&self, entity: &EntityHandle) -> Vec<ComponentDataType> {
         let mut res = Vec::new();
         if self.global_transforms.get(entity.0 as usize).is_some() {
@@ -67,8 +46,7 @@ impl EntityManager {
 
     pub fn get_renderables<'frame>(&'frame self, entity: &EntityHandle) -> Renderables<'frame> {
         Renderables {
-            mesh_collections: self.mesh_collections.get(entity.0 as usize),
-            global_transform: self.global_transforms.get(entity.0 as usize),
+            mesh_collection: self.mesh_collections.get(entity.0 as usize),
         }
     }
 

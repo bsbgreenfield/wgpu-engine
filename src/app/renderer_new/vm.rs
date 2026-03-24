@@ -1,18 +1,19 @@
 use core::panic;
-use std::{iter::Peekable, ops::Range, slice::Iter};
+use std::{iter::Peekable, slice::Iter};
 
 use crate::{
     app::renderer_new::{
         GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew, VMValue,
-        renderer_new::{RenderCategory, RenderUpdateError, RendererNew},
+        renderer_new::{RenderUpdateError, RendererNew},
         vertex_arena::LocalTransformUploadJob,
     },
-    asset_manager::{asset_manager::LoadedAsset, gltf_assets::model_builder_new::GltfMeshData},
-    util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
+    asset_manager::asset_manager::LoadedAsset,
+    util::types::{ModelVertex, PNUJWVertex, PNUVertex},
     world::{
         components::MeshCollectionComponent,
-        entity_manager::{EntityHandle, Renderables},
-        world::{DrawSet, RenderGroup, RenderView},
+        entity_manager::Renderables,
+        instance_manager::InstanceHandle,
+        world::{DrawSet, RenderView},
     },
 };
 
@@ -34,6 +35,13 @@ impl<'frame> VMValue<'frame> {
         match self {
             VMValue::Renderables(renderables) => renderables,
             _ => panic!("value is not renderables"),
+        }
+    }
+
+    fn unwrap_instance_handle(&'frame self) -> &'frame InstanceHandle {
+        match self {
+            VMValue::InstanceHandle(handle) => handle,
+            _ => panic!("value is not an instance handle"),
         }
     }
 }
@@ -113,14 +121,18 @@ impl<'frame> RendererNew {
                         }));
                     }
                     Operations::AddEntity => {
-                        // TODO: account for multiple unique assets
+                        // TODO
+                    }
+                    Operations::MoveEntity => todo!(),
+                    Operations::SpawnEntityInstance => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        let instance_handle = 
+                        let instance_handle =
+                            constants[const_idx as usize].unwrap_instance_handle();
 
                         let renderables_idx = Self::get_constant_idx(&mut instr_peek);
                         let renderables = constants[renderables_idx as usize].unwrap_renderables();
 
-                        if let Some(mesh_collection_component) = renderables.mesh_collections {
+                        if let Some(mesh_collection) = renderables.mesh_collection {
                             let la_const_idx = Self::get_constant_idx(&mut instr_peek);
                             let la = constants[la_const_idx as usize].unwrap_loaded_asset();
 
@@ -129,10 +141,7 @@ impl<'frame> RendererNew {
                             let (pnu_ids, pnu_prims) =
                                 la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
                             let view = RenderView {
-                                gpu_handle: mesh_collection_component
-                                    .allocation_handle
-                                    .to_owned()
-                                    .unwrap(),
+                                gpu_handle: mesh_collection.allocation_handle.to_owned().unwrap(),
                                 pnu_draws: DrawSet {
                                     mesh_ids: pnu_ids,
                                     primtitive_ranges: pnu_prims,
@@ -142,14 +151,9 @@ impl<'frame> RendererNew {
                                     primtitive_ranges: pnujw_prims,
                                 },
                             };
-                            self.add_render_group(vec![view], *entity_handle);
+                            self.add_render_group(vec![view], instance_handle.clone());
                         }
-
-                        // TODO: something something global transform instancing
-
-                        res.push(RenderUpdateDeltaNew::EntityGPULoaded(*entity_handle));
                     }
-                    Operations::MoveEntity => todo!(),
                 },
                 Instruction::Byte(byte) => {}
                 Instruction::ConstIdx(idx) => {}

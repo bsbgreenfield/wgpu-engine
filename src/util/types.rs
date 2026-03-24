@@ -243,6 +243,14 @@ impl Deref for GlobalTransform {
     }
 }
 
+impl From<cgmath::Matrix4<f32>> for GlobalTransform {
+    fn from(value: cgmath::Matrix4<f32>) -> Self {
+        Self {
+            transform: value.into(),
+        }
+    }
+}
+
 impl InstanceData for GlobalTransform {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {

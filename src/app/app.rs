@@ -11,9 +11,11 @@ use crate::{
     },
     world::{
         self,
+        instance_manager::APosition,
         world::{World, WorldUpdateDelta, WorldUpdateError},
     },
 };
+use cgmath::SquareMatrix;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -99,7 +101,7 @@ impl App<'_> {
                     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                 }
                 WorldUpdateDelta::EntityDidLoad(entity_handle) => {
-                    // TODO: remove entity from world load queue
+                    // TODO spawn based on user input or scene state
                 }
             }
         }
@@ -108,6 +110,12 @@ impl App<'_> {
             vec![],
             &self.app_config.as_ref().unwrap().queue,
         )?;
+
+        let result = self
+            .renderer
+            .as_ref()
+            .unwrap()
+            .render(self.app_config.as_ref().unwrap());
 
         self.world
             .as_mut()

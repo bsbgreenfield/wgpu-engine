@@ -12,11 +12,10 @@ use crate::{
             vm::UploadMeshJob,
         },
     },
-    util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
-        entity_manager::EntityHandle,
-        instance_arena::InstanceHandle,
-        world::{DrawSet, RenderGroup, RenderView},
+        instance_manager::InstanceHandle,
+        world::{RenderGroup, RenderView},
     },
 };
 

@@ -4,12 +4,11 @@ use bytemuck::Pod;
 
 use crate::{
     asset_manager::asset_manager::{AssetHandle, LoadedAsset},
-    util::types::{GlobalTransform, Mat4F32},
+    util::types::Mat4F32,
     world::{
         components::MeshCollectionComponent,
         entity_manager::{EntityHandle, Renderables},
-        instance_arena::InstanceHandle,
-        world::RenderGroup,
+        instance_manager::InstanceHandle,
     },
 };
 

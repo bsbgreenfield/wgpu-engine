@@ -248,3 +248,17 @@ If a new instance is created of a new entity, the renderer creates a new render 
 For each frame, when instances move, a staging buffer is written to, and the renderer swaps in the new buffer. Because the global_transform_arena is responsible for associating instance handles (which are static) with dynamic 
 instance indices/ranges, this is just a matter of the arena resolve() algorithm
 
+
+
+
+## life cycle of an entity
+1. entity is created, components are added.
+2. entity is added to a scene
+3. the load level of the scene is set to GPU, marked dirty
+4. on world.update(), world processes SceneEvent::LoadLevelChanged
+5. for each entity in the scene, get all unallocated assets for the entity, and add an EntityLoadJob to the world queue
+6. for each asset in the new entity load job, poll asset load, emit AssetDidLoad event when done
+7. for each assetDidLoad event, allocate on the GPU.
+8. poll entity jobs. For each completed entity job, add EntityHandle: Map<AssetHandle: GPUAllocHandle> to completed queue
+9. for each entry in the completed queue, emit EntityDidLoad(entityHandle)
+10. spawn the entity. In the VM, generate a RenderGroup, with views into the specific allocations that need to be rendered

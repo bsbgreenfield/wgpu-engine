@@ -7,12 +7,14 @@ pub enum SceneLoadLevel {
     GPU,
 }
 
+#[derive(Clone)]
 pub enum SceneEvent {
     EntitiesAdded(Vec<EntityHandle>),
+    LoadLevelChanged(SceneLoadLevel, SceneLoadLevel),
 }
 
 pub struct Scene {
-    entitites: Vec<EntityHandle>,
+    pub entitites: Vec<EntityHandle>,
     dirty: bool,
     pub load_level: SceneLoadLevel,
     event_queue: Vec<SceneEvent>,
