@@ -15,6 +15,8 @@ pub trait ArchetypeTable {
     fn new() -> Self;
 
     fn insert(&mut self, data: Self::A, handle: InstanceHandle) -> u16;
+
+    fn remove(&mut self, index: usize);
 }
 
 struct APosition {
@@ -53,6 +55,13 @@ impl ArchetypeTable for APositionTable {
 
         (self.positions.len() - 1) as u16
     }
+
+    fn remove(&mut self, index: usize) {
+        let last_idx = self.positions.len() - 1;
+        self.positions.swap(index, last_idx);
+
+        self.positions.pop();
+    }
 }
 
 pub struct InstanceManager {
@@ -90,7 +99,9 @@ impl InstanceManager {
         self.entity_to_instance.get(&entity_handle).unwrap()
     }
 
-    pub fn despawn(&mut self, handle: InstanceHandle) {}
+    pub fn despawn(&mut self, handle: InstanceHandle) {
+        self.arena.remove(handle);
+    }
 
     pub fn entity_of(&self, instance_handle: &InstanceHandle) -> EntityHandle {
         todo!()
