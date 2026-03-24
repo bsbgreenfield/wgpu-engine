@@ -53,6 +53,7 @@ pub struct PhysicalPositionComponent;
 #[derive(Debug)]
 pub enum ComponentDataType {
     PhysicalPosition,
+    Physics,
     Void,
 }
 
@@ -70,6 +71,21 @@ impl ComponentData for VoidComponentData {
     fn get_data_type(&self) -> ComponentDataType {
         ComponentDataType::Void
     }
+}
+
+pub struct DummyPhysicsData {
+    velocity: u32,
+    mass: u32,
+}
+impl ComponentData for DummyPhysicsData {
+    fn get_data_type(&self) -> ComponentDataType {
+        ComponentDataType::Physics
+    }
+}
+
+pub struct DummyPhysicsComponent;
+impl Component for DummyPhysicsComponent {
+    type ComponentData = DummyPhysicsData;
 }
 
 pub trait Component {

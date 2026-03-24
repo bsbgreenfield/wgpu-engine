@@ -5,17 +5,20 @@ use crate::{
     world::components::{ComponentData, ComponentDataType},
 };
 
+type ArchetypeBitmask = u8;
+type TableIndex = u8;
+
 pub struct InstanceData(Vec<(u8, u8)>);
 
 #[derive(Clone)]
 pub struct InstanceHandle {
-    instance_id: u32,
-    generation: u32,
+    pub instance_id: u16,
+    pub generation: u16,
 }
 
 struct Slot {
     dense_index: u32,
-    generation: u32,
+    generation: u16,
 }
 
 pub struct InstanceArena {
