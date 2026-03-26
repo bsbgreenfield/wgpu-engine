@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, ops::Range};
+use std::{error::Error, fmt::Display, num::NonZero, ops::Range};
 
 use wgpu::RenderPass;
 
@@ -18,7 +18,7 @@ use crate::{
     world::{
         components::ComponentData,
         instance_manager::{InstanceHandle, InstanceManager},
-        world::{RenderGroup, RenderView},
+        world::{DrawSet, RenderGroup, RenderView},
     },
 };
 
@@ -82,6 +82,12 @@ struct DrawItem {
     instances: Range<u32>,
     primitives: Range<u32>,
     // TODO: indices
+}
+
+struct DrawPacket {
+    pnu: Range<usize>,
+    pnujw: Range<usize>,
+    draws: Vec<DrawItem>,
 }
 
 pub(super) struct EngineRenderPass {
@@ -200,10 +206,62 @@ impl RendererNew {
     pub fn gen_draw_calls<'frame>(
         &'frame self,
         instance_manager: &'frame InstanceManager,
-    ) -> Vec<DrawItem> {
-        let (gt_map, positions): (Vec<u16>, Vec<&'frame GlobalTransform>) =
+        queue: &wgpu::Queue,
+    ) -> Option<DrawPacket> {
+        let (gt_map, positions): (Vec<u16>, Vec<&'frame [GlobalTransform]>) =
             GlobalTransform::get_instance_data(instance_manager).unwrap();
-        self.
+        let total_length: usize = positions.iter().fold(0, |acc, e| acc + e.len());
+        if total_length == 0 {
+            return None;
+        }
+
+        let mut packet = DrawPacket {
+            draws: Vec::with_capacity(total_length),
+            pnu: Range { start: 0, end: 0 },
+            pnujw: Range { start: 0, end: 0 },
+        };
+        // write to instance buffer
+        if let Some(mut buffer_view) = queue.write_buffer_with(
+            &self.global_transform_buffer,
+            0,
+            NonZero::new((total_length * size_of::<GlobalTransform>()) as u64).unwrap(),
+        ) {
+            let mut offset: usize = 0;
+            for pos_slice in positions {
+                buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
+                    .copy_from_slice(bytemuck::cast_slice(pos_slice));
+                offset += pos_slice.len() * size_of::<GlobalTransform>();
+            }
+
+            for group in self.groups.iter() {
+                let instance_index = gt_map[group.instance_handle.global_id as usize];
+                for view in group.views.iter() {
+                    for i in 0..view.pnu_draws.mesh_ids.len() {
+                        packet.draws.push(DrawItem {
+                            instances: instance_index as u32..instance_index as u32 + 1,
+                            primitives: view.pnu_draws.primtitive_ranges[i].clone(),
+                        });
+                    }
+                    packet.pnu.end += view.pnu_draws.mesh_ids.len();
+                }
+            }
+            packet.pnujw.start = packet.pnu.end;
+
+            for group in self.groups.iter() {
+                let instance_index = gt_map[group.instance_handle.global_id as usize];
+                for view in group.views.iter() {
+                    for i in 0..view.pnujw_draws.mesh_ids.len() {
+                        packet.draws.push(DrawItem {
+                            instances: instance_index as u32..instance_index as u32 + 1,
+                            primitives: view.pnujw_draws.primtitive_ranges[i].clone(),
+                        });
+                    }
+                    packet.pnujw.end += view.pnujw_draws.mesh_ids.len();
+                }
+            }
+        }
+
+        Some(packet)
     }
 
     pub(super) fn add_render_group(

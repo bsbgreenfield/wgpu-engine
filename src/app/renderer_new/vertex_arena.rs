@@ -1,6 +1,11 @@
 use std::{
-    any::TypeId, collections::HashMap, error::Error, fmt::Display, marker::PhantomData,
-    num::NonZero, ops::Range,
+    any::TypeId,
+    collections::HashMap,
+    error::Error,
+    fmt::Display,
+    marker::PhantomData,
+    num::NonZero,
+    ops::{Deref, Range},
 };
 
 use wgpu::wgt::BufferDescriptor;
@@ -184,10 +189,6 @@ impl GPUAllocator<LocalTransform> for GPUArenaNew<LocalTransform> {
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError> {
-        let a = queue.write_buffer_with(&self.chunks[0].buffer, 0, NonZero::new(100).unwrap());
-        if let Some(aa) = a {
-            aa.copy_from_slice
-        }
         let (node_id, _range) = self.chunks[0].gpu_alloc(job.local_transforms, queue)?;
         self.alloc_table.insert(
             job.global_alloc_id,
@@ -294,5 +295,13 @@ impl StaticGPUBuffer<GlobalTransform> {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             }),
         }
+    }
+}
+
+impl<T: bytemuck::Pod> Deref for StaticGPUBuffer<T> {
+    type Target = wgpu::Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.buffer
     }
 }

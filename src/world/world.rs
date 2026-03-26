@@ -41,7 +41,7 @@ pub struct RenderView {
 }
 
 pub struct RenderGroup {
-    instance_handle: InstanceHandle,
+    pub instance_handle: InstanceHandle,
     pub views: Vec<RenderView>,
 }
 impl RenderGroup {
