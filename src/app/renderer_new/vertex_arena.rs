@@ -1,5 +1,6 @@
 use std::{
-    any::TypeId, collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range,
+    any::TypeId, collections::HashMap, error::Error, fmt::Display, marker::PhantomData,
+    num::NonZero, ops::Range,
 };
 
 use wgpu::wgt::BufferDescriptor;
@@ -183,6 +184,10 @@ impl GPUAllocator<LocalTransform> for GPUArenaNew<LocalTransform> {
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError> {
+        let a = queue.write_buffer_with(&self.chunks[0].buffer, 0, NonZero::new(100).unwrap());
+        if let Some(aa) = a {
+            aa.copy_from_slice
+        }
         let (node_id, _range) = self.chunks[0].gpu_alloc(job.local_transforms, queue)?;
         self.alloc_table.insert(
             job.global_alloc_id,
@@ -270,5 +275,24 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArenaNew<V> {
         let meta = self.alloc_table.get(&handle.global_allocation_id).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         (range, &self.chunks[meta.chunk_id].buffer, None)
+    }
+}
+
+pub struct StaticGPUBuffer<T: bytemuck::Pod> {
+    _t: PhantomData<T>,
+    buffer: wgpu::Buffer,
+}
+
+impl StaticGPUBuffer<GlobalTransform> {
+    pub fn new(device: &wgpu::Device) -> Self {
+        Self {
+            _t: PhantomData,
+            buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("global transform buffer"),
+                size: 1677717,
+                mapped_at_creation: false,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            }),
+        }
     }
 }

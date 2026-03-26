@@ -10,7 +10,7 @@ struct Slot {
 pub struct InstanceArenaNew<A: Archetype> {
     slots: Vec<Slot>,
     free_list: Vec<u16>,
-    handles: Vec<InstanceHandle>,
+    pub(super) handles: Vec<InstanceHandle>,
     _t: PhantomData<A>,
 }
 
@@ -23,7 +23,7 @@ impl<A: Archetype> InstanceArenaNew<A> {
             _t: PhantomData,
         }
     }
-    pub fn insert(&mut self) -> InstanceHandle {
+    pub fn insert(&mut self, global_id: u16) -> InstanceHandle {
         // select an open slot
         let slot_index = if let Some(free) = self.free_list.pop() {
             free
@@ -37,6 +37,7 @@ impl<A: Archetype> InstanceArenaNew<A> {
         };
 
         let new_handle = InstanceHandle {
+            global_id,
             instance_id: slot_index,
             generation: self.slots[slot_index as usize].generation,
             archetype_id: A::id(),

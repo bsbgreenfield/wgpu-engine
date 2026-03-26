@@ -25,7 +25,7 @@ pub trait ArchetypeTable {
 
     fn new() -> Self;
 
-    fn insert(&mut self, data: Self::A) -> InstanceHandle;
+    fn insert(&mut self, data: Self::A, globla_id: u16) -> InstanceHandle;
 
     fn remove(&mut self, handle: InstanceHandle);
 
@@ -41,13 +41,14 @@ impl Archetype for APosition {
         ArchetypeId::Position
     }
     fn insert_self(self, manager: &mut InstanceManager) -> InstanceHandle {
-        manager.pos.insert(self)
+        let global_id = manager.gen_global_id();
+        manager.pos.insert(self, global_id)
     }
 }
 
 struct APositionTable {
-    positions: Vec<GlobalTransform>,
-    arena: InstanceArenaNew<APosition>,
+    pub(super) positions: Vec<GlobalTransform>,
+    pub(super) arena: InstanceArenaNew<APosition>,
 }
 
 impl ArchetypeTable for APositionTable {
@@ -60,9 +61,9 @@ impl ArchetypeTable for APositionTable {
         }
     }
 
-    fn insert(&mut self, data: APosition) -> InstanceHandle {
+    fn insert(&mut self, data: APosition, global_id: u16) -> InstanceHandle {
         self.positions.push(data.position);
-        self.arena.insert()
+        self.arena.insert(global_id)
     }
 
     fn remove(&mut self, handle: InstanceHandle) {
@@ -90,23 +91,38 @@ impl ArchetypeTable for APositionTable {
 }
 #[derive(Clone)]
 pub struct InstanceHandle {
+    pub global_id: u16,
     pub archetype_id: ArchetypeId,
     pub instance_id: u16,
     pub generation: u16,
 }
 
 pub struct InstanceManager {
+    free_ids: Vec<u16>,
+    pub(super) next_id: u16,
     entity_to_instance: HashMap<EntityHandle, Vec<InstanceHandle>>,
-    pos: APositionTable,
+    pub(super) pos: APositionTable,
 }
 
 impl InstanceManager {
     pub(super) fn new() -> Self {
         Self {
+            next_id: 0,
+            free_ids: Vec::new(),
             entity_to_instance: HashMap::new(),
             pos: APositionTable::new(),
         }
     }
+
+    fn gen_global_id(&mut self) -> u16 {
+        if let Some(free) = self.free_ids.pop() {
+            free
+        } else {
+            self.next_id += 1;
+            self.next_id - 1
+        }
+    }
+
     pub(super) fn spawn<A: Archetype>(
         &mut self,
         entity_handle: EntityHandle,

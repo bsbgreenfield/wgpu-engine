@@ -1,24 +1,4 @@
-use std::{collections::HashMap, ops::Range};
-
-use super::GPUAllocationHandle;
 use crate::app::renderer_new::renderer_new::RenderCategory;
-
-struct DrawMap {
-    map: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
-}
-
-pub(super) struct DrawItem {
-    /// "local" refers to the allocation
-    pub(super) local_mesh_id: u32,
-    primitive_range: Range<u32>,
-}
-impl DrawItem {
-    #[inline]
-    pub(super) fn within(&self, range: &Range<u32>) -> Range<u32> {
-        let start = range.start + self.primitive_range.start;
-        start..(start + self.primitive_range.len() as u32)
-    }
-}
 
 struct EnginePipeline {
     pub(super) pipeline: wgpu::RenderPipeline,

@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display};
+use std::{error::Error, fmt::Display, ops::Range};
 
 use wgpu::RenderPass;
 
@@ -8,13 +8,16 @@ use crate::{
         renderer_new::{
             GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
             pipeline::PipelineCollection,
-            vertex_arena::{GPUArenaNew, LocalTransformUploadJob, VertexArenaError},
+            vertex_arena::{
+                GPUArenaNew, LocalTransformUploadJob, StaticGPUBuffer, VertexArenaError,
+            },
             vm::UploadMeshJob,
         },
     },
-    util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
-        instance_manager::InstanceHandle,
+        components::ComponentData,
+        instance_manager::{InstanceHandle, InstanceManager},
         world::{RenderGroup, RenderView},
     },
 };
@@ -73,6 +76,12 @@ impl Error for RenderUpdateError {}
 pub(super) enum RenderCategory {
     OpaqueStatic,
     OpaqueSkinned,
+}
+
+struct DrawItem {
+    instances: Range<u32>,
+    primitives: Range<u32>,
+    // TODO: indices
 }
 
 pub(super) struct EngineRenderPass {
@@ -167,17 +176,10 @@ impl VertexArenaSelector<PNUVertex> for RendererNew {
     }
 }
 
-struct RenderModel {
-    model_id: usize,
-    meshes_ids: Vec<usize>,
-}
-struct RenderModelManager {
-    render_models: Vec<RenderModel>,
-}
-
 pub struct RendererNew {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
+    global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
     pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
     groups: Vec<RenderGroup>,
@@ -188,10 +190,20 @@ impl RendererNew {
         Self {
             allocations: Vec::new(),
             vertex_arenas: VertexArenaCollection::new(device),
+            global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(device),
             pipelines: PipelineCollection::new(),
             passes: Vec::new(),
             groups: Vec::new(),
         }
+    }
+
+    pub fn gen_draw_calls<'frame>(
+        &'frame self,
+        instance_manager: &'frame InstanceManager,
+    ) -> Vec<DrawItem> {
+        let (gt_map, positions): (Vec<u16>, Vec<&'frame GlobalTransform>) =
+            GlobalTransform::get_instance_data(instance_manager).unwrap();
+        self.
     }
 
     pub(super) fn add_render_group(
@@ -236,7 +248,13 @@ impl RendererNew {
         Ok(())
     }
 
-    pub fn render(&self, config: &AppConfig) -> Result<(), RenderError> {
+    pub fn render(
+        &self,
+        config: &AppConfig,
+        instance_manager: &InstanceManager,
+    ) -> Result<(), RenderError> {
+        let draws = self.gen_draw_calls(instance_manager);
+
         for pass in &self.passes {
             let output = config.surface.get_current_texture()?;
             let view = output

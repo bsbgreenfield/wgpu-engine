@@ -9,13 +9,8 @@ use crate::{
             renderer_new::{RenderUpdateError, RendererNew},
         },
     },
-    world::{
-        self,
-        instance_manager::APosition,
-        world::{World, WorldUpdateDelta, WorldUpdateError},
-    },
+    world::world::{World, WorldUpdateDelta, WorldUpdateError},
 };
-use cgmath::SquareMatrix;
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -111,11 +106,10 @@ impl App<'_> {
             &self.app_config.as_ref().unwrap().queue,
         )?;
 
-        let result = self
-            .renderer
-            .as_ref()
-            .unwrap()
-            .render(self.app_config.as_ref().unwrap());
+        let result = self.renderer.as_ref().unwrap().render(
+            self.app_config.as_ref().unwrap(),
+            &self.world.as_ref().unwrap().instance_manager,
+        );
 
         self.world
             .as_mut()

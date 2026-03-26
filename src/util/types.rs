@@ -4,7 +4,6 @@ use std::{
 };
 
 use bytemuck::{AnyBitPattern, NoUninit};
-use wgpu::naga::front;
 
 pub type Mat4F32 = [[f32; 4]; 4];
 

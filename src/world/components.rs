@@ -1,6 +1,6 @@
 use crate::{
     app::renderer_new::GPUAllocationHandle, asset_manager::asset_manager::AssetHandle,
-    util::types::GlobalTransform,
+    util::types::GlobalTransform, world::instance_manager::InstanceManager,
 };
 
 #[derive(Debug)]
@@ -57,19 +57,58 @@ pub enum ComponentDataType {
     Void,
 }
 
-pub trait ComponentData {
+pub trait ComponentData: Sized {
     fn get_data_type() -> ComponentDataType;
+
+    fn get_instance_buffers<'frame>(
+        instance_manager: &'frame InstanceManager,
+    ) -> Option<(Vec<u16>, Vec<&'frame Self>)> {
+        let map: Vec<u16> = Vec::with_capacity(instance_manager.next_id as usize);
+        let data: Vec<&'frame Self> = Vec::new();
+        Some((map, data))
+    }
+
+    fn get_instance_data<'frame>(
+        instance_manager: &'frame InstanceManager,
+    ) -> Option<(Vec<u16>, Vec<&'frame Self>)>;
 }
 
 impl ComponentData for GlobalTransform {
     fn get_data_type() -> ComponentDataType {
         ComponentDataType::PhysicalPosition
     }
+
+    fn get_instance_data<'frame>(
+        instance_manager: &'frame InstanceManager,
+    ) -> Option<(Vec<u16>, Vec<&'frame Self>)> {
+        let mut buffers = Self::get_instance_buffers(instance_manager).unwrap();
+        for (i, (pos, handle)) in instance_manager
+            .pos
+            .positions
+            .iter()
+            .zip(instance_manager.pos.arena.handles.iter())
+            .enumerate()
+        {
+            buffers.0.insert(handle.global_id as usize, i as u16);
+            buffers.1.push(pos);
+        }
+        return Some((buffers.0, buffers.1));
+    }
 }
 pub struct VoidComponentData {}
 impl ComponentData for VoidComponentData {
     fn get_data_type() -> ComponentDataType {
         ComponentDataType::Void
+    }
+    fn get_instance_buffers<'frame>(
+        instance_manager: &'frame InstanceManager,
+    ) -> Option<(Vec<u16>, Vec<&'frame Self>)> {
+        None
+    }
+    fn get_instance_data<'frame>(
+        instance_manager: &'frame InstanceManager,
+    ) -> Option<(Vec<u16>, Vec<&'frame Self>)> {
+        None
     }
 }
 
@@ -80,6 +119,17 @@ pub struct DummyPhysicsData {
 impl ComponentData for DummyPhysicsData {
     fn get_data_type() -> ComponentDataType {
         ComponentDataType::Physics
+    }
+
+    fn get_instance_buffers<'frame>(
+        instance_manager: &'frame InstanceManager,
+    ) -> Option<(Vec<u16>, Vec<&'frame Self>)> {
+        None
+    }
+    fn get_instance_data<'frame>(
+        instance_manager: &'frame InstanceManager,
+    ) -> Option<(Vec<u16>, Vec<&'frame Self>)> {
+        None
     }
 }
 

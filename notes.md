@@ -262,3 +262,4 @@ instance indices/ranges, this is just a matter of the arena resolve() algorithm
 8. poll entity jobs. For each completed entity job, add EntityHandle: Map<AssetHandle: GPUAllocHandle> to completed queue
 9. for each entry in the completed queue, emit EntityDidLoad(entityHandle)
 10. spawn the entity. In the VM, generate a RenderGroup, with views into the specific allocations that need to be rendered
+11. 
