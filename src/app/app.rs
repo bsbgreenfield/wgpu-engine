@@ -2,14 +2,15 @@ use std::sync::Arc;
 
 use crate::{
     app::{
+        FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer_new::{
-            Instruction, Operations, VMValue,
-            renderer_new::{RenderUpdateError, RendererNew},
-        },
+        renderer_new::{Instruction, Operations, VMValue, renderer_new::RendererNew},
     },
-    world::world::{World, WorldUpdateDelta, WorldUpdateError},
+    world::{
+        WorldUpdateError,
+        world::{World, WorldUpdateDelta},
+    },
 };
 use winit::{
     application::ApplicationHandler,
@@ -27,25 +28,6 @@ pub struct App<'a> {
     pub renderer: Option<RendererNew>,
     pub app_state: AppState,
     surface_ready: bool,
-}
-
-#[derive(Debug)]
-enum FrameError {
-    UpdateError(WorldUpdateError),
-    SurfaceError(wgpu::SurfaceError),
-    RenderError(RenderUpdateError),
-}
-
-impl From<WorldUpdateError> for FrameError {
-    fn from(value: WorldUpdateError) -> Self {
-        FrameError::UpdateError(value)
-    }
-}
-
-impl From<RenderUpdateError> for FrameError {
-    fn from(value: RenderUpdateError) -> Self {
-        FrameError::RenderError(value)
-    }
 }
 
 impl App<'_> {
@@ -75,7 +57,7 @@ impl App<'_> {
                         .world
                         .as_ref()
                         .unwrap()
-                        .get_loaded_asset_of(asset_handle)
+                        .get_loaded_asset_of(&asset_handle)
                         .expect("loaded asset should be exactly CPU resident!");
                     // generate bytecode for renderer VM to load an asset
                     constants.push(VMValue::LoadedAsset(la));
@@ -85,7 +67,7 @@ impl App<'_> {
 
                 WorldUpdateDelta::EntityDidSpawn(instance_handle) => {
                     let world = self.world.as_ref().unwrap();
-                    let entity_handle = world.instance_manager.entity_of(instance_handle);
+                    let entity_handle = world.instance_manager.entity_of(&instance_handle);
                     let renderables = world.entity_manager.get_renderables(&entity_handle);
 
                     constants.push(VMValue::InstanceHandle(instance_handle.clone()));
@@ -95,7 +77,7 @@ impl App<'_> {
                     instructions.push(Instruction::ConstIdx((constants.len() - 2) as u8));
                     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                 }
-                WorldUpdateDelta::EntityDidLoad(entity_handle) => {
+                WorldUpdateDelta::EntityDidLoad(_entity_handle) => {
                     // TODO spawn based on user input or scene state
                 }
             }
@@ -115,11 +97,12 @@ impl App<'_> {
                 &self.app_config.as_ref().unwrap().queue,
             )
             .expect("Draw packet should have at least one instance");
-        let result = self
+        let _ = self
             .renderer
             .as_ref()
             .unwrap()
-            .render(self.app_config.as_ref().unwrap(), draw_packet);
+            .render(self.app_config.as_ref().unwrap(), draw_packet)
+            .map_err(|e| FrameError::RenderError(e));
 
         self.world
             .as_mut()
@@ -131,13 +114,6 @@ impl App<'_> {
 
     fn update_world(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
         unsafe { self.world.as_mut().unwrap_unchecked().update() }
-    }
-
-    fn render(&mut self, constants: Vec<VMValue>) {
-        unsafe {
-            let renderer = self.renderer.as_mut().unwrap_unchecked();
-            todo!()
-        }
     }
 }
 

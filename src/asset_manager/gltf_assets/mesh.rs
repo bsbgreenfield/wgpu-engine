@@ -1,15 +1,15 @@
-use std::{any::TypeId, marker::PhantomData, ops::Range};
+use std::{any::TypeId, ops::Range};
 
 use crate::util::types::ModelVertex;
 
 #[derive(Debug)]
-pub struct Mesh {
+pub(super) struct Mesh {
     pub id: u32,
     pub primitives: Vec<Primitive>,
 }
 
 #[derive(Debug)]
-pub struct Primitive {
+pub(super) struct Primitive {
     pub vertex_type: TypeId,
     pub vertices: Range<u32>,
     pub indices: Range<u32>,

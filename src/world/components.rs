@@ -69,7 +69,7 @@ pub trait ComponentData: Sized {
     }
 
     fn get_instance_data<'frame>(
-        instance_manager: &'frame InstanceManager,
+        _: &'frame InstanceManager,
     ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
         None
     }
@@ -97,31 +97,10 @@ impl ComponentData for VoidComponentData {
         ComponentDataType::Void
     }
     fn get_instance_buffers<'frame>(
-        instance_manager: &'frame InstanceManager,
+        _: &'frame InstanceManager,
     ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
         None
     }
-}
-
-pub struct DummyPhysicsData {
-    velocity: u32,
-    mass: u32,
-}
-impl ComponentData for DummyPhysicsData {
-    fn get_data_type() -> ComponentDataType {
-        ComponentDataType::Physics
-    }
-
-    fn get_instance_buffers<'frame>(
-        instance_manager: &'frame InstanceManager,
-    ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
-        None
-    }
-}
-
-pub struct DummyPhysicsComponent;
-impl Component for DummyPhysicsComponent {
-    type ComponentData = DummyPhysicsData;
 }
 
 impl Component for MeshCollectionComponent {

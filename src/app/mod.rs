@@ -1,4 +1,49 @@
+use std::fmt::Display;
+
+use crate::{
+    app::renderer_new::renderer_new::{RenderError, RenderUpdateError},
+    world::WorldUpdateError,
+};
+
 pub mod app;
 pub mod app_config;
 pub mod app_state;
 pub mod renderer_new;
+
+#[allow(unused)]
+#[derive(Debug)]
+enum FrameError {
+    UpdateError(WorldUpdateError),
+    SurfaceError(wgpu::SurfaceError),
+    RenderUpdateError(RenderUpdateError),
+    RenderError(RenderError),
+}
+
+impl Display for FrameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UpdateError(err) => err.fmt(f),
+            Self::SurfaceError(err) => err.fmt(f),
+            Self::RenderUpdateError(err) => err.fmt(f),
+            Self::RenderError(err) => err.fmt(f),
+        }
+    }
+}
+
+impl From<WorldUpdateError> for FrameError {
+    fn from(value: WorldUpdateError) -> Self {
+        FrameError::UpdateError(value)
+    }
+}
+
+impl From<RenderUpdateError> for FrameError {
+    fn from(value: RenderUpdateError) -> Self {
+        FrameError::RenderUpdateError(value)
+    }
+}
+
+impl From<RenderError> for FrameError {
+    fn from(value: RenderError) -> Self {
+        FrameError::RenderError(value)
+    }
+}

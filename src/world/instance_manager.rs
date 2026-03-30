@@ -46,7 +46,7 @@ impl Archetype for APosition {
     }
 }
 
-struct APositionTable {
+pub struct APositionTable {
     pub(super) positions: Vec<GlobalTransform>,
     pub(super) arena: InstanceArenaNew<APosition>,
 }

@@ -1,34 +1,9 @@
-pub struct GltfLoader;
-
 #[derive(Clone)]
 pub enum BinarySource {
     BinFile(PathBuf),
     GLB(PathBuf),
     GLTFBuffers(PathBuf),
     Undefined,
-}
-#[derive(Debug)]
-pub enum GltfLoadError {
-    IOErr(std::io::ErrorKind),
-    InvalidFileError,
-    MultipleFileTypes,
-    GltfNeedsBinFile,
-    GltfPackageError(gltf::Error),
-    BadFile(String),
-    ModelBuilderError(Box<ModelBuilderError>),
-    Unimplemented,
-}
-
-impl From<ModelBuilderError> for GltfLoadError {
-    fn from(value: ModelBuilderError) -> Self {
-        Self::ModelBuilderError(Box::new(value))
-    }
-}
-
-impl From<gltf::Error> for GltfLoadError {
-    fn from(value: gltf::Error) -> Self {
-        Self::GltfPackageError(value)
-    }
 }
 
 use std::{
@@ -40,7 +15,8 @@ use std::{
 use base64::Engine;
 use gltf::Gltf;
 
-use crate::asset_manager::gltf_assets::model_builder_new::ModelBuilderError;
+use crate::asset_manager::gltf_assets::gltf_loader::GltfLoadError;
+pub struct GltfLoader;
 
 impl GltfLoader {
     fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {

@@ -37,7 +37,7 @@ impl CameraData {
 
 pub struct Camera {
     data: CameraData,
-    pub(super) uniform: Option<CameraUniform>,
+    uniform: Option<CameraUniform>,
 }
 
 impl Camera {
@@ -67,12 +67,15 @@ const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     0.0, 0.0, 0.5, 0.5,
     0.0, 0.0, 0.0, 1.0,
 );
+
+#[allow(unused)]
 struct CameraUniform {
     pub(super) view_proj: [[f32; 4]; 4],
     buffer: wgpu::Buffer,
     pub(super) bg: wgpu::BindGroup,
 }
 
+#[allow(unused)]
 impl CameraUniform {
     fn update(&mut self, camera_data: &CameraData, aspect_ratio: f32) {
         self.view_proj =

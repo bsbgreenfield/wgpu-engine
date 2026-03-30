@@ -3,8 +3,8 @@ use std::ops::Range;
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager::gltf_assets::{mesh::Primitive, model_builder_new::ModelBuilderError},
-    util::types::{IndexType, ModelVertex, PNUJWVertex, PNUVertex, PrimitiveVerticesData},
+    asset_manager::gltf_assets::{ModelBuilderError, mesh::Primitive},
+    util::types::PrimitiveVerticesData,
 };
 
 #[derive(Debug)]

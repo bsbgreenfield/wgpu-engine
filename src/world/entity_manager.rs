@@ -8,9 +8,7 @@ use std::{
 use crate::{
     app::renderer_new::GPUAllocationHandle,
     asset_manager::asset_manager::AssetHandle,
-    world::components::{
-        ComponentData, ComponentDataType, MeshCollectionComponent, PhysicalPositionComponent,
-    },
+    world::components::{ComponentDataType, MeshCollectionComponent, PhysicalPositionComponent},
 };
 
 #[derive(Debug)]
@@ -58,7 +56,7 @@ impl EntityManager {
         if let Some(mcc) = self.mesh_collections.get_mut(entity.0 as usize)
             && let Some(alloc_handle) = allocation_handles.get(&mcc.resource_backing)
         {
-            mcc.allocation_handle.insert(alloc_handle.clone()); // should this be Weak?
+            let _ = mcc.allocation_handle.insert(alloc_handle.clone()); // should this be Weak?
         }
         // TODO: saturate other rbcs
     }

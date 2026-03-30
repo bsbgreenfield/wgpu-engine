@@ -8,15 +8,18 @@ use cgmath::SquareMatrix;
 use super::scene::Scene;
 use crate::{
     app::renderer_new::{GPUAllocationHandle, RenderUpdateDeltaNew},
-    asset_manager::asset_manager::{
-        AssetHandle, AssetLoadError, AssetLoadResult, AssetManager, GltfAsset, LoadedAsset,
+    asset_manager::{
+        asset_manager::{AssetHandle, AssetLoadResult, AssetManager, LoadedAsset},
+        gltf_assets::GltfAsset,
     },
     util::types::Mat4F32,
     world::{
+        WorldInitError, WorldUpdateError,
         camera::Camera,
         components::{MeshCollectionComponent, MeshCollectionDescriptor},
         entity_manager::{EntityHandle, EntityManager, EntityManagerError},
         instance_manager::{APosition, Archetype, InstanceHandle, InstanceManager},
+        load_queue::AssetLoadQueue,
         scene::{SceneEvent, SceneLoadLevel},
     },
 };
@@ -49,158 +52,6 @@ impl RenderGroup {
         Self {
             instance_handle,
             views,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum WorldInitError {
-    AssetFailure(AssetLoadError),
-    EntityFailure(EntityManagerError),
-}
-
-#[derive(Debug)]
-pub enum WorldUpdateError {
-    AssetLoadFailure(AssetLoadError),
-    AssetLoadNotComplete(AssetHandle),
-    EntityLoadNotFound(EntityHandle),
-    EntityLoadNotComplete(EntityHandle),
-    EntityLoadFailed(EntityHandle),
-    EntityLoadAlreadyEnqeued(EntityHandle),
-    SomethingIsWrong(String),
-}
-
-impl From<AssetLoadError> for WorldUpdateError {
-    fn from(value: AssetLoadError) -> Self {
-        Self::AssetLoadFailure(value)
-    }
-}
-
-impl From<AssetLoadError> for WorldInitError {
-    fn from(value: AssetLoadError) -> Self {
-        Self::AssetFailure(value)
-    }
-}
-impl From<EntityManagerError> for WorldInitError {
-    fn from(value: EntityManagerError) -> Self {
-        Self::EntityFailure(value)
-    }
-}
-
-struct EntityLoadJob {
-    load_level: SceneLoadLevel,
-    asset_load_jobs: Vec<AssetHandle>,
-}
-
-enum AssetLoadJobState {
-    Done(AssetLoadResult),
-    Pending,
-}
-struct AssetLoadJob {
-    state: AssetLoadJobState,
-    ref_count: usize,
-}
-struct AssetLoadQueue {
-    completed_queue: HashMap<EntityHandle, HashMap<AssetHandle, GPUAllocationHandle>>,
-    entity_jobs: HashMap<EntityHandle, EntityLoadJob>,
-    asset_jobs: HashMap<AssetHandle, AssetLoadJob>,
-}
-
-struct EntityLoadResult {
-    entity: EntityHandle,
-    allocations: HashMap<AssetHandle, GPUAllocationHandle>,
-}
-
-impl AssetLoadQueue {
-    fn new() -> Self {
-        Self {
-            completed_queue: HashMap::new(),
-            entity_jobs: HashMap::new(),
-            asset_jobs: HashMap::new(),
-        }
-    }
-
-    fn dequeue_completed(&mut self, entity: &EntityHandle) {
-        let completed = self.completed_queue.remove(&entity).unwrap();
-        // decrement all ref counts of asset jobs and remove any that are no longer referenced
-        for asset in completed.keys() {
-            let asset_job = self.asset_jobs.get_mut(asset).unwrap();
-            asset_job.ref_count -= 1;
-            if asset_job.ref_count == 0 {
-                self.asset_jobs.remove(asset);
-            }
-        }
-    }
-
-    fn new_entity_load(
-        &mut self,
-        entity: EntityHandle,
-        load_level: SceneLoadLevel,
-        assets: &HashSet<AssetHandle>,
-    ) -> Result<&EntityLoadJob, WorldUpdateError> {
-        let s = self.entity_jobs.insert(
-            entity,
-            EntityLoadJob {
-                load_level,
-                asset_load_jobs: assets.iter().map(|a| a.to_owned()).collect(),
-            },
-        );
-
-        if s.is_some() {
-            return Err(WorldUpdateError::EntityLoadAlreadyEnqeued(entity));
-        }
-
-        for asset in assets {
-            if self.asset_jobs.get(asset).is_none() {
-                self.asset_jobs.insert(
-                    *asset,
-                    AssetLoadJob {
-                        ref_count: 1,
-                        state: AssetLoadJobState::Pending,
-                    },
-                );
-            } else {
-                self.asset_jobs.get_mut(asset).unwrap().ref_count += 1;
-            }
-        }
-        Ok(self.entity_jobs.get(&entity).as_ref().unwrap())
-    }
-
-    fn poll_entity_jobs(&mut self) {
-        if self.entity_jobs.len() == 0 {
-            return;
-        }
-        let completed_jobs: Vec<(EntityHandle, HashMap<AssetHandle, GPUAllocationHandle>)> = self
-            .entity_jobs
-            .extract_if(|_, entity_job| {
-                entity_job.asset_load_jobs.iter().all(|asset_handle| {
-                    matches!(
-                        self.asset_jobs.get(asset_handle).unwrap().state,
-                        AssetLoadJobState::Done(_)
-                    )
-                })
-            })
-            .map(|(entity_handle, entity_job)| {
-                let allocations = entity_job
-                    .asset_load_jobs
-                    .into_iter()
-                    .map(|asset_handle| {
-                        let alloc = match &self.asset_jobs.get(&asset_handle).unwrap().state {
-                            AssetLoadJobState::Done(load_result) => match load_result {
-                                AssetLoadResult::LoadedGPU(alloc_handle) => alloc_handle.clone(),
-                                _ => todo!(),
-                            },
-                            _ => unreachable!(),
-                        };
-
-                        (asset_handle, alloc)
-                    })
-                    .collect();
-                (entity_handle, allocations)
-            })
-            .collect();
-        for job in completed_jobs {
-            self.completed_queue.insert(job.0, job.1);
         }
     }
 }
@@ -269,53 +120,6 @@ impl World {
         Ok(instance_manager.spawn(entity_handle, archetype))
     }
 
-    fn enqueue_entity_load(
-        &mut self,
-        entity_handle: EntityHandle,
-        scene_load_level: SceneLoadLevel,
-    ) -> Result<(), WorldUpdateError> {
-        let unallocated_assets = self.entity_manager.unallocated_assets_of(entity_handle);
-        if unallocated_assets.is_empty() {
-            return Err(WorldUpdateError::EntityLoadAlreadyEnqeued(entity_handle));
-        }
-        // create a new entity load job along with unique asset load jobs
-        let job_ref = self.asset_load_queue.new_entity_load(
-            entity_handle,
-            scene_load_level,
-            &unallocated_assets,
-        )?;
-        Ok(())
-    }
-
-    fn poll_assets_for_job(
-        &mut self,
-        entity_handle: &EntityHandle,
-        deltas: &mut Vec<WorldUpdateDelta>, // this may not work with async
-    ) -> Result<(), WorldUpdateError> {
-        let entity_job = self
-            .asset_load_queue
-            .entity_jobs
-            .get(entity_handle)
-            .unwrap();
-        for asset in entity_job.asset_load_jobs.iter() {
-            match self
-                .asset_manager
-                .set_minumum_load_level(*asset, entity_job.load_level)?
-            {
-                AssetLoadResult::PendingCPU => todo!("handle async cpu load"),
-                AssetLoadResult::PendingGPU => {
-                    deltas.push(WorldUpdateDelta::AssetDidLoad(*asset));
-                }
-                AssetLoadResult::LoadedCPU => {
-                    // do nothing?
-                }
-                AssetLoadResult::LoadedGPU(allocation_handle) => {
-                    //
-                }
-            }
-        }
-        Ok(())
-    }
     pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
         let mut deltas = Vec::<WorldUpdateDelta>::new();
         // check scenes
@@ -360,8 +164,15 @@ impl World {
                         if new > old {
                             let entities = self.scene.entitites.clone();
                             for entity in entities {
-                                self.enqueue_entity_load(entity, new)?;
-                                self.poll_assets_for_job(&entity, &mut deltas)?;
+                                self.asset_load_queue.new_entity_load(
+                                    entity,
+                                    self.scene.load_level,
+                                    &self.entity_manager.unallocated_assets_of(entity),
+                                );
+                                deltas.extend(
+                                    self.asset_load_queue
+                                        .poll_assets_for_job(entity, &mut self.asset_manager)?,
+                                );
                             }
                         }
                     }
