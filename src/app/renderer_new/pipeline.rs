@@ -1,6 +1,6 @@
 use crate::app::renderer_new::renderer_new::RenderCategory;
 
-struct EnginePipeline {
+pub struct EnginePipeline {
     pub(super) pipeline: wgpu::RenderPipeline,
     category: RenderCategory,
     pub render_groups: Vec<crate::world::world::RenderGroup>,
@@ -8,9 +8,9 @@ struct EnginePipeline {
 
 impl EnginePipeline {}
 
-pub(super) struct PipelineCollection {
-    pub(super) opaque_skinned: EnginePipeline,
-    pub(super) opaque_static: EnginePipeline,
+pub struct PipelineCollection {
+    pub opaque_skinned: EnginePipeline,
+    pub opaque_static: EnginePipeline,
 }
 
 impl PipelineCollection {

@@ -106,10 +106,20 @@ impl App<'_> {
             &self.app_config.as_ref().unwrap().queue,
         )?;
 
-        let result = self.renderer.as_ref().unwrap().render(
-            self.app_config.as_ref().unwrap(),
-            &self.world.as_ref().unwrap().instance_manager,
-        );
+        let draw_packet = self
+            .renderer
+            .as_ref()
+            .unwrap()
+            .gen_draw_calls_new(
+                &self.world.as_ref().unwrap().instance_manager,
+                &self.app_config.as_ref().unwrap().queue,
+            )
+            .expect("Draw packet should have at least one instance");
+        let result = self
+            .renderer
+            .as_ref()
+            .unwrap()
+            .render(self.app_config.as_ref().unwrap(), draw_packet);
 
         self.world
             .as_mut()

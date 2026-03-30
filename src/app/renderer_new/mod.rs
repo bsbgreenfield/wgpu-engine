@@ -76,5 +76,9 @@ trait GPUAllocator<T: Pod> {
         handle: &GPUAllocationHandle,
     ) -> (Range<u32>, &wgpu::Buffer, Option<&wgpu::BindGroup>);
 
+    fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize;
+
+    fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer;
+
     fn new(device: &wgpu::Device) -> Self;
 }

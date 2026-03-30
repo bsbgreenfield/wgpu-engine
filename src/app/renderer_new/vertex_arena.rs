@@ -222,6 +222,14 @@ impl GPUAllocator<LocalTransform> for GPUArenaNew<LocalTransform> {
             Some(self.get_bind_group()),
         )
     }
+
+    fn chunk_id(&self, _: &GPUAllocationHandle) -> usize {
+        0
+    }
+
+    fn buffer_from_chunk_id(&self, _: usize) -> &wgpu::Buffer {
+        &self.chunks[0].buffer
+    }
 }
 
 impl GPUArenaNew<LocalTransform> {
@@ -276,6 +284,15 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArenaNew<V> {
         let meta = self.alloc_table.get(&handle.global_allocation_id).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         (range, &self.chunks[meta.chunk_id].buffer, None)
+    }
+
+    #[inline]
+    fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
+        self.alloc_table[&handle.global_allocation_id].chunk_id
+    }
+
+    fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer {
+        &self.chunks[chunk_id].buffer
     }
 }
 

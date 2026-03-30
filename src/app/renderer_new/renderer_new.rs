@@ -1,4 +1,6 @@
-use std::{error::Error, fmt::Display, num::NonZero, ops::Range};
+use std::{
+    collections::HashMap, error::Error, fmt::Display, marker::PhantomData, num::NonZero, ops::Range,
+};
 
 use wgpu::RenderPass;
 
@@ -6,7 +8,7 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer_new::{
-            GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
+            GPUAllocationHandle, GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
             pipeline::PipelineCollection,
             vertex_arena::{
                 GPUArenaNew, LocalTransformUploadJob, StaticGPUBuffer, VertexArenaError,
@@ -79,15 +81,65 @@ pub(super) enum RenderCategory {
 }
 
 struct DrawItem {
+    lt_idx: u32,
     instances: Range<u32>,
     primitives: Range<u32>,
     // TODO: indices
 }
 
-struct DrawPacket {
-    pnu: Range<usize>,
-    pnujw: Range<usize>,
-    draws: Vec<DrawItem>,
+trait DrawListBuilder<V: ModelVertex> {
+    fn write_list(
+        view: &RenderView,
+        arena: &GPUArenaNew<V>,
+        draw_list: &mut Vec<DrawItem>,
+        instance_idx: u32,
+        lt_offset: u32,
+    );
+}
+
+impl DrawListBuilder<PNUVertex> for DrawPacket {
+    fn write_list(
+        view: &RenderView,
+        arena: &GPUArenaNew<PNUVertex>,
+        draw_list: &mut Vec<DrawItem>,
+        instance_idx: u32,
+        lt_offset: u32,
+    ) {
+        for (i, mesh_id) in view.pnu_draws.mesh_ids.iter().enumerate() {
+            let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
+            let prim_range = DrawSet::within(&view.pnu_draws.primtitive_ranges[i], &alloc_range);
+            draw_list.push(DrawItem {
+                lt_idx: lt_offset + mesh_id,
+                instances: instance_idx..instance_idx + 1,
+                primitives: prim_range,
+            });
+        }
+    }
+}
+
+impl DrawListBuilder<PNUJWVertex> for DrawPacket {
+    fn write_list(
+        view: &RenderView,
+        arena: &GPUArenaNew<PNUJWVertex>,
+        draw_list: &mut Vec<DrawItem>,
+        instance_idx: u32,
+        lt_offset: u32,
+    ) {
+        for i in 0..view.pnujw_draws.mesh_ids.len() {
+            let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
+            let prim_range = DrawSet::within(&view.pnujw_draws.primtitive_ranges[i], &alloc_range);
+            draw_list.push(DrawItem {
+                lt_idx: lt_offset,
+                instances: instance_idx..instance_idx + 1,
+                primitives: prim_range,
+            });
+        }
+    }
+}
+
+pub struct DrawPacket {
+    pnu: HashMap<usize, Vec<DrawItem>>,
+    pnujw: HashMap<usize, Vec<DrawItem>>,
 }
 
 pub(super) struct EngineRenderPass {
@@ -157,6 +209,8 @@ trait VertexArenaSelector<V: ModelVertex> {
         mesh_job: UploadMeshJob<V>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError>;
+
+    fn get_arena(&self) -> &GPUArenaNew<V>;
 }
 
 impl VertexArenaSelector<PNUJWVertex> for RendererNew {
@@ -167,6 +221,10 @@ impl VertexArenaSelector<PNUJWVertex> for RendererNew {
     ) -> Result<(), VertexArenaError> {
         let handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
         Ok(())
+    }
+
+    fn get_arena(&self) -> &GPUArenaNew<PNUJWVertex> {
+        &self.vertex_arenas.skinned_arena
     }
 }
 
@@ -180,13 +238,17 @@ impl VertexArenaSelector<PNUVertex> for RendererNew {
         // TODO handle?
         Ok(())
     }
+
+    fn get_arena(&self) -> &GPUArenaNew<PNUVertex> {
+        &self.vertex_arenas.static_arena
+    }
 }
 
 pub struct RendererNew {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
     global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
-    pipelines: PipelineCollection,
+    pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
     groups: Vec<RenderGroup>,
 }
@@ -203,24 +265,63 @@ impl RendererNew {
         }
     }
 
-    pub fn gen_draw_calls<'frame>(
+    /// Organize draw calls into Buffer -> DrawItem
+    /// for each view that belongs to a buffer, find the allocation range within the buffer
+    /// then find the final indices within that allocation range
+    fn write_draw_list<V: ModelVertex>(
+        &self,
+        draw_map: &mut HashMap<usize, Vec<DrawItem>>,
+        gt_map: &Vec<u16>,
+    ) where
+        DrawPacket: DrawListBuilder<V>,
+        Self: VertexArenaSelector<V>,
+    {
+        let arena: &GPUArenaNew<V> = self.get_arena();
+        for group in self.groups.iter() {
+            let instance_index = gt_map[group.instance_handle.global_id as usize];
+            // for each allocation view
+            for view in group.views.iter() {
+                // get the buffer to which is belongs
+                let buf_id = arena.chunk_id(&view.gpu_handle);
+                // if the buffer has NOT already been visited, store the allocation range
+                // in the alloc map, and an empty vec in the packet map
+                let draw_list = draw_map.entry(buf_id).or_insert_with(|| vec![]);
+                let (local_transform_range, _, _) = self
+                    .vertex_arenas
+                    .local_transform_arena
+                    .resolve(&view.gpu_handle);
+
+                DrawPacket::write_list(
+                    view,
+                    arena,
+                    draw_list,
+                    instance_index as u32,
+                    local_transform_range.start,
+                );
+            }
+        }
+    }
+
+    pub fn gen_draw_calls_new<'frame>(
         &'frame self,
         instance_manager: &'frame InstanceManager,
         queue: &wgpu::Queue,
     ) -> Option<DrawPacket> {
         let (gt_map, positions): (Vec<u16>, Vec<&'frame [GlobalTransform]>) =
             GlobalTransform::get_instance_data(instance_manager).unwrap();
+
+        let mut packet = DrawPacket {
+            pnu: HashMap::new(),
+            pnujw: HashMap::new(),
+        };
+
+        // get the total length of the gt buffer
         let total_length: usize = positions.iter().fold(0, |acc, e| acc + e.len());
         if total_length == 0 {
             return None;
         }
 
-        let mut packet = DrawPacket {
-            draws: Vec::with_capacity(total_length),
-            pnu: Range { start: 0, end: 0 },
-            pnujw: Range { start: 0, end: 0 },
-        };
-        // write to instance buffer
+        // populate the gt buffer with all global transform data
         if let Some(mut buffer_view) = queue.write_buffer_with(
             &self.global_transform_buffer,
             0,
@@ -233,33 +334,11 @@ impl RendererNew {
                 offset += pos_slice.len() * size_of::<GlobalTransform>();
             }
 
-            for group in self.groups.iter() {
-                let instance_index = gt_map[group.instance_handle.global_id as usize];
-                for view in group.views.iter() {
-                    for i in 0..view.pnu_draws.mesh_ids.len() {
-                        packet.draws.push(DrawItem {
-                            instances: instance_index as u32..instance_index as u32 + 1,
-                            primitives: view.pnu_draws.primtitive_ranges[i].clone(),
-                        });
-                    }
-                    packet.pnu.end += view.pnu_draws.mesh_ids.len();
-                }
-            }
-            packet.pnujw.start = packet.pnu.end;
-
-            for group in self.groups.iter() {
-                let instance_index = gt_map[group.instance_handle.global_id as usize];
-                for view in group.views.iter() {
-                    for i in 0..view.pnujw_draws.mesh_ids.len() {
-                        packet.draws.push(DrawItem {
-                            instances: instance_index as u32..instance_index as u32 + 1,
-                            primitives: view.pnujw_draws.primtitive_ranges[i].clone(),
-                        });
-                    }
-                    packet.pnujw.end += view.pnujw_draws.mesh_ids.len();
-                }
-            }
+            self.write_draw_list::<PNUVertex>(&mut packet.pnu, &gt_map);
+            self.write_draw_list::<PNUJWVertex>(&mut packet.pnujw, &gt_map);
         }
+
+        // for each instance
 
         Some(packet)
     }
@@ -306,13 +385,7 @@ impl RendererNew {
         Ok(())
     }
 
-    pub fn render(
-        &self,
-        config: &AppConfig,
-        instance_manager: &InstanceManager,
-    ) -> Result<(), RenderError> {
-        let draws = self.gen_draw_calls(instance_manager);
-
+    pub fn render(&self, config: &AppConfig, draw_packet: DrawPacket) -> Result<(), RenderError> {
         for pass in &self.passes {
             let output = config.surface.get_current_texture()?;
             let view = output
@@ -331,53 +404,45 @@ impl RendererNew {
                 self.vertex_arenas.local_transform_arena.get_bind_group(),
                 &[],
             );
-            //
-            //            for render_group in self.groups.iter() {
-            //                for render_view in render_group.views.iter() {
-            //                    let (lt_index_range, _, lt_bind_group) = self
-            //                        .vertex_arenas
-            //                        .local_transform_arena
-            //                        .resolve(&render_view.gpu_handle);
-            //                    for render_category in &pass.categories {
-            //                        match render_category {
-            //                            RenderCategory::OpaqueStatic => {
-            //                                let pipeline = &self.pipelines.opaque_static;
-            //                                render_pass.set_pipeline(&pipeline.pipeline);
-            //                                render_pass.set_bind_group(1, lt_bind_group, &[]);
-            //                                let (alloc_range, buffer, _) = self
-            //                                    .vertex_arenas
-            //                                    .static_arena
-            //                                    .resolve(&render_view.gpu_handle);
-            //                                render_pass.set_vertex_buffer(0, buffer.slice(..));
-            //                                let mesh_ids = &render_view.pnu_draws.mesh_ids;
-            //                                let prim_ranges = &render_view.pnu_draws.primtitive_ranges;
-            //                                for i in 0..render_view.pnu_draws.mesh_ids.len() {
-            //                                    render_pass.set_immediates(
-            //                                        0,
-            //                                        bytemuck::cast_slice(&[lt_index_range.start + mesh_ids[i]]),
-            //                                    );
-            //                                    render_pass
-            //                                        .draw(DrawSet::within(&prim_ranges[i], &alloc_range), 0..1);
-            //                                }
-            //                            }
-            //                            _ => todo!(),
-            //                        }
-            //                    }
-            //                }
-            //            }
-            //            for render_category in &pass.categories {
-            //                match render_category {
-            //                    RenderCategory::OpaqueStatic => {
-            //                        let pipeline = &self.pipelines.opaque_static;
-            //                        render_pass.set_pipeline(&pipeline.pipeline);
-            //                        // PROCESS VIEW
-            //                    }
-            //                    RenderCategory::OpaqueSkinned => {
-            //                        render_pass.set_pipeline(&self.pipelines.opaque_skinned.pipeline);
-            //                    }
-            //                }
-            //            }
-            //        }
+            for render_category in pass.categories.iter() {
+                match render_category {
+                    RenderCategory::OpaqueStatic => {
+                        let pipeline = &self.pipelines.opaque_static;
+                        render_pass.set_pipeline(&pipeline.pipeline);
+                        for draw_entry in draw_packet.pnu.iter() {
+                            render_pass.set_vertex_buffer(
+                                0,
+                                self.vertex_arenas
+                                    .static_arena
+                                    .buffer_from_chunk_id(*draw_entry.0)
+                                    .slice(..),
+                            );
+
+                            for draw in draw_entry.1.iter() {
+                                render_pass.set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
+                                render_pass.draw(draw.primitives.clone(), draw.instances.clone());
+                            }
+                        }
+                    }
+                    RenderCategory::OpaqueSkinned => {
+                        let pipeline = &self.pipelines.opaque_skinned;
+                        render_pass.set_pipeline(&pipeline.pipeline);
+                        for draw_entry in draw_packet.pnujw.iter() {
+                            render_pass.set_vertex_buffer(
+                                0,
+                                self.vertex_arenas
+                                    .skinned_arena
+                                    .buffer_from_chunk_id(*draw_entry.0)
+                                    .slice(..),
+                            );
+                            for draw in draw_entry.1.iter() {
+                                render_pass.set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
+                                render_pass.draw(draw.primitives.clone(), draw.instances.clone());
+                            }
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
