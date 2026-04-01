@@ -1,14 +1,13 @@
 use std::fmt::Display;
 
-use crate::asset_manager::gltf_assets::{ModelBuilderError, gltf_loader::GltfLoadError};
+use crate::asset_manager::{
+    asset_manager::AssetResidency,
+    gltf_assets::{GltfLoadResult, ModelBuilderError, gltf_loader::GltfLoadError},
+};
 
 pub mod asset_manager;
 pub(super) mod gltf_assets;
 mod range_splicer;
-pub enum Asset {
-    Gltf(gltf::Gltf, gltf_assets::gltf_loader::loader::BinarySource),
-    Other,
-}
 #[derive(Debug)]
 pub enum AssetLoadError {
     Gltf(GltfLoadError),
@@ -42,4 +41,22 @@ impl From<GltfLoadError> for AssetLoadError {
     fn from(value: GltfLoadError) -> Self {
         Self::Gltf(value)
     }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct AssetHandle {
+    id: u32,
+}
+pub trait Asset {
+    fn new(dir_name: &str) -> Result<Self, AssetLoadError>
+    where
+        Self: Sized;
+    fn get_residency_level(&self) -> &AssetResidency;
+    fn set_residency_level(&mut self, level: AssetResidency);
+    fn load_asset(&self, handle: AssetHandle) -> Result<LoadedAsset, AssetLoadError>;
+}
+
+#[derive(Debug)]
+pub struct LoadedAsset {
+    pub handle: AssetHandle,
+    pub gltf_mesh_data: GltfLoadResult,
 }

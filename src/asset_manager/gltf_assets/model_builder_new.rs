@@ -4,8 +4,8 @@ use cgmath::SquareMatrix;
 
 use crate::{
     asset_manager::{
-        AssetLoadError,
-        asset_manager::{AssetHandle, AssetNew, AssetResidency, LoadedAsset},
+        Asset, AssetHandle, AssetLoadError, LoadedAsset,
+        asset_manager::AssetResidency,
         gltf_assets::{
             GltfAsset, GltfLoadResult, ModelBuilderError,
             gltf_loader::{
@@ -323,7 +323,7 @@ trait GltfBuilder {
 }
 impl GltfBuilder for GltfAsset {}
 
-impl AssetNew for GltfAsset {
+impl Asset for GltfAsset {
     fn get_residency_level(&self) -> &AssetResidency {
         &self.res_level
     }

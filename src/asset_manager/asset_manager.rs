@@ -1,14 +1,9 @@
 use crate::{
-    app::renderer_new::GPUAllocationHandle,
-    asset_manager::{AssetLoadError, gltf_assets::GltfLoadResult},
+    app::renderer::GPUAllocationHandle,
+    asset_manager::{Asset, AssetHandle, AssetLoadError, LoadedAsset},
     world::scene::SceneLoadLevel,
 };
 use std::collections::HashMap;
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct AssetHandle {
-    id: u32,
-}
 
 #[derive(Clone)]
 pub enum AssetResidency {
@@ -60,12 +55,6 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
     }
 }
 
-#[derive(Debug)]
-pub struct LoadedAsset {
-    pub handle: AssetHandle,
-    pub gltf_mesh_data: GltfLoadResult,
-}
-
 pub enum AssetLoadResult {
     LoadedCPU,
     LoadedGPU(GPUAllocationHandle),
@@ -91,7 +80,7 @@ impl AssetLoadResult {
 
 pub struct AssetManager {
     registered_handles: Vec<AssetHandle>,
-    registered_assets: HashMap<AssetHandle, Box<dyn AssetNew>>,
+    registered_assets: HashMap<AssetHandle, Box<dyn Asset>>,
     loaded_assets: Vec<LoadedAsset>,
 }
 
@@ -204,20 +193,11 @@ impl AssetManager {
 
     pub fn register_asset<A>(&mut self, source: &str) -> Result<AssetHandle, AssetLoadError>
     where
-        A: AssetNew + 'static,
+        A: Asset + 'static,
     {
         let asset = A::new(source)?;
         let handle = self.gen_handle();
         self.registered_assets.insert(handle, Box::new(asset));
         todo!("rest of the function goes here")
     }
-}
-
-pub trait AssetNew {
-    fn new(dir_name: &str) -> Result<Self, AssetLoadError>
-    where
-        Self: Sized;
-    fn get_residency_level(&self) -> &AssetResidency;
-    fn set_residency_level(&mut self, level: AssetResidency);
-    fn load_asset(&self, handle: AssetHandle) -> Result<LoadedAsset, AssetLoadError>;
 }

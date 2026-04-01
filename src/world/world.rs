@@ -1,15 +1,12 @@
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Range,
-};
+use std::ops::Range;
 
 use cgmath::SquareMatrix;
 
 use super::scene::Scene;
 use crate::{
-    app::renderer_new::{GPUAllocationHandle, RenderUpdateDeltaNew},
+    app::renderer::{GPUAllocationHandle, RenderUpdateDelta},
     asset_manager::{
-        asset_manager::{AssetHandle, AssetLoadResult, AssetManager, LoadedAsset},
+        asset_manager::{AssetHandle, AssetManager, LoadedAsset},
         gltf_assets::GltfAsset,
     },
     util::types::Mat4F32,
@@ -182,15 +179,15 @@ impl World {
         Ok(deltas)
     }
 
-    pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDeltaNew]) {
+    pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDelta]) {
         for delta in render_deltas {
             match delta {
-                RenderUpdateDeltaNew::AssetGPULoaded(allocation_handle) => {
+                RenderUpdateDelta::AssetGPULoaded(allocation_handle) => {
                     self.asset_manager
                         .register_asset_gpu_residency(allocation_handle)
                         .expect("Asset not found");
                 }
-                RenderUpdateDeltaNew::EntityGPULoaded(entity_handle) => {
+                RenderUpdateDelta::EntityGPULoaded(entity_handle) => {
                     self.asset_load_queue.dequeue_completed(entity_handle);
                 }
             }

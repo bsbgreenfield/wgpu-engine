@@ -1,14 +1,14 @@
 use std::fmt::Display;
 
 use crate::{
-    app::renderer_new::renderer_new::{RenderError, RenderUpdateError},
+    app::renderer::{RenderError, RenderUpdateError},
     world::WorldUpdateError,
 };
 
 pub mod app;
 pub mod app_config;
 pub mod app_state;
-pub mod renderer_new;
+pub mod renderer;
 
 #[allow(unused)]
 #[derive(Debug)]

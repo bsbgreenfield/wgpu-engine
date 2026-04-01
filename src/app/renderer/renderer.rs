@@ -1,18 +1,15 @@
-use std::{
-    collections::HashMap, error::Error, fmt::Display, marker::PhantomData, num::NonZero, ops::Range,
-};
+use std::{collections::HashMap, num::NonZero, ops::Range};
 
 use wgpu::RenderPass;
 
 use crate::{
     app::{
         app_config::AppConfig,
-        renderer_new::{
-            GPUAllocationHandle, GPUAllocator, Instruction, RenderUpdateDeltaNew, VMValue,
+        renderer::{
+            GPUAllocator, Instruction, RenderError, RenderUpdateDelta, RenderUpdateError, VMValue,
+            VertexArenaError,
             pipeline::PipelineCollection,
-            vertex_arena::{
-                GPUArenaNew, LocalTransformUploadJob, StaticGPUBuffer, VertexArenaError,
-            },
+            vertex_arena::{GPUArenaNew, LocalTransformUploadJob, StaticGPUBuffer},
             vm::UploadMeshJob,
         },
     },
@@ -23,57 +20,6 @@ use crate::{
         world::{DrawSet, RenderGroup, RenderView},
     },
 };
-
-#[derive(Debug)]
-pub enum RenderUpdateError {
-    MeshUploadFailed(String),
-    LocalTransformUpdateFailed,
-}
-
-impl From<VertexArenaError> for RenderUpdateError {
-    fn from(value: VertexArenaError) -> Self {
-        match value {
-            VertexArenaError::DataTooLarge(size) => Self::MeshUploadFailed(format!(
-                "upload failed because data of size {size} was too large"
-            )),
-            VertexArenaError::FreeListError(e) => {
-                Self::MeshUploadFailed(format!("Upload failed due to allocation error {}", e))
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum RenderError {
-    SurfaceError(wgpu::SurfaceError),
-}
-
-impl From<wgpu::SurfaceError> for RenderError {
-    fn from(value: wgpu::SurfaceError) -> Self {
-        Self::SurfaceError(value)
-    }
-}
-
-impl Display for RenderUpdateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MeshUploadFailed(desc) => desc.fmt(f),
-            Self::LocalTransformUpdateFailed => {
-                f.write_str("Local Transform data could not be uploaded")
-            }
-        }
-    }
-}
-
-impl Display for RenderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::SurfaceError(e) => e.fmt(f),
-        }
-    }
-}
-
-impl Error for RenderUpdateError {}
 
 pub(super) enum RenderCategory {
     OpaqueStatic,
@@ -213,7 +159,7 @@ trait VertexArenaSelector<V: ModelVertex> {
     fn get_arena(&self) -> &GPUArenaNew<V>;
 }
 
-impl VertexArenaSelector<PNUJWVertex> for RendererNew {
+impl VertexArenaSelector<PNUJWVertex> for Renderer {
     fn upload_mesh(
         &mut self,
         mesh_job: UploadMeshJob<PNUJWVertex>,
@@ -228,7 +174,7 @@ impl VertexArenaSelector<PNUJWVertex> for RendererNew {
     }
 }
 
-impl VertexArenaSelector<PNUVertex> for RendererNew {
+impl VertexArenaSelector<PNUVertex> for Renderer {
     fn upload_mesh(
         &mut self,
         mesh_job: UploadMeshJob<PNUVertex>,
@@ -244,7 +190,7 @@ impl VertexArenaSelector<PNUVertex> for RendererNew {
     }
 }
 
-pub struct RendererNew {
+pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
     global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
@@ -253,7 +199,7 @@ pub struct RendererNew {
     groups: Vec<RenderGroup>,
 }
 
-impl RendererNew {
+impl Renderer {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
             allocations: Vec::new(),
@@ -361,7 +307,7 @@ impl RendererNew {
         constants: Vec<VMValue>,
         ops: Vec<Instruction>,
         queue: &wgpu::Queue,
-    ) -> Result<Vec<RenderUpdateDeltaNew>, RenderUpdateError> {
+    ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
         self.interpret(constants, ops, queue)
     }
 

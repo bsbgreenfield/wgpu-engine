@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    app::renderer_new::GPUAllocationHandle,
-    asset_manager::asset_manager::AssetHandle,
+    app::renderer::GPUAllocationHandle,
+    asset_manager::AssetHandle,
     world::components::{ComponentDataType, MeshCollectionComponent, PhysicalPositionComponent},
 };
 

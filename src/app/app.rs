@@ -5,7 +5,8 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer_new::{Instruction, Operations, VMValue, renderer_new::RendererNew},
+        renderer::renderer::Renderer,
+        renderer::{Instruction, Operations, VMValue},
     },
     world::{
         WorldUpdateError,
@@ -25,7 +26,7 @@ pub struct App<'a> {
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
     pub world: Option<World>,
-    pub renderer: Option<RendererNew>,
+    pub renderer: Option<Renderer>,
     pub app_state: AppState,
     surface_ready: bool,
 }
@@ -135,7 +136,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let world =
                 World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
             self.world = Some(world);
-            self.renderer = Some(RendererNew::new(&self.app_config.as_ref().unwrap().device))
+            self.renderer = Some(Renderer::new(&self.app_config.as_ref().unwrap().device))
         }
     }
 

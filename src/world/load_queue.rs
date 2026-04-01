@@ -1,11 +1,11 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Pointer,
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    app::renderer_new::GPUAllocationHandle,
-    asset_manager::asset_manager::{AssetHandle, AssetLoadResult, AssetManager},
+    app::renderer::GPUAllocationHandle,
+    asset_manager::{
+        AssetHandle,
+        asset_manager::{AssetLoadResult, AssetManager},
+    },
     world::{
         WorldUpdateError, entity_manager::EntityHandle, scene::SceneLoadLevel,
         world::WorldUpdateDelta,

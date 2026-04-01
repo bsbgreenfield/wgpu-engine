@@ -1,9 +1,6 @@
-use std::{error::Error, fmt::Display, marker::PhantomData, ops::Range};
+use std::ops::Range;
 
-use crate::{
-    app::renderer_new::{CHUNK_SIZE, vertex_arena::VertexArenaError},
-    util::types::ModelVertex,
-};
+use crate::app::renderer::{CHUNK_SIZE, FreeListAllocError};
 
 pub(super) struct FreeListAllocator {
     nodes: Vec<FreeListNode>,
@@ -24,26 +21,6 @@ impl<'chunk> FreeListNode {
             block_size,
             next,
             offset,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) enum FreeListAllocError {
-    NoRoomLeft(u32, u32),
-}
-
-impl Error for FreeListAllocError {}
-impl Display for FreeListAllocError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoRoomLeft(size, used) => f.write_str(
-                format!(
-                    "Not enough room to fit data of size {}. Available: {}",
-                    size, used,
-                )
-                .as_str(),
-            ),
         }
     }
 }

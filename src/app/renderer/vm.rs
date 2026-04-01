@@ -2,12 +2,11 @@ use core::panic;
 use std::{iter::Peekable, slice::Iter};
 
 use crate::{
-    app::renderer_new::{
-        GPUAllocationHandle, Instruction, Operations, RenderUpdateDeltaNew, VMValue,
-        renderer_new::{RenderUpdateError, RendererNew},
-        vertex_arena::LocalTransformUploadJob,
+    app::renderer::{
+        GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
+        VMValue, renderer::Renderer, vertex_arena::LocalTransformUploadJob,
     },
-    asset_manager::asset_manager::LoadedAsset,
+    asset_manager::LoadedAsset,
     util::types::{ModelVertex, PNUJWVertex, PNUVertex},
     world::{
         components::MeshCollectionComponent,
@@ -66,7 +65,7 @@ impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
     }
 }
 
-impl<'frame> RendererNew {
+impl<'frame> Renderer {
     unsafe fn get_asset_ref(instr_peek: &mut Peekable<Iter<'_, Instruction>>) {
         let a: &Instruction = instr_peek.next().unwrap().try_into().unwrap();
     }
@@ -83,8 +82,8 @@ impl<'frame> RendererNew {
         constants: Vec<VMValue>,
         instructions: Vec<Instruction>,
         queue: &wgpu::Queue,
-    ) -> Result<Vec<RenderUpdateDeltaNew>, RenderUpdateError> {
-        let mut res: Vec<RenderUpdateDeltaNew> = Vec::new();
+    ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
+        let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
 
         while instr_peek.peek().is_some() {
@@ -115,7 +114,7 @@ impl<'frame> RendererNew {
                         self.upload_mesh_data(skinned_job, queue)?;
                         self.upload_mesh_data(static_job, queue)?;
 
-                        res.push(RenderUpdateDeltaNew::AssetGPULoaded(GPUAllocationHandle {
+                        res.push(RenderUpdateDelta::AssetGPULoaded(GPUAllocationHandle {
                             asset_handle: loaded_asset.handle,
                             global_allocation_id,
                         }));

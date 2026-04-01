@@ -1,22 +1,17 @@
 use std::{
-    any::TypeId,
     collections::HashMap,
-    error::Error,
-    fmt::Display,
     marker::PhantomData,
-    num::NonZero,
     ops::{Deref, Range},
 };
 
 use wgpu::wgt::BufferDescriptor;
 
 use crate::{
-    app::renderer_new::{
-        CHUNK_SIZE, GPUAllocationHandle, GPUAllocator,
-        free_list::{FreeListAllocError, FreeListAllocator},
-        vm::UploadMeshJob,
+    app::renderer::{
+        CHUNK_SIZE, GPUAllocationHandle, GPUAllocator, VertexArenaError,
+        free_list::FreeListAllocator, vm::UploadMeshJob,
     },
-    util::types::{GlobalTransform, LocalTransform, Mat4F32, ModelVertex},
+    util::types::{GlobalTransform, LocalTransform, ModelVertex},
 };
 //****************************************************************
 pub(super) struct GPUArenaNew<T: bytemuck::Pod> {
@@ -35,34 +30,6 @@ struct GPUChunk<T: bytemuck::Pod> {
 }
 
 //***************************************************************
-#[derive(Debug)]
-pub(super) enum VertexArenaError {
-    DataTooLarge(u32),
-    FreeListError(FreeListAllocError),
-}
-
-impl From<FreeListAllocError> for VertexArenaError {
-    fn from(value: FreeListAllocError) -> Self {
-        Self::FreeListError(value)
-    }
-}
-
-impl Display for VertexArenaError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            Self::DataTooLarge(size) => f.write_str(
-                format!(
-                    "cannot allocate mesh of size {}, which exceeds chunk size: {}",
-                    size, CHUNK_SIZE
-                )
-                .as_str(),
-            ),
-            Self::FreeListError(err) => err.fmt(f),
-        }
-    }
-}
-
-impl Error for VertexArenaError {}
 
 impl GPUChunk<GlobalTransform> {
     fn new(device: &wgpu::Device) -> Self {
