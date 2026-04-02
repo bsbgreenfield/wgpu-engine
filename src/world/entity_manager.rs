@@ -71,7 +71,7 @@ impl EntityManager {
             .available_ids
             .first_mut()
             .ok_or(EntityManagerError::MaxEntitiesExceeded)?;
-        let res = EntityHandle(first_range.start);
+        let res = EntityHandle(first_range.start as u16);
         if first_range.len() > 1 {
             first_range.start = first_range.start + 1;
         } else {
@@ -103,7 +103,7 @@ impl EntityManager {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct EntityHandle(u32);
+pub struct EntityHandle(u16);
 
 const INVALID: usize = usize::MAX;
 struct SparseSet<T, const N: usize> {

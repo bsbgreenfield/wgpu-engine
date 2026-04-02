@@ -4,7 +4,8 @@ use std::{iter::Peekable, slice::Iter};
 use crate::{
     app::renderer::{
         GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
-        VMValue, gpu_allocator::LocalTransformUploadJob, renderer::Renderer,
+        UploadMeshJob, VMValue, VertexArenaSelector, gpu_allocator::LocalTransformUploadJob,
+        renderer::Renderer,
     },
     asset_manager::LoadedAsset,
     util::types::{ModelVertex, PNUJWVertex, PNUVertex},
@@ -38,12 +39,7 @@ impl<'frame> VMValue<'frame> {
     }
 }
 
-pub struct UploadMeshJob<'frame, V: ModelVertex> {
-    pub verts: &'frame [V],
-    pub(super) global_alloc_id: u32,
-}
-
-pub trait MeshUploadable<V: ModelVertex> {
+trait MeshUploadable<V: ModelVertex> {
     fn as_mesh_job<'frame>(verts: &'frame [V], global_alloc_id: u32) -> UploadMeshJob<'frame, V>;
 }
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
@@ -100,8 +96,8 @@ impl<'frame> Renderer {
                         };
 
                         self.upload_local_transform_data(lt_job, queue)?;
-                        self.upload_mesh_data(skinned_job, queue)?;
-                        self.upload_mesh_data(static_job, queue)?;
+                        self.upload_mesh(skinned_job, queue)?;
+                        self.upload_mesh(static_job, queue)?;
 
                         res.push(RenderUpdateDelta::AssetGPULoaded(GPUAllocationHandle {
                             asset_handle: loaded_asset.handle,

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf};
 
 use crate::asset_manager::gltf_assets::ModelBuilderError;
 
@@ -40,4 +40,13 @@ impl From<gltf::Error> for GltfLoadError {
     fn from(value: gltf::Error) -> Self {
         Self::GltfPackageError(value)
     }
+}
+
+#[allow(unused)]
+#[derive(Clone)]
+pub(in crate::asset_manager) enum BinarySource {
+    BinFile(PathBuf),
+    GLB(PathBuf),
+    GLTFBuffers(PathBuf),
+    Undefined,
 }

@@ -7,11 +7,8 @@ use crate::{
         Asset, AssetHandle, AssetLoadError, LoadedAsset,
         asset_manager::AssetResidency,
         gltf_assets::{
-            GltfAsset, GltfLoadResult, ModelBuilderError,
-            gltf_loader::{
-                GltfLoadError,
-                loader::{BinarySource, GltfLoader},
-            },
+            BinarySource, GltfAsset, GltfLoadResult, ModelBuilderError,
+            gltf_loader::{GltfLoadError, loader::GltfLoader},
             mesh::{Mesh, Primitive},
             primitive::PrimitiveData,
         },

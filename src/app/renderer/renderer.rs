@@ -6,14 +6,13 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            Instruction, RenderError, RenderUpdateDelta, RenderUpdateError, VMValue,
-            VertexArenaError,
+            Instruction, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
+            VertexArenaError, VertexArenaSelector,
             gpu_allocator::{
                 GPUAllocator, LocalTransformUploadJob,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
             },
             pipeline::PipelineCollection,
-            vm::UploadMeshJob,
         },
     },
     util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
@@ -152,47 +151,6 @@ impl VertexArenaCollection {
     }
 }
 
-trait VertexArenaSelector<V: ModelVertex> {
-    fn upload_mesh(
-        &mut self,
-        mesh_job: UploadMeshJob<V>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), VertexArenaError>;
-
-    fn get_arena(&self) -> &GPUArena<V>;
-}
-
-impl VertexArenaSelector<PNUJWVertex> for Renderer {
-    fn upload_mesh(
-        &mut self,
-        mesh_job: UploadMeshJob<PNUJWVertex>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), VertexArenaError> {
-        let _handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
-        Ok(())
-    }
-
-    fn get_arena(&self) -> &GPUArena<PNUJWVertex> {
-        &self.vertex_arenas.skinned_arena
-    }
-}
-
-impl VertexArenaSelector<PNUVertex> for Renderer {
-    fn upload_mesh(
-        &mut self,
-        mesh_job: UploadMeshJob<PNUVertex>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), VertexArenaError> {
-        let _handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
-        // TODO handle?
-        Ok(())
-    }
-
-    fn get_arena(&self) -> &GPUArena<PNUVertex> {
-        &self.vertex_arenas.static_arena
-    }
-}
-
 pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
@@ -314,23 +272,14 @@ impl Renderer {
         self.interpret(constants, ops, queue)
     }
 
-    pub(super) fn upload_mesh_data<'frame, V: ModelVertex>(
-        &mut self,
-        mesh_job: UploadMeshJob<'frame, V>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), VertexArenaError>
-    where
-        Self: VertexArenaSelector<V>,
-    {
-        self.upload_mesh(mesh_job, queue)
-    }
-
     pub(super) fn upload_local_transform_data<'frame>(
         &mut self,
         job: LocalTransformUploadJob,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        self.vertex_arenas.local_transform_arena.upload(job, queue);
+        self.vertex_arenas
+            .local_transform_arena
+            .upload(job, queue)?;
         Ok(())
     }
 
@@ -394,5 +343,35 @@ impl Renderer {
             }
         }
         Ok(())
+    }
+}
+impl VertexArenaSelector<PNUJWVertex> for Renderer {
+    fn upload_mesh(
+        &mut self,
+        mesh_job: UploadMeshJob<PNUJWVertex>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError> {
+        let _handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
+        Ok(())
+    }
+
+    fn get_arena(&self) -> &GPUArena<PNUJWVertex> {
+        &self.vertex_arenas.skinned_arena
+    }
+}
+
+impl VertexArenaSelector<PNUVertex> for Renderer {
+    fn upload_mesh(
+        &mut self,
+        mesh_job: UploadMeshJob<PNUVertex>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError> {
+        let _handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
+        // TODO handle?
+        Ok(())
+    }
+
+    fn get_arena(&self) -> &GPUArena<PNUVertex> {
+        &self.vertex_arenas.static_arena
     }
 }

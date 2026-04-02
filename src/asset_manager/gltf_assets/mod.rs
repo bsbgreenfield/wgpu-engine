@@ -1,9 +1,10 @@
+use std::fmt::{Debug, Display};
+
 use crate::{
     asset_manager::{
         asset_manager::AssetResidency,
         gltf_assets::{
-            gltf_loader::{GltfLoadError, loader::BinarySource},
-            model_builder_new::GltfMeshData,
+            gltf_loader::BinarySource, model_builder_new::GltfMeshData,
             primitive::GltfValidationError,
         },
     },
@@ -17,12 +18,22 @@ mod primitive;
 #[derive(Debug)]
 pub enum ModelBuilderError {
     NodeNotFound(usize),
-    GLTFUndefined,
-    GLTFLoadError(GltfLoadError),
     MeshNotFound(usize),
     ValidationError(GltfValidationError),
     BinarySourceNotFound,
     IndexRangeError,
+}
+
+impl Display for ModelBuilderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NodeNotFound(node_id) => write!(f, "Node {} not found", node_id),
+            Self::MeshNotFound(mesh_id) => write!(f, "Could not resolve mesh {}", mesh_id),
+            Self::ValidationError(err) => err.fmt(f),
+            Self::BinarySourceNotFound => f.write_str("binary source not found"),
+            Self::IndexRangeError => f.write_str("index range out of bounds"),
+        }
+    }
 }
 
 impl From<GltfValidationError> for ModelBuilderError {

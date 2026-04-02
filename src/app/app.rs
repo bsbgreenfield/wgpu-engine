@@ -69,7 +69,7 @@ impl App<'_> {
 
                 WorldUpdateDelta::EntityDidSpawn(instance_handle) => {
                     let world = self.world.as_ref().unwrap();
-                    let entity_handle = world.instance_manager.entity_of(&instance_handle);
+                    let entity_handle = instance_handle.entity_handle.clone();
                     let renderables = world
                         .entity_manager
                         .get_renderables(&entity_handle, &world.asset_manager);

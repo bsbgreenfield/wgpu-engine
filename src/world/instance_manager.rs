@@ -12,7 +12,18 @@ use crate::{
 pub trait Archetype {
     fn id() -> ArchetypeId;
 
-    fn insert_self(self, manager: &mut InstanceManager) -> InstanceHandle;
+    fn insert_self(
+        self,
+        manager: &mut InstanceManager,
+        entity_handle: EntityHandle,
+    ) -> InstanceHandle;
+
+    fn despawn_self(manager: &mut InstanceManager, handle: InstanceHandle);
+
+    fn get_state<'a, C: ComponentData + 'a>(
+        manager: &'a InstanceManager,
+        handle: InstanceHandle,
+    ) -> Option<&'a impl ComponentData>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,7 +36,12 @@ pub trait ArchetypeTable {
 
     fn new() -> Self;
 
-    fn insert(&mut self, data: Self::A, globla_id: u16) -> InstanceHandle;
+    fn insert(
+        &mut self,
+        data: Self::A,
+        globla_id: u16,
+        entity_handle: EntityHandle,
+    ) -> InstanceHandle;
 
     fn remove(&mut self, handle: InstanceHandle);
 
@@ -40,9 +56,24 @@ impl Archetype for APosition {
     fn id() -> ArchetypeId {
         ArchetypeId::Position
     }
-    fn insert_self(self, manager: &mut InstanceManager) -> InstanceHandle {
+    fn insert_self(
+        self,
+        manager: &mut InstanceManager,
+        entity_handle: EntityHandle,
+    ) -> InstanceHandle {
         let global_id = manager.gen_global_id();
-        manager.pos.insert(self, global_id)
+        manager.pos.insert(self, global_id, entity_handle)
+    }
+
+    fn despawn_self(manager: &mut InstanceManager, handle: InstanceHandle) {
+        manager.pos.remove(handle);
+    }
+
+    fn get_state<'a, C: ComponentData + 'a>(
+        manager: &'a InstanceManager,
+        handle: InstanceHandle,
+    ) -> Option<&'a impl ComponentData> {
+        manager.pos.resolve::<C>(handle)
     }
 }
 
@@ -61,9 +92,14 @@ impl ArchetypeTable for APositionTable {
         }
     }
 
-    fn insert(&mut self, data: APosition, global_id: u16) -> InstanceHandle {
+    fn insert(
+        &mut self,
+        data: APosition,
+        global_id: u16,
+        entity_handle: EntityHandle,
+    ) -> InstanceHandle {
         self.positions.push(data.position);
-        self.arena.insert(global_id)
+        self.arena.insert(global_id, entity_handle)
     }
 
     fn remove(&mut self, handle: InstanceHandle) {
@@ -92,7 +128,7 @@ impl ArchetypeTable for APositionTable {
 #[derive(Clone)]
 pub struct InstanceHandle {
     pub global_id: u16,
-    pub archetype_id: ArchetypeId,
+    pub entity_handle: EntityHandle,
     pub instance_id: u16,
     pub generation: u16,
 }
@@ -128,7 +164,7 @@ impl InstanceManager {
         entity_handle: EntityHandle,
         data: A,
     ) -> &Vec<InstanceHandle> {
-        let instance_handle = data.insert_self(self);
+        let instance_handle = data.insert_self(self, entity_handle);
 
         if self.entity_to_instance.contains_key(&entity_handle) {
             self.entity_to_instance
@@ -142,22 +178,14 @@ impl InstanceManager {
         self.entity_to_instance.get(&entity_handle).unwrap()
     }
 
-    pub fn despawn(&mut self, handle: InstanceHandle) {
-        match handle.archetype_id {
-            ArchetypeId::Position => self.pos.remove(handle),
-        }
+    pub fn despawn<A: Archetype>(&mut self, handle: InstanceHandle) {
+        A::despawn_self(self, handle);
     }
 
-    pub fn get_state<'a, C: ComponentData + 'a>(
+    pub fn get_state<'a, A: Archetype + 'a, C: ComponentData + 'a>(
         &'a self,
         handle: InstanceHandle,
     ) -> Option<&'a impl ComponentData> {
-        match handle.archetype_id {
-            ArchetypeId::Position => self.pos.resolve::<C>(handle),
-        }
-    }
-
-    pub fn entity_of(&self, instance_handle: &InstanceHandle) -> EntityHandle {
-        todo!()
+        A::get_state::<C>(self, handle)
     }
 }

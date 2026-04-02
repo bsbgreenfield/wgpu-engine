@@ -3,13 +3,16 @@ use std::{fmt::Display, ops::Range};
 use bytemuck::Pod;
 use std::error::Error;
 
-use crate::{app::renderer::GPUAllocationHandle, util::types::LocalTransform};
+use crate::{
+    app::renderer::GPUAllocationHandle,
+    util::types::{LocalTransform, ModelVertex},
+};
 
 mod free_list;
-pub mod vertex_arena;
+pub(super) mod vertex_arena;
 
 static CHUNK_SIZE: u32 = 1024 * 4;
-pub trait GPUAllocator<T: Pod> {
+pub(super) trait GPUAllocator<T: Pod> {
     type UploadJob<'a>;
     type AllocationError: Error;
 
@@ -81,3 +84,9 @@ impl Display for VertexArenaError {
 }
 
 impl Error for VertexArenaError {}
+
+#[allow(unused)]
+pub(super) struct UploadMeshJob<'frame, V: ModelVertex> {
+    pub verts: &'frame [V],
+    pub(super) global_alloc_id: u32,
+}

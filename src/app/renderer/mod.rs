@@ -1,9 +1,9 @@
 use std::{error::Error, fmt::Display};
 
 use crate::{
-    app::renderer::gpu_allocator::VertexArenaError,
+    app::renderer::gpu_allocator::{UploadMeshJob, VertexArenaError, vertex_arena::GPUArena},
     asset_manager::{AssetHandle, LoadedAsset},
-    util::types::Mat4F32,
+    util::types::{Mat4F32, ModelVertex},
     world::{
         components::MeshCollectionComponent,
         entity_manager::{EntityHandle, Renderables},
@@ -34,8 +34,9 @@ pub struct GPUAllocationHandle {
 //    _t: PhantomData<T>,
 //}
 
+#[allow(unused)]
 #[derive(Clone, Copy)]
-pub(super) enum Instruction {
+pub enum Instruction {
     Op(Operations),
     Byte(u8),
     ConstIdx(u8),
@@ -107,3 +108,13 @@ impl Display for RenderError {
 }
 
 impl Error for RenderUpdateError {}
+
+trait VertexArenaSelector<V: ModelVertex> {
+    fn upload_mesh(
+        &mut self,
+        mesh_job: UploadMeshJob<V>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError>;
+
+    fn get_arena(&self) -> &GPUArena<V>;
+}

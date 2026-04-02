@@ -8,10 +8,9 @@ use crate::{
     app::renderer::{
         GPUAllocationHandle,
         gpu_allocator::{
-            CHUNK_SIZE, GPUAllocator, LocalTransformUploadJob, VertexArenaError,
+            CHUNK_SIZE, GPUAllocator, LocalTransformUploadJob, UploadMeshJob, VertexArenaError,
             free_list::FreeListAllocator,
         },
-        vm::UploadMeshJob,
     },
     util::types::{GlobalTransform, LocalTransform, ModelVertex},
 };

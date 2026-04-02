@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::world::instance_manager::{Archetype, InstanceHandle};
+use crate::world::{
+    entity_manager::EntityHandle,
+    instance_manager::{Archetype, InstanceHandle},
+};
 
 struct Slot {
     generation: u16,
@@ -23,7 +26,7 @@ impl<A: Archetype> InstanceArenaNew<A> {
             _t: PhantomData,
         }
     }
-    pub fn insert(&mut self, global_id: u16) -> InstanceHandle {
+    pub fn insert(&mut self, global_id: u16, entity_handle: EntityHandle) -> InstanceHandle {
         // select an open slot
         let slot_index = if let Some(free) = self.free_list.pop() {
             free
@@ -37,10 +40,10 @@ impl<A: Archetype> InstanceArenaNew<A> {
         };
 
         let new_handle = InstanceHandle {
+            entity_handle,
             global_id,
             instance_id: slot_index,
             generation: self.slots[slot_index as usize].generation,
-            archetype_id: A::id(),
         };
         // push a new handle
         self.handles.push(new_handle.clone());

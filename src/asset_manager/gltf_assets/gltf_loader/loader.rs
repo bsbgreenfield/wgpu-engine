@@ -1,11 +1,3 @@
-#[derive(Clone)]
-pub enum BinarySource {
-    BinFile(PathBuf),
-    GLB(PathBuf),
-    GLTFBuffers(PathBuf),
-    Undefined,
-}
-
 use std::{
     error::Error,
     fs::{self, DirEntry, ReadDir},
@@ -15,7 +7,7 @@ use std::{
 use base64::Engine;
 use gltf::Gltf;
 
-use crate::asset_manager::gltf_assets::gltf_loader::GltfLoadError;
+use crate::asset_manager::gltf_assets::gltf_loader::{BinarySource, GltfLoadError};
 pub struct GltfLoader;
 
 impl GltfLoader {
