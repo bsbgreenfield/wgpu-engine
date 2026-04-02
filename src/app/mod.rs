@@ -12,7 +12,7 @@ pub mod renderer;
 
 #[allow(unused)]
 #[derive(Debug)]
-enum FrameError {
+pub enum FrameError {
     UpdateError(WorldUpdateError),
     SurfaceError(wgpu::SurfaceError),
     RenderUpdateError(RenderUpdateError),

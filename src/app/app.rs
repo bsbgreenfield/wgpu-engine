@@ -29,7 +29,7 @@ pub struct App<'a> {
     pub world: Option<World>,
     pub renderer: Option<Renderer>,
     pub app_state: AppState,
-    surface_ready: bool,
+    pub surface_ready: bool,
 }
 
 impl App<'_> {
@@ -44,8 +44,9 @@ impl App<'_> {
         }
     }
 
-    fn run_frame<'frame>(&'frame mut self) -> Result<(), FrameError> {
+    pub fn run_frame<'frame>(&'frame mut self) -> Result<(), FrameError> {
         let deltas = self.update_world()?;
+        //TODO make these persist to avoid the extra allocations
         let mut constants = Vec::<VMValue<'frame>>::new();
         let mut instructions = Vec::<Instruction>::new();
         for delta in deltas.iter() {
@@ -96,26 +97,28 @@ impl App<'_> {
         }
         let render_deltas = self.renderer.as_mut().unwrap().update(
             constants,
-            vec![],
+            instructions,
             &self.app_config.as_ref().unwrap().queue,
         )?;
 
-        let draw_packet = self
-            .renderer
-            .as_ref()
-            .unwrap()
-            .gen_draw_calls_new(
-                &self.world.as_ref().unwrap().instance_manager,
-                &self.app_config.as_ref().unwrap().queue,
-            )
-            .expect("Draw packet should have at least one instance");
-        let _ = self
-            .renderer
-            .as_ref()
-            .unwrap()
-            .render(self.app_config.as_ref().unwrap(), draw_packet)
-            .map_err(|e| FrameError::RenderError(e));
-
+        if let Some(draw_packet) = self.renderer.as_ref().unwrap().gen_draw_calls_new(
+            &self.world.as_ref().unwrap().instance_manager,
+            &self.app_config.as_ref().unwrap().queue,
+        ) {
+            let _ = self
+                .renderer
+                .as_ref()
+                .unwrap()
+                .render(self.app_config.as_ref().unwrap(), draw_packet)
+                .map_err(|e| FrameError::RenderError(e));
+        } else {
+            let _ = self
+                .renderer
+                .as_ref()
+                .unwrap()
+                .render_blank(self.app_config.as_ref().unwrap())
+                .map_err(|e| FrameError::RenderError(e));
+        }
         self.world
             .as_mut()
             .unwrap()
@@ -124,7 +127,7 @@ impl App<'_> {
         Ok(())
     }
 
-    fn get_ordered_assets<'frame>(renderables: &'frame Renderables) -> Vec<AssetHandle> {
+    pub fn get_ordered_assets<'frame>(renderables: &'frame Renderables) -> Vec<AssetHandle> {
         let mut assets = Vec::new();
         if let Some(mcc) = &renderables.mesh_collection {
             assets.push(mcc.1.resource_backing);
@@ -134,7 +137,7 @@ impl App<'_> {
         assets
     }
 
-    fn update_world(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
+    pub fn update_world(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
         unsafe { self.world.as_mut().unwrap_unchecked().update() }
     }
 }

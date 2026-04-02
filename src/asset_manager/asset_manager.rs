@@ -210,3 +210,22 @@ impl AssetManager {
         todo!("rest of the function goes here")
     }
 }
+
+#[cfg(test)]
+mod asset_manager_tests {
+    use crate::asset_manager::{
+        asset_manager::{AssetManager, AssetResidency},
+        gltf_assets::GltfAsset,
+    };
+
+    #[test]
+    fn register_asset() {
+        let mut manager = AssetManager::new();
+        let asset = manager.register_asset::<GltfAsset>("box").unwrap();
+        let a = manager.registered_assets.get(&asset).unwrap();
+        assert!(matches!(
+            *a.get_residency_level(),
+            AssetResidency::Registered
+        ))
+    }
+}

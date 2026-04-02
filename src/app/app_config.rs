@@ -5,22 +5,55 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 pub struct AppConfig<'a> {
     pub size: PhysicalSize<u32>,
-    pub surface: wgpu::Surface<'a>,
-    pub surface_config: wgpu::SurfaceConfiguration,
+    pub surface: Option<wgpu::Surface<'a>>,
+    pub surface_config: Option<wgpu::SurfaceConfiguration>,
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
 }
 
 impl<'a> AppConfig<'a> {
     pub fn get_aspect_ratio(&self) -> f32 {
-        (self.surface_config.width / self.surface_config.height) as f32
+        if let Some(config) = &self.surface_config {
+            (config.width / config.height) as f32
+        } else {
+            1.0 // HEADLESS
+        }
     }
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
-            self.surface_config.width = new_size.width;
-            self.surface_config.height = new_size.height;
-            self.surface.configure(&self.device, &self.surface_config);
+            if let Some(config) = &mut self.surface_config {
+                config.width = new_size.width;
+                config.height = new_size.height;
+                self.surface
+                    .as_ref()
+                    .unwrap()
+                    .configure(&self.device, &config);
+            }
+        }
+    }
+
+    pub async fn new_headless() -> Self {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: None,
+                power_preference: wgpu::PowerPreference::LowPower,
+                force_fallback_adapter: false,
+            })
+            .await
+            .expect("failed to make adapter");
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await
+            .expect("failed to create device");
+
+        Self {
+            size: PhysicalSize::default(),
+            surface: None,
+            surface_config: None,
+            queue,
+            device,
         }
     }
 
@@ -73,10 +106,10 @@ impl<'a> AppConfig<'a> {
         };
         Ok(AppConfig {
             size,
-            surface,
+            surface: Some(surface),
             device,
             queue,
-            surface_config: config,
+            surface_config: Some(config),
         })
     }
 }

@@ -28,11 +28,25 @@ pub(super) enum RenderCategory {
     OpaqueSkinned,
 }
 
-struct DrawItem {
+pub struct DrawItem {
     lt_idx: u32,
     instances: Range<u32>,
     primitives: Range<u32>,
     // TODO: indices
+}
+
+#[cfg(test)]
+impl DrawItem {
+    pub fn get_lt_idx(&self) -> u32 {
+        self.lt_idx
+    }
+
+    pub fn get_instances(&self) -> Range<u32> {
+        self.instances.clone()
+    }
+    pub fn get_primitives(&self) -> Range<u32> {
+        self.primitives.clone()
+    }
 }
 
 trait DrawListBuilder<V: ModelVertex> {
@@ -90,6 +104,17 @@ pub struct DrawPacket {
     pnujw: HashMap<usize, Vec<DrawItem>>,
 }
 
+#[cfg(test)]
+impl DrawPacket {
+    pub fn get_pnu(&self) -> &HashMap<usize, Vec<DrawItem>> {
+        &self.pnu
+    }
+
+    pub fn get_pnujw(&self) -> &HashMap<usize, Vec<DrawItem>> {
+        &self.pnujw
+    }
+}
+
 pub(super) struct EngineRenderPass {
     label: String,
     categories: Vec<RenderCategory>,
@@ -97,14 +122,14 @@ pub(super) struct EngineRenderPass {
 
 impl EngineRenderPass {
     fn create_pass<'frame>(
-        &'frame self,
+        label: &'frame str,
         encoder: &'frame mut wgpu::CommandEncoder,
         view: &'frame wgpu::TextureView,
     ) -> Result<RenderPass<'frame>, wgpu::SurfaceError> {
         // TODO match on render cat OR add generics to method call
         // TODO: customize render pass output
         let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some(self.label.as_str()),
+            label: Some(label),
             depth_stencil_attachment: None, // TODO: depth stencil
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
@@ -283,9 +308,45 @@ impl Renderer {
         Ok(())
     }
 
+    pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
+        let output = config.surface.as_ref().unwrap().get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = config
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some(format!("Render Encoder for {}", "blank").as_str()),
+            });
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            ..Default::default()
+        });
+
+        config.queue.submit(Some(encoder.finish()));
+        output.present();
+        Ok(())
+    }
+
     pub fn render(&self, config: &AppConfig, draw_packet: DrawPacket) -> Result<(), RenderError> {
         for pass in &self.passes {
-            let output = config.surface.get_current_texture()?;
+            let output = config.surface.as_ref().unwrap().get_current_texture()?;
             let view = output
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
@@ -296,7 +357,7 @@ impl Renderer {
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some(format!("Render Encoder for {}", pass.label).as_str()),
                     });
-            let mut render_pass = pass.create_pass(&mut encoder, &view)?;
+            let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
             render_pass.set_bind_group(
                 0,
                 self.vertex_arenas.local_transform_arena.get_bind_group(),

@@ -81,6 +81,12 @@ pub struct APositionTable {
     pub(super) positions: Vec<GlobalTransform>,
     pub(super) arena: InstanceArenaNew<APosition>,
 }
+#[cfg(test)]
+impl APositionTable {
+    pub fn get_positions(&self) -> Vec<GlobalTransform> {
+        self.positions.clone()
+    }
+}
 
 impl ArchetypeTable for APositionTable {
     type A = APosition;
@@ -141,6 +147,18 @@ pub struct InstanceManager {
 }
 
 impl InstanceManager {
+    #[cfg(test)]
+    pub fn get_pos_table(&self) -> &APositionTable {
+        &self.pos
+    }
+
+    #[cfg(test)]
+    pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
+        self.entity_to_instance
+            .iter()
+            .flat_map(|entry| entry.1.clone())
+            .collect()
+    }
     pub(super) fn new() -> Self {
         Self {
             next_id: 0,

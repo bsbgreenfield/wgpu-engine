@@ -1,5 +1,6 @@
 pub mod app;
 pub mod asset_manager;
+pub mod tests;
 pub mod util;
 pub mod world;
 
