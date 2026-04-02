@@ -5,11 +5,12 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::renderer::Renderer,
-        renderer::{Instruction, Operations, VMValue},
+        renderer::{Instruction, Operations, VMValue, renderer::Renderer},
     },
+    asset_manager::AssetHandle,
     world::{
         WorldUpdateError,
+        entity_manager::Renderables,
         world::{World, WorldUpdateDelta},
     },
 };
@@ -57,7 +58,7 @@ impl App<'_> {
                     let la = self
                         .world
                         .as_ref()
-                        .unwrap()
+                        .expect("should exist in the asset manager")
                         .get_loaded_asset_of(&asset_handle)
                         .expect("loaded asset should be exactly CPU resident!");
                     // generate bytecode for renderer VM to load an asset
@@ -69,10 +70,20 @@ impl App<'_> {
                 WorldUpdateDelta::EntityDidSpawn(instance_handle) => {
                     let world = self.world.as_ref().unwrap();
                     let entity_handle = world.instance_manager.entity_of(&instance_handle);
-                    let renderables = world.entity_manager.get_renderables(&entity_handle);
+                    let renderables = world
+                        .entity_manager
+                        .get_renderables(&entity_handle, &world.asset_manager);
 
+                    let assets = Self::get_ordered_assets(&renderables);
                     constants.push(VMValue::InstanceHandle(instance_handle.clone()));
                     constants.push(VMValue::Renderables(renderables));
+                    for asset_handle in assets {
+                        constants.push(VMValue::LoadedAsset(
+                            world
+                                .get_loaded_asset_of(&asset_handle)
+                                .expect("should be a registered asset"),
+                        ));
+                    }
 
                     instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
                     instructions.push(Instruction::ConstIdx((constants.len() - 2) as u8));
@@ -111,6 +122,16 @@ impl App<'_> {
             .post_frame_update(&render_deltas);
 
         Ok(())
+    }
+
+    fn get_ordered_assets<'frame>(renderables: &'frame Renderables) -> Vec<AssetHandle> {
+        let mut assets = Vec::new();
+        if let Some(mcc) = &renderables.mesh_collection {
+            assets.push(mcc.1.resource_backing);
+        }
+
+        // TODO expand to other rbcs
+        assets
     }
 
     fn update_world(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {

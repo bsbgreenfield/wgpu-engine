@@ -6,10 +6,13 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            GPUAllocator, Instruction, RenderError, RenderUpdateDelta, RenderUpdateError, VMValue,
+            Instruction, RenderError, RenderUpdateDelta, RenderUpdateError, VMValue,
             VertexArenaError,
+            gpu_allocator::{
+                GPUAllocator, LocalTransformUploadJob,
+                vertex_arena::{GPUArena, StaticGPUBuffer},
+            },
             pipeline::PipelineCollection,
-            vertex_arena::{GPUArenaNew, LocalTransformUploadJob, StaticGPUBuffer},
             vm::UploadMeshJob,
         },
     },
@@ -36,7 +39,7 @@ struct DrawItem {
 trait DrawListBuilder<V: ModelVertex> {
     fn write_list(
         view: &RenderView,
-        arena: &GPUArenaNew<V>,
+        arena: &GPUArena<V>,
         draw_list: &mut Vec<DrawItem>,
         instance_idx: u32,
         lt_offset: u32,
@@ -46,7 +49,7 @@ trait DrawListBuilder<V: ModelVertex> {
 impl DrawListBuilder<PNUVertex> for DrawPacket {
     fn write_list(
         view: &RenderView,
-        arena: &GPUArenaNew<PNUVertex>,
+        arena: &GPUArena<PNUVertex>,
         draw_list: &mut Vec<DrawItem>,
         instance_idx: u32,
         lt_offset: u32,
@@ -66,7 +69,7 @@ impl DrawListBuilder<PNUVertex> for DrawPacket {
 impl DrawListBuilder<PNUJWVertex> for DrawPacket {
     fn write_list(
         view: &RenderView,
-        arena: &GPUArenaNew<PNUJWVertex>,
+        arena: &GPUArena<PNUJWVertex>,
         draw_list: &mut Vec<DrawItem>,
         instance_idx: u32,
         lt_offset: u32,
@@ -134,17 +137,17 @@ impl EngineRenderPass {
 }
 
 struct VertexArenaCollection {
-    static_arena: GPUArenaNew<PNUVertex>,
-    skinned_arena: GPUArenaNew<PNUJWVertex>,
-    local_transform_arena: GPUArenaNew<LocalTransform>,
+    static_arena: GPUArena<PNUVertex>,
+    skinned_arena: GPUArena<PNUJWVertex>,
+    local_transform_arena: GPUArena<LocalTransform>,
 }
 
 impl VertexArenaCollection {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
-            static_arena: GPUArenaNew::<PNUVertex>::new(device),
-            skinned_arena: GPUArenaNew::<PNUJWVertex>::new(device),
-            local_transform_arena: GPUArenaNew::<LocalTransform>::new(device),
+            static_arena: GPUArena::<PNUVertex>::new(device),
+            skinned_arena: GPUArena::<PNUJWVertex>::new(device),
+            local_transform_arena: GPUArena::<LocalTransform>::new(device),
         }
     }
 }
@@ -156,7 +159,7 @@ trait VertexArenaSelector<V: ModelVertex> {
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError>;
 
-    fn get_arena(&self) -> &GPUArenaNew<V>;
+    fn get_arena(&self) -> &GPUArena<V>;
 }
 
 impl VertexArenaSelector<PNUJWVertex> for Renderer {
@@ -165,11 +168,11 @@ impl VertexArenaSelector<PNUJWVertex> for Renderer {
         mesh_job: UploadMeshJob<PNUJWVertex>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        let handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
+        let _handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
         Ok(())
     }
 
-    fn get_arena(&self) -> &GPUArenaNew<PNUJWVertex> {
+    fn get_arena(&self) -> &GPUArena<PNUJWVertex> {
         &self.vertex_arenas.skinned_arena
     }
 }
@@ -180,12 +183,12 @@ impl VertexArenaSelector<PNUVertex> for Renderer {
         mesh_job: UploadMeshJob<PNUVertex>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        let handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
+        let _handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
         // TODO handle?
         Ok(())
     }
 
-    fn get_arena(&self) -> &GPUArenaNew<PNUVertex> {
+    fn get_arena(&self) -> &GPUArena<PNUVertex> {
         &self.vertex_arenas.static_arena
     }
 }
@@ -222,7 +225,7 @@ impl Renderer {
         DrawPacket: DrawListBuilder<V>,
         Self: VertexArenaSelector<V>,
     {
-        let arena: &GPUArenaNew<V> = self.get_arena();
+        let arena: &GPUArena<V> = self.get_arena();
         for group in self.groups.iter() {
             let instance_index = gt_map[group.instance_handle.global_id as usize];
             // for each allocation view

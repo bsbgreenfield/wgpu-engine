@@ -256,10 +256,13 @@ instance indices/ranges, this is just a matter of the arena resolve() algorithm
 2. entity is added to a scene
 3. the load level of the scene is set to GPU, marked dirty
 4. on world.update(), world processes SceneEvent::LoadLevelChanged
-5. for each entity in the scene, get all unallocated assets for the entity, and add an EntityLoadJob to the world queue
-6. for each asset in the new entity load job, poll asset load, emit AssetDidLoad event when done
-7. for each assetDidLoad event, allocate on the GPU.
-8. poll entity jobs. For each completed entity job, add EntityHandle: Map<AssetHandle: GPUAllocHandle> to completed queue
-9. for each entry in the completed queue, emit EntityDidLoad(entityHandle)
-10. spawn the entity. In the VM, generate a RenderGroup, with views into the specific allocations that need to be rendered
-11. 
+5. for each entity in the scene, get all resource baceked assets for the entity
+6. for each asset in the new entity load job, poll asset load 
+    - call asset_manager.set_minumum_load_level() to get AssetLoadResult
+    - if the load result is equal to or greater than the expected load level of the job, set asset job state to Done
+    - if the asset load result is PendingGPU, add a world update delta to signal the GPU to allocated static asset data
+7. for each assetDidLoad event, allocate on the GPU. Submit AssetGPULoaded event when done
+8. in the post frame update, set the state to GPU loaded for the assets in the asset manager
+9. Next frame, poll entity jobs. For each completed entity job, add entity handle of the completed entity job to completed queue, emit an EntityDidSpawnEvent
+10. dequeue the completed entity load jobs, and call World::spawn(), emit EntityDidSpawn 
+11. in the renderer,  create a render group wich represents the instnace of the entity

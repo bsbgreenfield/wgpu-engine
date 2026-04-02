@@ -1,9 +1,6 @@
-use std::{
-    fmt::Debug,
-    ops::{Deref, Index},
-};
+use std::{fmt::Debug, ops::Deref};
 
-use bytemuck::{AnyBitPattern, NoUninit};
+use bytemuck::AnyBitPattern;
 
 pub type Mat4F32 = [[f32; 4]; 4];
 

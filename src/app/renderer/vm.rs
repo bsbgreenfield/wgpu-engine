@@ -4,12 +4,11 @@ use std::{iter::Peekable, slice::Iter};
 use crate::{
     app::renderer::{
         GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
-        VMValue, renderer::Renderer, vertex_arena::LocalTransformUploadJob,
+        VMValue, gpu_allocator::LocalTransformUploadJob, renderer::Renderer,
     },
     asset_manager::LoadedAsset,
     util::types::{ModelVertex, PNUJWVertex, PNUVertex},
     world::{
-        components::MeshCollectionComponent,
         entity_manager::Renderables,
         instance_manager::InstanceHandle,
         world::{DrawSet, RenderView},
@@ -23,14 +22,8 @@ impl<'frame> VMValue<'frame> {
             _ => panic!("value is not a loaded asset ref"),
         }
     }
-    fn unwrap_mesh_collection(&self) -> &'frame MeshCollectionComponent {
-        match self {
-            VMValue::MeshCollectionComponent(mc) => mc,
-            _ => panic!("value is not a MCC ref"),
-        }
-    }
 
-    fn unwrap_renderables(&'frame self) -> &Renderables<'frame> {
+    fn unwrap_renderables(&'frame self) -> &'frame Renderables<'frame> {
         match self {
             VMValue::Renderables(renderables) => renderables,
             _ => panic!("value is not renderables"),
@@ -66,10 +59,6 @@ impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
 }
 
 impl<'frame> Renderer {
-    unsafe fn get_asset_ref(instr_peek: &mut Peekable<Iter<'_, Instruction>>) {
-        let a: &Instruction = instr_peek.next().unwrap().try_into().unwrap();
-    }
-
     fn get_constant_idx(instructions: &mut InstructionSet) -> u8 {
         let instr = instructions.next().expect("should define a constant idx");
         match instr {
@@ -124,14 +113,14 @@ impl<'frame> Renderer {
                     }
                     Operations::MoveEntity => todo!(),
                     Operations::SpawnEntityInstance => {
-                        let const_idx = Self::get_constant_idx(&mut instr_peek);
+                        let instance_idx = Self::get_constant_idx(&mut instr_peek);
                         let instance_handle =
-                            constants[const_idx as usize].unwrap_instance_handle();
+                            constants[instance_idx as usize].unwrap_instance_handle();
 
                         let renderables_idx = Self::get_constant_idx(&mut instr_peek);
                         let renderables = constants[renderables_idx as usize].unwrap_renderables();
 
-                        if let Some(mesh_collection) = renderables.mesh_collection {
+                        if let Some(mesh_collection_renderable) = &renderables.mesh_collection {
                             let la_const_idx = Self::get_constant_idx(&mut instr_peek);
                             let la = constants[la_const_idx as usize].unwrap_loaded_asset();
 
@@ -140,7 +129,7 @@ impl<'frame> Renderer {
                             let (pnu_ids, pnu_prims) =
                                 la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
                             let view = RenderView {
-                                gpu_handle: mesh_collection.allocation_handle.to_owned().unwrap(),
+                                gpu_handle: mesh_collection_renderable.0.to_owned(),
                                 pnu_draws: DrawSet {
                                     mesh_ids: pnu_ids,
                                     primtitive_ranges: pnu_prims,
@@ -154,8 +143,8 @@ impl<'frame> Renderer {
                         }
                     }
                 },
-                Instruction::Byte(byte) => {}
-                Instruction::ConstIdx(idx) => {}
+                Instruction::Byte(_byte) => {}
+                Instruction::ConstIdx(_idx) => {}
             }
         }
 

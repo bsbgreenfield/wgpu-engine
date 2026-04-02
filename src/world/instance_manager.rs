@@ -151,7 +151,7 @@ impl InstanceManager {
     pub fn get_state<'a, C: ComponentData + 'a>(
         &'a self,
         handle: InstanceHandle,
-    ) -> Option<&impl ComponentData> {
+    ) -> Option<&'a impl ComponentData> {
         match handle.archetype_id {
             ArchetypeId::Position => self.pos.resolve::<C>(handle),
         }

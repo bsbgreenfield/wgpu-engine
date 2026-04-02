@@ -1,8 +1,7 @@
-use std::{error::Error, fmt::Display, ops::Range};
-
-use bytemuck::Pod;
+use std::{error::Error, fmt::Display};
 
 use crate::{
+    app::renderer::gpu_allocator::VertexArenaError,
     asset_manager::{AssetHandle, LoadedAsset},
     util::types::Mat4F32,
     world::{
@@ -12,13 +11,10 @@ use crate::{
     },
 };
 
-mod free_list;
+mod gpu_allocator;
 mod pipeline;
 pub mod renderer;
-mod vertex_arena;
 mod vm;
-
-static CHUNK_SIZE: u32 = 1024 * 4;
 
 pub enum RenderUpdateDelta {
     AssetGPULoaded(GPUAllocationHandle),
@@ -60,76 +56,6 @@ pub enum VMValue<'frame> {
     Renderables(Renderables<'frame>),
     InstanceHandle(InstanceHandle),
 }
-
-trait GPUAllocator<T: Pod> {
-    type UploadJob<'a>;
-    type AllocationError: Error;
-
-    fn upload<'a>(
-        &mut self,
-        job: Self::UploadJob<'a>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), Self::AllocationError>;
-
-    fn resolve(
-        &self,
-        handle: &GPUAllocationHandle,
-    ) -> (Range<u32>, &wgpu::Buffer, Option<&wgpu::BindGroup>);
-
-    fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize;
-
-    fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer;
-
-    fn new(device: &wgpu::Device) -> Self;
-}
-
-#[derive(Debug)]
-pub(super) enum FreeListAllocError {
-    NoRoomLeft(u32, u32),
-}
-
-impl Error for FreeListAllocError {}
-impl Display for FreeListAllocError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoRoomLeft(size, used) => f.write_str(
-                format!(
-                    "Not enough room to fit data of size {}. Available: {}",
-                    size, used,
-                )
-                .as_str(),
-            ),
-        }
-    }
-}
-#[derive(Debug)]
-pub(super) enum VertexArenaError {
-    DataTooLarge(u32),
-    FreeListError(FreeListAllocError),
-}
-
-impl From<FreeListAllocError> for VertexArenaError {
-    fn from(value: FreeListAllocError) -> Self {
-        Self::FreeListError(value)
-    }
-}
-
-impl Display for VertexArenaError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            Self::DataTooLarge(size) => f.write_str(
-                format!(
-                    "cannot allocate mesh of size {}, which exceeds chunk size: {}",
-                    size, CHUNK_SIZE
-                )
-                .as_str(),
-            ),
-            Self::FreeListError(err) => err.fmt(f),
-        }
-    }
-}
-
-impl Error for VertexArenaError {}
 
 #[derive(Debug)]
 pub enum RenderUpdateError {

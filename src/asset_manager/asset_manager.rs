@@ -105,6 +105,15 @@ impl AssetManager {
             .get_residency_level())
     }
 
+    pub fn get_alloc_handle_of(&self, asset_handle: &AssetHandle) -> GPUAllocationHandle {
+        match self.res_level_of(asset_handle).expect("couldnt find asset") {
+            AssetResidency::GPU(gpu_handle) => gpu_handle.clone(),
+            _ => panic!(
+                "attempted to extract a gpu handle from an asset that hasnt been GPU loaded!"
+            ),
+        }
+    }
+
     fn load_cpu(&mut self, asset: AssetHandle) -> Result<usize, AssetLoadError> {
         let mut registered_asset = self.registered_assets.remove(&asset).unwrap();
         let loaded_asset: LoadedAsset = registered_asset.load_asset(asset)?;

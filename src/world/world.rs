@@ -6,17 +6,15 @@ use super::scene::Scene;
 use crate::{
     app::renderer::{GPUAllocationHandle, RenderUpdateDelta},
     asset_manager::{
-        asset_manager::{AssetHandle, AssetManager, LoadedAsset},
-        gltf_assets::GltfAsset,
+        AssetHandle, LoadedAsset, asset_manager::AssetManager, gltf_assets::GltfAsset,
     },
-    util::types::Mat4F32,
     world::{
         WorldInitError, WorldUpdateError,
         camera::Camera,
         components::{MeshCollectionComponent, MeshCollectionDescriptor},
-        entity_manager::{EntityHandle, EntityManager, EntityManagerError},
+        entity_manager::{EntityHandle, EntityManager},
         instance_manager::{APosition, Archetype, InstanceHandle, InstanceManager},
-        load_queue::AssetLoadQueue,
+        load_queue::EntityLoadQueue,
         scene::{SceneEvent, SceneLoadLevel},
     },
 };
@@ -62,9 +60,9 @@ pub enum WorldUpdateDelta {
 pub struct World {
     camera: Camera,
     scene: Scene,
-    asset_manager: AssetManager,
+    pub asset_manager: AssetManager,
     pub entity_manager: EntityManager,
-    asset_load_queue: AssetLoadQueue,
+    load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
 }
 
@@ -104,7 +102,7 @@ impl World {
             scene,
             asset_manager,
             entity_manager,
-            asset_load_queue: AssetLoadQueue::new(),
+            load_queue: EntityLoadQueue::new(),
             instance_manager: InstanceManager::new(),
         })
     }
@@ -123,18 +121,19 @@ impl World {
         if self.scene.is_dirty() {
             deltas.extend(self.handle_scene_event()?); // TODO: allow for multiple scenes
         }
-        self.asset_load_queue.poll_entity_jobs();
-        for entity in self.asset_load_queue.completed_queue.keys() {
+        self.load_queue.poll_entity_jobs();
+        for completed in self.load_queue.completed_queue.iter() {
             // TODO: allow spawning of multiple instances
             let instances = Self::spawn(
                 &mut self.instance_manager,
-                *entity,
+                *completed.0,
                 APosition {
                     position: cgmath::Matrix4::<f32>::identity().into(),
                 },
             )?;
             deltas.push(WorldUpdateDelta::EntityDidSpawn(instances[0].clone()));
         }
+        self.load_queue.dequeue_completed();
 
         // TODO: emit EntityDidSpawn event when necessary
 
@@ -149,7 +148,7 @@ impl World {
                 break;
             } else {
                 match maybe_event.unwrap() {
-                    SceneEvent::EntitiesAdded(entities) => {
+                    SceneEvent::EntitiesAdded(_) => {
                         todo!()
                         // for entity_handle in entities {
                         //     // TODO: handle failed job enqueue?
@@ -161,13 +160,13 @@ impl World {
                         if new > old {
                             let entities = self.scene.entitites.clone();
                             for entity in entities {
-                                self.asset_load_queue.new_entity_load(
+                                let _ = self.load_queue.new_entity_load(
                                     entity,
                                     self.scene.load_level,
-                                    &self.entity_manager.unallocated_assets_of(entity),
+                                    &&self.entity_manager.rbcs_of(entity),
                                 );
                                 deltas.extend(
-                                    self.asset_load_queue
+                                    self.load_queue
                                         .poll_assets_for_job(entity, &mut self.asset_manager)?,
                                 );
                             }
@@ -187,28 +186,10 @@ impl World {
                         .register_asset_gpu_residency(allocation_handle)
                         .expect("Asset not found");
                 }
-                RenderUpdateDelta::EntityGPULoaded(entity_handle) => {
-                    self.asset_load_queue.dequeue_completed(entity_handle);
+                RenderUpdateDelta::EntityGPULoaded(_) => {
+                    // TODO wait to dequeue until GPU reports it has successfully loaded entity?
                 }
             }
         }
-    }
-}
-
-pub struct EntityBuilder<'m> {
-    entity_manager: &'m mut EntityManager,
-    asset_manger: &'m mut AssetManager,
-}
-
-impl<'m> EntityBuilder<'m> {
-    pub fn create_physical_entity(
-        &mut self,
-        mesh: MeshCollectionComponent,
-        physical_position: Mat4F32,
-    ) -> Result<EntityHandle, EntityManagerError> {
-        let entity = self.entity_manager.new_entity()?;
-        self.entity_manager
-            .add_mesh_collection_for_entity(entity, mesh);
-        Ok(entity)
     }
 }

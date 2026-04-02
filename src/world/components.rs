@@ -21,7 +21,6 @@ impl ResourceBacking {
 #[derive(Debug)]
 pub struct MeshCollectionComponent {
     pub resource_backing: AssetHandle,
-    pub allocation_handle: Option<GPUAllocationHandle>,
     mesh_ids: Vec<u32>,
 }
 
@@ -35,7 +34,6 @@ impl MeshCollectionComponent {
     pub fn new(descriptor: MeshCollectionDescriptor) -> Self {
         Self {
             resource_backing: descriptor.resource_backing,
-            allocation_handle: descriptor.allocation_handle,
             mesh_ids: descriptor.mesh_ids.to_vec(),
         }
     }

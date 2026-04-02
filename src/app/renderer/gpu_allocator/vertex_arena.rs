@@ -4,16 +4,20 @@ use std::{
     ops::{Deref, Range},
 };
 
-use wgpu::wgt::BufferDescriptor;
-
 use crate::{
     app::renderer::{
-        CHUNK_SIZE, GPUAllocationHandle, GPUAllocator, VertexArenaError,
-        free_list::FreeListAllocator, vm::UploadMeshJob,
+        GPUAllocationHandle,
+        gpu_allocator::{
+            CHUNK_SIZE, GPUAllocator, LocalTransformUploadJob, VertexArenaError,
+            free_list::FreeListAllocator,
+        },
+        vm::UploadMeshJob,
     },
     util::types::{GlobalTransform, LocalTransform, ModelVertex},
 };
 //****************************************************************
+//
+#[allow(unused)]
 pub struct GPUArena<T: bytemuck::Pod> {
     max_chunks: usize,
     chunks: Vec<GPUChunk<T>>,
@@ -27,27 +31,6 @@ struct GPUChunk<T: bytemuck::Pod> {
     bind_group: Option<wgpu::BindGroup>,
     allocator: FreeListAllocator,
     _t: PhantomData<T>,
-}
-
-//***************************************************************
-
-impl GPUChunk<GlobalTransform> {
-    fn new(device: &wgpu::Device) -> Self {
-        let buf = device.create_buffer(&BufferDescriptor {
-            label: Some("Global transform instance buffer"),
-            size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        Self {
-            remaining_space: CHUNK_SIZE,
-            buffer: buf,
-            bind_group: None,
-            allocator: FreeListAllocator::new(),
-            _t: PhantomData,
-        }
-    }
 }
 
 impl GPUChunk<LocalTransform> {
@@ -121,7 +104,7 @@ impl AllocMetaData {
     }
 }
 
-impl GPUAllocator<LocalTransform> for GPUArenaNew<LocalTransform> {
+impl GPUAllocator<LocalTransform> for GPUArena<LocalTransform> {
     type UploadJob<'a> = LocalTransformUploadJob<'a>;
     type AllocationError = VertexArenaError;
 
@@ -194,13 +177,13 @@ impl GPUAllocator<LocalTransform> for GPUArenaNew<LocalTransform> {
     }
 }
 
-impl GPUArenaNew<LocalTransform> {
-    pub(super) fn get_bind_group(&self) -> &wgpu::BindGroup {
+impl GPUArena<LocalTransform> {
+    pub fn get_bind_group(&self) -> &wgpu::BindGroup {
         return self.chunks[0].bind_group.as_ref().unwrap();
     }
 }
 
-impl<V: ModelVertex> GPUAllocator<V> for GPUArenaNew<V> {
+impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
     type UploadJob<'a> = UploadMeshJob<'a, V>;
     type AllocationError = VertexArenaError;
 

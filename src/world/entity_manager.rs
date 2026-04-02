@@ -1,13 +1,8 @@
-use std::{
-    collections::{HashMap, HashSet},
-    error::Error,
-    fmt::Display,
-    mem::MaybeUninit,
-};
+use std::{collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit};
 
 use crate::{
     app::renderer::GPUAllocationHandle,
-    asset_manager::AssetHandle,
+    asset_manager::{AssetHandle, asset_manager::AssetManager},
     world::components::{ComponentDataType, MeshCollectionComponent, PhysicalPositionComponent},
 };
 
@@ -30,7 +25,7 @@ pub struct EntityManager {
 }
 
 pub struct Renderables<'frame> {
-    pub mesh_collection: Option<&'frame MeshCollectionComponent>,
+    pub mesh_collection: Option<(GPUAllocationHandle, &'frame MeshCollectionComponent)>,
 }
 
 impl EntityManager {
@@ -42,32 +37,31 @@ impl EntityManager {
         res
     }
 
-    pub fn get_renderables<'frame>(&'frame self, entity: &EntityHandle) -> Renderables<'frame> {
+    pub fn get_renderables<'frame>(
+        &'frame self,
+        entity: &EntityHandle,
+        asset_manager: &AssetManager,
+    ) -> Renderables<'frame> {
+        // panics if it cant find the alloc handle or the asset!
+        let mcc_entry = self.mesh_collections.get(entity.0 as usize).map(|mcc| {
+            (
+                asset_manager.get_alloc_handle_of(&mcc.resource_backing),
+                mcc,
+            )
+        });
+
         Renderables {
-            mesh_collection: self.mesh_collections.get(entity.0 as usize),
+            mesh_collection: mcc_entry,
         }
     }
 
-    pub(super) fn saturate_rbcs(
-        &mut self,
-        entity: EntityHandle,
-        allocation_handles: HashMap<AssetHandle, GPUAllocationHandle>,
-    ) {
-        if let Some(mcc) = self.mesh_collections.get_mut(entity.0 as usize)
-            && let Some(alloc_handle) = allocation_handles.get(&mcc.resource_backing)
-        {
-            let _ = mcc.allocation_handle.insert(alloc_handle.clone()); // should this be Weak?
-        }
-        // TODO: saturate other rbcs
-    }
-
-    pub fn unallocated_assets_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
+    pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
         let mut result = HashSet::<AssetHandle>::new();
         if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
-            && mesh_collection_component.allocation_handle.is_none()
         {
             result.insert(mesh_collection_component.resource_backing);
         }
+        // TODO: other RBCs
         return result;
     }
 
@@ -110,9 +104,7 @@ impl EntityManager {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntityHandle(u32);
-pub struct Entity {
-    handle: EntityHandle,
-}
+
 const INVALID: usize = usize::MAX;
 struct SparseSet<T, const N: usize> {
     dense: [MaybeUninit<T>; N],
@@ -156,6 +148,7 @@ impl<T, const N: usize> SparseSet<T, N> {
         None
     }
 
+    #[allow(unused)]
     fn get_mut(&mut self, id: usize) -> Option<&mut T> {
         if self.contains(id) {
             unsafe {
