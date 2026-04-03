@@ -207,7 +207,7 @@ impl AssetManager {
         let asset = A::new(source)?;
         let handle = self.gen_handle();
         self.registered_assets.insert(handle, Box::new(asset));
-        todo!("rest of the function goes here")
+        Ok(handle)
     }
 }
 

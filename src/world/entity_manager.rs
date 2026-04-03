@@ -82,7 +82,7 @@ impl EntityManager {
 
     pub fn new() -> Self {
         Self {
-            available_ids: vec![],
+            available_ids: vec![0..10000],
             mesh_collections: SparseSet::new(),
             global_transforms: SparseSet::new(),
         }
@@ -124,8 +124,8 @@ impl<T, const N: usize> SparseSet<T, N> {
     }
 
     pub fn insert(&mut self, id: usize, value: T) {
+        assert!(self.len + 1 < N, "SparseSet is full");
         assert!(id < N, "ID out of bounds");
-        assert!(self.len < N, "SparseSet is full");
 
         if self.contains(id) {
             panic!("ID already present in SparseSet");
