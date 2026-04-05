@@ -58,8 +58,9 @@ impl Display for FreeListAllocError {
 }
 #[derive(Debug)]
 pub enum VertexArenaError {
-    DataTooLarge(u32),
+    DataTooLarge(u32, String),
     FreeListError(FreeListAllocError),
+    MaxAllocationReached,
 }
 
 impl From<FreeListAllocError> for VertexArenaError {
@@ -71,14 +72,17 @@ impl From<FreeListAllocError> for VertexArenaError {
 impl Display for VertexArenaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Self::DataTooLarge(size) => f.write_str(
+            Self::DataTooLarge(size, label) => f.write_str(
                 format!(
-                    "cannot allocate mesh of size {}, which exceeds chunk size: {}",
-                    size, CHUNK_SIZE
+                    "cannot allocate into {} mesh of size {}, which exceeds chunk size: {}",
+                    label, size, CHUNK_SIZE
                 )
                 .as_str(),
             ),
             Self::FreeListError(err) => err.fmt(f),
+            Self::MaxAllocationReached => f.write_str(
+                "All Chunks are allocated, and there is no room in any of them for this upload",
+            ),
         }
     }
 }

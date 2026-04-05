@@ -131,7 +131,7 @@ impl ArchetypeTable for APositionTable {
         }
     }
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InstanceHandle {
     pub global_id: u16,
     pub entity_handle: EntityHandle,

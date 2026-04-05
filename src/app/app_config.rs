@@ -43,8 +43,18 @@ impl<'a> AppConfig<'a> {
             })
             .await
             .expect("failed to make adapter");
+        let mut limits = wgpu::Limits::default();
+        limits.max_immediate_size = 4;
+
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("HEADLESS DEVICE"),
+                required_features: wgpu::Features::IMMEDIATES,
+                required_limits: limits,
+                memory_hints: Default::default(),
+                trace: wgpu::Trace::Off,
+                experimental_features: wgpu::ExperimentalFeatures::default(),
+            })
             .await
             .expect("failed to create device");
 

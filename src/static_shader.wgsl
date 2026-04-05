@@ -18,7 +18,7 @@ struct InstanceInput {
 
 struct DrawPushConstants {
     mesh_index: u32,
-};
+}
 
 
 struct CameraUniform {

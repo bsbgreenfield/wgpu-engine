@@ -75,20 +75,22 @@ impl App<'_> {
                         .entity_manager
                         .get_renderables(&entity_handle, &world.asset_manager);
 
+                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
                     let assets = Self::get_ordered_assets(&renderables);
                     constants.push(VMValue::InstanceHandle(instance_handle.clone()));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                     constants.push(VMValue::Renderables(renderables));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                    // TODO: renderables can have a variable number of associated assets, this
+                    // affects the indices of the constants
                     for asset_handle in assets {
                         constants.push(VMValue::LoadedAsset(
                             world
                                 .get_loaded_asset_of(&asset_handle)
                                 .expect("should be a registered asset"),
                         ));
+                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                     }
-
-                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 2) as u8));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                 }
                 WorldUpdateDelta::EntityDidLoad(_entity_handle) => {
                     // TODO spawn based on user input or scene state
@@ -109,7 +111,11 @@ impl App<'_> {
                 .renderer
                 .as_ref()
                 .unwrap()
-                .render(self.app_config.as_ref().unwrap(), draw_packet)
+                .render(
+                    self.app_config.as_ref().unwrap(),
+                    &self.world.as_ref().unwrap().camera,
+                    draw_packet,
+                )
                 .map_err(|e| FrameError::RenderError(e));
         } else {
             let _ = self
@@ -160,7 +166,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let world =
                 World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
             self.world = Some(world);
-            self.renderer = Some(Renderer::new(&self.app_config.as_ref().unwrap().device))
+            self.renderer = Some(Renderer::new(&self.app_config.as_ref().unwrap()))
         }
     }
 

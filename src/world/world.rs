@@ -30,12 +30,23 @@ impl DrawSet {
         let start = range.start + prim_range.start;
         start..(start + (prim_range.end - prim_range.start) as u32)
     }
+
+    pub fn from_ids_and_prims(data: Option<(Vec<u32>, Vec<Range<u32>>)>) -> Option<Self> {
+        if let Some((ids, prims)) = data {
+            Some(Self {
+                mesh_ids: ids,
+                primtitive_ranges: prims,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 pub struct RenderView {
     pub gpu_handle: GPUAllocationHandle,
-    pub pnujw_draws: DrawSet,
-    pub pnu_draws: DrawSet,
+    pub pnujw_draws: Option<DrawSet>,
+    pub pnu_draws: Option<DrawSet>,
 }
 
 pub struct RenderGroup {
@@ -58,7 +69,7 @@ pub enum WorldUpdateDelta {
 }
 
 pub struct World {
-    camera: Camera,
+    pub camera: Camera,
     scene: Scene,
     pub asset_manager: AssetManager,
     pub entity_manager: EntityManager,
@@ -119,10 +130,14 @@ impl World {
         let mut deltas = Vec::<WorldUpdateDelta>::new();
         // check scenes
         if self.scene.is_dirty() {
-            deltas.extend(self.handle_scene_event()?); // TODO: allow for multiple scenes
+            self.handle_scene_event()?; // TODO: allow for multiple scenes
         }
-        self.load_queue.poll_entity_jobs();
+        if let Some(updates) = self.load_queue.poll_entity_jobs(&mut self.asset_manager)? {
+            deltas.extend(updates);
+        }
+        println!("{}", self.load_queue.completed_queue.len());
         for completed in self.load_queue.completed_queue.iter() {
+            println!("completed entity: {:?}", completed.0);
             // TODO: allow spawning of multiple instances
             let instances = Self::spawn(
                 &mut self.instance_manager,
@@ -140,8 +155,7 @@ impl World {
         Ok(deltas)
     }
 
-    fn handle_scene_event(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
-        let mut deltas: Vec<WorldUpdateDelta> = Vec::new();
+    fn handle_scene_event(&mut self) -> Result<(), WorldUpdateError> {
         loop {
             let maybe_event = self.scene.pop_event();
             if maybe_event.is_none() {
@@ -157,17 +171,15 @@ impl World {
                         // }
                     }
                     SceneEvent::LoadLevelChanged(old, new) => {
+                        assert!(matches!(new, SceneLoadLevel::GPU));
+                        assert!(matches!(old, SceneLoadLevel::NotLoaded));
                         if new > old {
                             let entities = self.scene.entitites.clone();
                             for entity in entities {
                                 let _ = self.load_queue.new_entity_load(
                                     entity,
                                     self.scene.load_level,
-                                    &&self.entity_manager.rbcs_of(entity),
-                                );
-                                deltas.extend(
-                                    self.load_queue
-                                        .poll_assets_for_job(entity, &mut self.asset_manager)?,
+                                    &self.entity_manager.rbcs_of(entity),
                                 );
                             }
                         }
@@ -175,7 +187,7 @@ impl World {
                 }
             }
         }
-        Ok(deltas)
+        Ok(())
     }
 
     pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDelta]) {

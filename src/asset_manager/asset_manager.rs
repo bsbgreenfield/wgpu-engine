@@ -9,7 +9,7 @@ use std::collections::HashMap;
 pub enum AssetResidency {
     Registered,
     CPU(usize),
-    GPU(GPUAllocationHandle),
+    GPU(GPUAllocationHandle, usize),
 }
 impl PartialEq<SceneLoadLevel> for AssetResidency {
     fn eq(&self, other: &SceneLoadLevel) -> bool {
@@ -24,7 +24,7 @@ impl PartialEq<SceneLoadLevel> for AssetResidency {
                     return true;
                 }
             }
-            AssetResidency::GPU(_) => {
+            AssetResidency::GPU(_, _) => {
                 if *other == SceneLoadLevel::GPU {
                     return true;
                 }
@@ -47,7 +47,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
                 SceneLoadLevel::CPU => return Some(Ordering::Equal),
                 SceneLoadLevel::GPU => return Some(Ordering::Less),
             },
-            AssetResidency::GPU(_) => match other {
+            AssetResidency::GPU(_, _) => match other {
                 SceneLoadLevel::NotLoaded | SceneLoadLevel::CPU => return Some(Ordering::Greater),
                 SceneLoadLevel::GPU => return Some(Ordering::Equal),
             },
@@ -55,6 +55,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
     }
 }
 
+#[derive(Debug)]
 pub enum AssetLoadResult {
     LoadedCPU,
     LoadedGPU(GPUAllocationHandle),
@@ -107,7 +108,7 @@ impl AssetManager {
 
     pub fn get_alloc_handle_of(&self, asset_handle: &AssetHandle) -> GPUAllocationHandle {
         match self.res_level_of(asset_handle).expect("couldnt find asset") {
-            AssetResidency::GPU(gpu_handle) => gpu_handle.clone(),
+            AssetResidency::GPU(gpu_handle, _) => gpu_handle.clone(),
             _ => panic!(
                 "attempted to extract a gpu handle from an asset that hasnt been GPU loaded!"
             ),
@@ -143,18 +144,18 @@ impl AssetManager {
                 AssetResidency::CPU(_) => {
                     return Ok(AssetLoadResult::LoadedCPU);
                 }
-                AssetResidency::GPU(_) => todo!("unload gpu?"),
+                AssetResidency::GPU(_, _) => todo!("unload gpu?"),
             },
             SceneLoadLevel::GPU => match asset_res_level {
                 AssetResidency::Registered => {
                     self.load_cpu(asset)?;
                     // TODO: return PendingCPU once async
-                    return Ok(AssetLoadResult::PendingCPU);
+                    return Ok(AssetLoadResult::PendingGPU);
                 }
                 AssetResidency::CPU(_) => {
                     return Ok(AssetLoadResult::PendingGPU);
                 }
-                AssetResidency::GPU(allocation_handle) => {
+                AssetResidency::GPU(allocation_handle, _) => {
                     return Ok(AssetLoadResult::LoadedGPU(allocation_handle.clone()));
                 }
             },
@@ -165,10 +166,19 @@ impl AssetManager {
         &mut self,
         gpu_handle: &GPUAllocationHandle,
     ) -> Result<(), AssetLoadError> {
-        self.registered_assets
-            .get_mut(&gpu_handle.asset_handle)
-            .ok_or(AssetLoadError::AssetNotFound)?
-            .set_residency_level(AssetResidency::GPU(gpu_handle.clone()));
+        match self.registered_assets.get_mut(&gpu_handle.asset_handle) {
+            Some(asset) => match asset.get_residency_level() {
+                AssetResidency::CPU(la_index) => {
+                    asset.set_residency_level(AssetResidency::GPU(gpu_handle.clone(), *la_index))
+                }
+                _ => {
+                    return Err(AssetLoadError::AssetNotLoaded(String::from(
+                        "the asset hasnt been registered as CPU loaded before attmepting to mark it as GPU loaded",
+                    )));
+                }
+            },
+            None => return Err(AssetLoadError::AssetNotFound),
+        }
 
         Ok(())
     }
@@ -196,8 +206,11 @@ impl AssetManager {
             .get_residency_level();
         match res_level {
             AssetResidency::CPU(la_index) => return Some(&self.loaded_assets[*la_index]),
-            _ => None,
-        }
+            AssetResidency::GPU(_, la_index) => {
+                return Some(&self.loaded_assets[*la_index]);
+            }
+            AssetResidency::Registered => return None,
+        };
     }
 
     pub fn register_asset<A>(&mut self, source: &str) -> Result<AssetHandle, AssetLoadError>

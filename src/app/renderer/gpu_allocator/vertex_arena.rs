@@ -21,6 +21,7 @@ pub struct GPUArena<T: bytemuck::Pod> {
     max_chunks: usize,
     chunks: Vec<GPUChunk<T>>,
     alloc_table: HashMap<u32, AllocMetaData>,
+    label: Option<String>,
     bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
@@ -35,16 +36,16 @@ struct GPUChunk<T: bytemuck::Pod> {
 impl GPUChunk<LocalTransform> {
     fn new(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> Self {
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
+            label: Some("local transform storage buffer"),
             size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let new_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lt bind group"),
             layout: bgl,
             entries: &[wgpu::BindGroupEntry {
-                binding: 1,
+                binding: 0,
                 resource: buf.as_entire_binding(),
             }],
         });
@@ -63,12 +64,13 @@ impl<T: bytemuck::Pod> GPUChunk<T> {
         &mut self,
         data: &[T],
         queue: &wgpu::Queue,
+        label: &str,
     ) -> Result<(usize, Range<u32>), VertexArenaError> {
         let size = (data.len() * size_of::<T>()) as u32;
         let node_idx: usize = if self.remaining_space >= size {
             self.allocator.alloc_first(size)?
         } else {
-            return Err(VertexArenaError::DataTooLarge(size));
+            return Err(VertexArenaError::DataTooLarge(size, label.to_string()));
         };
         let offset = self.allocator.offset_of(node_idx) as u32;
         queue.write_buffer(&self.buffer, offset.into(), bytemuck::cast_slice(data));
@@ -93,6 +95,7 @@ impl<T: ModelVertex> GPUChunk<T> {
     }
 }
 
+#[derive(Debug)]
 struct AllocMetaData {
     chunk_id: usize,
     node_id: usize,
@@ -126,6 +129,7 @@ impl GPUAllocator<LocalTransform> for GPUArena<LocalTransform> {
             chunks: vec![GPUChunk::<LocalTransform>::new(device, &bgl)],
             alloc_table: HashMap::new(),
             bind_group_layout: Some(bgl),
+            label: Some("Local transform buffer".to_string()),
         }
     }
     fn upload<'a>(
@@ -133,7 +137,8 @@ impl GPUAllocator<LocalTransform> for GPUArena<LocalTransform> {
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError> {
-        let (node_id, _range) = self.chunks[0].gpu_alloc(job.local_transforms, queue)?;
+        let (node_id, _range) =
+            self.chunks[0].gpu_alloc(job.local_transforms, queue, self.label.as_ref().unwrap())?;
         self.alloc_table.insert(
             job.global_alloc_id,
             AllocMetaData {
@@ -192,6 +197,7 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
             max_chunks: 16,
             chunks: vec![GPUChunk::<V>::new(device)],
             alloc_table: HashMap::new(),
+            label: Some(V::debug_str()),
         }
     }
 
@@ -200,25 +206,24 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError> {
+        //TODO fix these errors so they make sense
         'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
-            match chunk.gpu_alloc(job.verts, queue) {
+            match chunk.gpu_alloc(job.verts, queue, self.label.as_ref().unwrap()) {
                 Ok((node_idx, _)) => {
-                    let pipeline_alloc_id = self.alloc_table.len() as u32; // TODO: algorithm for assigning keys
                     self.alloc_table
-                        .insert(pipeline_alloc_id, AllocMetaData::new(chunk_idx, node_idx));
+                        .insert(job.global_alloc_id, AllocMetaData::new(chunk_idx, node_idx));
+                    return Ok(());
                 }
 
                 Err(e) => match e {
-                    VertexArenaError::DataTooLarge(_) => {
+                    VertexArenaError::DataTooLarge(_, _) => {
                         return Err(e);
                     }
                     _ => continue 'outer,
                 },
             }
         }
-        Err(VertexArenaError::DataTooLarge(
-            (job.verts.len() * size_of::<V>()) as u32,
-        ))
+        Err(VertexArenaError::MaxAllocationReached)
     }
 
     fn resolve(
@@ -232,6 +237,7 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
 
     #[inline]
     fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
+        println!("{:?}", V::debug_str());
         self.alloc_table[&handle.global_allocation_id].chunk_id
     }
 

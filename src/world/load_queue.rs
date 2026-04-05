@@ -16,6 +16,7 @@ pub(super) struct EntityLoadJob {
     pub(super) asset_load_jobs: Vec<AssetHandle>,
 }
 
+#[derive(Debug)]
 enum AssetLoadJobState {
     Done,
     Pending,
@@ -93,27 +94,46 @@ impl EntityLoadQueue {
         let job = self.entity_jobs.get(&entity).unwrap();
         let mut deltas = Vec::new();
         for asset in job.asset_load_jobs.iter() {
-            let asset_load_result = asset_manager
-                .set_minumum_load_level(*asset, job.load_level)
-                .unwrap();
-            if asset_load_result.is_greater_than_or_equal_to(job.load_level) {
-                let asset_job = self.asset_jobs.get_mut(asset).unwrap();
-                asset_job.state = AssetLoadJobState::Done;
-            } else {
-                match asset_load_result {
-                    AssetLoadResult::PendingGPU => {
-                        deltas.push(WorldUpdateDelta::AssetDidLoad(*asset));
+            match self.asset_jobs.get_mut(asset).unwrap().state {
+                AssetLoadJobState::Done => continue,
+                AssetLoadJobState::Pending => {
+                    let asset_load_result = asset_manager
+                        .set_minumum_load_level(*asset, job.load_level)
+                        .unwrap();
+
+                    if asset_load_result.is_greater_than_or_equal_to(job.load_level) {
+                        let asset_job = self.asset_jobs.get_mut(asset).unwrap();
+                        asset_job.state = AssetLoadJobState::Done;
+                    } else {
+                        match asset_load_result {
+                            AssetLoadResult::PendingGPU => {
+                                deltas.push(WorldUpdateDelta::AssetDidLoad(*asset));
+                            }
+                            _ => {}
+                        }
                     }
-                    _ => {}
                 }
             }
         }
         Ok(deltas)
     }
 
-    pub(super) fn poll_entity_jobs(&mut self) {
+    pub(super) fn poll_entity_jobs(
+        &mut self,
+        manager: &mut AssetManager,
+    ) -> Result<Option<Vec<WorldUpdateDelta>>, WorldUpdateError> {
         if self.entity_jobs.len() == 0 {
-            return;
+            return Ok(None);
+        }
+        let mut res = Vec::new();
+        let handle_iter: Vec<EntityHandle> = self
+            .entity_jobs
+            .iter()
+            .map(|entry| entry.0.clone())
+            .collect();
+
+        for entity_handle in handle_iter {
+            res.extend(self.poll_assets_for_job(entity_handle, manager)?);
         }
         let completed_entities: HashMap<EntityHandle, EntityLoadJob> = self
             .entity_jobs
@@ -126,25 +146,7 @@ impl EntityLoadQueue {
                 })
             })
             .collect();
-        // .map(|(entity_handle, entity_job)| {
-        //     let allocations = entity_job
-        //         .asset_load_jobs
-        //         .into_iter()
-        //         .map(|asset_handle| {
-        //             let alloc = match &self.asset_jobs.get(&asset_handle).unwrap().state {
-        //                 AssetLoadJobState::Done(load_result) => match load_result {
-        //                     AssetLoadResult::LoadedGPU(alloc_handle) => alloc_handle.clone(),
-        //                     _ => todo!(),
-        //                 },
-        //                 _ => unreachable!(),
-        //             };
-
-        //             (asset_handle, alloc)
-        //         })
-        //         .collect();
-        //     (entity_handle, allocations)
-        // })
-        // .collect();
         self.completed_queue.extend(completed_entities);
+        Ok(Some(res))
     }
 }

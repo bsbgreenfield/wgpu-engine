@@ -35,14 +35,14 @@ pub struct GPUAllocationHandle {
 //}
 
 #[allow(unused)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Instruction {
     Op(Operations),
     Byte(u8),
     ConstIdx(u8),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operations {
     AddAsset,
     AddEntity,
@@ -50,6 +50,7 @@ pub enum Operations {
     SpawnEntityInstance,
 }
 
+#[derive(Debug)]
 pub enum VMValue<'frame> {
     Transform(Mat4F32),
     LoadedAsset(&'frame LoadedAsset),
@@ -60,19 +61,13 @@ pub enum VMValue<'frame> {
 
 #[derive(Debug)]
 pub enum RenderUpdateError {
-    MeshUploadFailed(String),
-    LocalTransformUpdateFailed,
+    GpuUploadFailure(VertexArenaError),
 }
 
 impl From<VertexArenaError> for RenderUpdateError {
     fn from(value: VertexArenaError) -> Self {
         match value {
-            VertexArenaError::DataTooLarge(size) => Self::MeshUploadFailed(format!(
-                "upload failed because data of size {size} was too large"
-            )),
-            VertexArenaError::FreeListError(e) => {
-                Self::MeshUploadFailed(format!("Upload failed due to allocation error {}", e))
-            }
+            _ => Self::GpuUploadFailure(value),
         }
     }
 }
@@ -91,10 +86,7 @@ impl From<wgpu::SurfaceError> for RenderError {
 impl Display for RenderUpdateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MeshUploadFailed(desc) => desc.fmt(f),
-            Self::LocalTransformUpdateFailed => {
-                f.write_str("Local Transform data could not be uploaded")
-            }
+            Self::GpuUploadFailure(err) => err.fmt(f),
         }
     }
 }

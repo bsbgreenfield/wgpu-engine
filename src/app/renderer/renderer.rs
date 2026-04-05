@@ -17,6 +17,7 @@ use crate::{
     },
     util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
+        camera::Camera,
         components::ComponentData,
         instance_manager::{InstanceHandle, InstanceManager},
         world::{DrawSet, RenderGroup, RenderView},
@@ -67,9 +68,12 @@ impl DrawListBuilder<PNUVertex> for DrawPacket {
         instance_idx: u32,
         lt_offset: u32,
     ) {
-        for (i, mesh_id) in view.pnu_draws.mesh_ids.iter().enumerate() {
+        for (i, mesh_id) in view.pnu_draws.as_ref().unwrap().mesh_ids.iter().enumerate() {
             let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
-            let prim_range = DrawSet::within(&view.pnu_draws.primtitive_ranges[i], &alloc_range);
+            let prim_range = DrawSet::within(
+                &view.pnu_draws.as_ref().unwrap().primtitive_ranges[i],
+                &alloc_range,
+            );
             draw_list.push(DrawItem {
                 lt_idx: lt_offset + mesh_id,
                 instances: instance_idx..instance_idx + 1,
@@ -87,9 +91,12 @@ impl DrawListBuilder<PNUJWVertex> for DrawPacket {
         instance_idx: u32,
         lt_offset: u32,
     ) {
-        for i in 0..view.pnujw_draws.mesh_ids.len() {
+        for i in 0..view.pnujw_draws.as_ref().unwrap().mesh_ids.len() {
             let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
-            let prim_range = DrawSet::within(&view.pnujw_draws.primtitive_ranges[i], &alloc_range);
+            let prim_range = DrawSet::within(
+                &view.pnujw_draws.as_ref().unwrap().primtitive_ranges[i],
+                &alloc_range,
+            );
             draw_list.push(DrawItem {
                 lt_idx: lt_offset,
                 instances: instance_idx..instance_idx + 1,
@@ -186,12 +193,12 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(config: &AppConfig) -> Self {
         Self {
             allocations: Vec::new(),
-            vertex_arenas: VertexArenaCollection::new(device),
-            global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(device),
-            pipelines: PipelineCollection::new(),
+            vertex_arenas: VertexArenaCollection::new(&config.device),
+            global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(&config.device),
+            pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
             groups: Vec::new(),
         }
@@ -213,7 +220,9 @@ impl Renderer {
             let instance_index = gt_map[group.instance_handle.global_id as usize];
             // for each allocation view
             for view in group.views.iter() {
-                // get the buffer to which is belongs
+                if !V::has_view_data(view) {
+                    continue;
+                }
                 let buf_id = arena.chunk_id(&view.gpu_handle);
                 // if the buffer has NOT already been visited, store the allocation range
                 // in the alloc map, and an empty vec in the packet map
@@ -344,7 +353,12 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn render(&self, config: &AppConfig, draw_packet: DrawPacket) -> Result<(), RenderError> {
+    pub fn render(
+        &self,
+        config: &AppConfig,
+        camera: &Camera,
+        draw_packet: DrawPacket,
+    ) -> Result<(), RenderError> {
         for pass in &self.passes {
             let output = config.surface.as_ref().unwrap().get_current_texture()?;
             let view = output
@@ -358,8 +372,9 @@ impl Renderer {
                         label: Some(format!("Render Encoder for {}", pass.label).as_str()),
                     });
             let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
+            render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
             render_pass.set_bind_group(
-                0,
+                1,
                 self.vertex_arenas.local_transform_arena.get_bind_group(),
                 &[],
             );

@@ -35,7 +35,13 @@ impl ModelData {
     }
 }
 impl LoadedAsset {
-    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(&self) -> (Vec<u32>, Vec<Range<u32>>) {
+    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(
+        &self,
+    ) -> Option<(Vec<u32>, Vec<Range<u32>>)> {
+        if self.gltf_mesh_data.mesh_data.is_empty() {
+            this doesnt  work!!
+            return None;
+        }
         let mut mesh_ids = Vec::<u32>::new();
         let mut primitive_ranges = Vec::<Range<u32>>::new();
         for mesh_data in self.gltf_mesh_data.mesh_data.iter() {
@@ -55,7 +61,7 @@ impl LoadedAsset {
                 }
             }
         }
-        (mesh_ids, primitive_ranges)
+        Some((mesh_ids, primitive_ranges))
     }
 }
 #[allow(unused)]

@@ -1,8 +1,5 @@
 #[cfg(test)]
 mod integration_tests {
-    use std::ops::Deref;
-
-    use cgmath::SquareMatrix;
 
     use crate::{
         app::{
@@ -12,7 +9,6 @@ mod integration_tests {
             renderer::{Instruction, Operations, RenderUpdateDelta, VMValue, renderer::Renderer},
         },
         asset_manager::AssetHandle,
-        util::types::GlobalTransform,
         world::world::{World, WorldUpdateDelta},
     };
 
@@ -25,7 +21,7 @@ mod integration_tests {
 
             let world = World::new(1.0, &config.device).unwrap();
 
-            let renderer = Renderer::new(&config.device);
+            let renderer = Renderer::new(&config);
 
             app.world = Some(world);
             app.app_config = Some(config);
@@ -122,24 +118,27 @@ mod integration_tests {
                         .entity_manager
                         .get_renderables(&entity_handle, &world.asset_manager);
 
+                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
                     let assets = App::get_ordered_assets(&renderables);
                     constants.push(VMValue::InstanceHandle(instance_handle.clone()));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                     constants.push(VMValue::Renderables(renderables));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                     for asset_handle in assets {
                         constants.push(VMValue::LoadedAsset(
                             world
                                 .get_loaded_asset_of(&asset_handle)
                                 .expect("should be a registered asset"),
                         ));
+                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                     }
-
-                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 2) as u8));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
                 }
                 _ => panic!("should be an entity did spawn delta"),
             }
 
+            assert!(matches!(constants[0], VMValue::InstanceHandle(_)));
+            assert!(matches!(constants[1], VMValue::Renderables(_)));
+            assert!(matches!(constants[2], VMValue::LoadedAsset(_)));
             let render_deltas = app
                 .renderer
                 .as_mut()

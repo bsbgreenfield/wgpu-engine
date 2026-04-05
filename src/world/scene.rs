@@ -35,6 +35,8 @@ impl Scene {
     }
 
     pub fn set_load_level(&mut self, level: SceneLoadLevel) {
+        self.event_queue
+            .push(SceneEvent::LoadLevelChanged(self.load_level, level));
         self.load_level = level;
         self.dirty = true;
     }

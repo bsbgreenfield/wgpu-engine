@@ -20,36 +20,45 @@ impl<'frame> VMValue<'frame> {
     fn unwrap_loaded_asset(&self) -> &'frame LoadedAsset {
         match self {
             VMValue::LoadedAsset(la) => la,
-            _ => panic!("value is not a loaded asset ref"),
+            _ => panic!("value is not a loaded asset ref. it is {:?}", self),
         }
     }
 
     fn unwrap_renderables(&'frame self) -> &'frame Renderables<'frame> {
         match self {
             VMValue::Renderables(renderables) => renderables,
-            _ => panic!("value is not renderables"),
+            _ => panic!("value is not renderables. it is {:?}", self),
         }
     }
 
     fn unwrap_instance_handle(&'frame self) -> &'frame InstanceHandle {
         match self {
             VMValue::InstanceHandle(handle) => handle,
-            _ => panic!("value is not an instance handle"),
+            _ => panic!("value is not an instance handle. it is {:?}", self),
         }
     }
 }
 
 trait MeshUploadable<V: ModelVertex> {
-    fn as_mesh_job<'frame>(verts: &'frame [V], global_alloc_id: u32) -> UploadMeshJob<'frame, V>;
+    fn as_mesh_job<'frame>(
+        verts: &'frame [V],
+        global_alloc_id: u32,
+    ) -> Option<UploadMeshJob<'frame, V>>;
 }
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 
 impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
-    fn as_mesh_job<'frame>(verts: &'frame [V], global_alloc_id: u32) -> UploadMeshJob<'frame, V> {
-        // REMOVE
-        UploadMeshJob {
-            global_alloc_id,
-            verts,
+    fn as_mesh_job<'frame>(
+        verts: &'frame [V],
+        global_alloc_id: u32,
+    ) -> Option<UploadMeshJob<'frame, V>> {
+        if verts.len() > 0 {
+            Some(UploadMeshJob {
+                global_alloc_id,
+                verts,
+            })
+        } else {
+            None
         }
     }
 }
@@ -81,14 +90,16 @@ impl<'frame> Renderer {
 
                         let global_allocation_id = self.get_global_alloc_id();
 
-                        let skinned_job: UploadMeshJob<'_, PNUJWVertex> = LoadedAsset::as_mesh_job(
-                            &loaded_asset.gltf_mesh_data.pnujw_vertices,
-                            global_allocation_id,
-                        );
-                        let static_job: UploadMeshJob<'_, PNUVertex> = LoadedAsset::as_mesh_job(
-                            &loaded_asset.gltf_mesh_data.pnu_vertices,
-                            global_allocation_id,
-                        );
+                        let maybe_skinned_job: Option<UploadMeshJob<'_, PNUJWVertex>> =
+                            LoadedAsset::as_mesh_job(
+                                &loaded_asset.gltf_mesh_data.pnujw_vertices,
+                                global_allocation_id,
+                            );
+                        let maybe_static_job: Option<UploadMeshJob<'_, PNUVertex>> =
+                            LoadedAsset::as_mesh_job(
+                                &loaded_asset.gltf_mesh_data.pnu_vertices,
+                                global_allocation_id,
+                            );
 
                         let lt_job: LocalTransformUploadJob = LocalTransformUploadJob {
                             local_transforms: &loaded_asset.gltf_mesh_data.local_transforms,
@@ -96,8 +107,12 @@ impl<'frame> Renderer {
                         };
 
                         self.upload_local_transform_data(lt_job, queue)?;
-                        self.upload_mesh(skinned_job, queue)?;
-                        self.upload_mesh(static_job, queue)?;
+                        if let Some(static_job) = maybe_static_job {
+                            self.upload_mesh(static_job, queue)?;
+                        }
+                        if let Some(skinned_job) = maybe_skinned_job {
+                            self.upload_mesh(skinned_job, queue)?;
+                        }
 
                         res.push(RenderUpdateDelta::AssetGPULoaded(GPUAllocationHandle {
                             asset_handle: loaded_asset.handle,
@@ -120,20 +135,12 @@ impl<'frame> Renderer {
                             let la_const_idx = Self::get_constant_idx(&mut instr_peek);
                             let la = constants[la_const_idx as usize].unwrap_loaded_asset();
 
-                            let (pnujw_ids, pnujw_prims) =
-                                la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
-                            let (pnu_ids, pnu_prims) =
-                                la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
+                            let pnu_data = la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
+                            let pnujw_data = la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
                             let view = RenderView {
                                 gpu_handle: mesh_collection_renderable.0.to_owned(),
-                                pnu_draws: DrawSet {
-                                    mesh_ids: pnu_ids,
-                                    primtitive_ranges: pnu_prims,
-                                },
-                                pnujw_draws: DrawSet {
-                                    mesh_ids: pnujw_ids,
-                                    primtitive_ranges: pnujw_prims,
-                                },
+                                pnu_draws: DrawSet::from_ids_and_prims(pnu_data),
+                                pnujw_draws: DrawSet::from_ids_and_prims(pnujw_data),
                             };
                             self.add_render_group(vec![view], instance_handle.clone());
                         }

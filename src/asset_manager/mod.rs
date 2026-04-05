@@ -11,7 +11,7 @@ mod range_splicer;
 #[derive(Debug)]
 pub enum AssetLoadError {
     Gltf(GltfLoadError),
-    AssetNotLoaded,
+    AssetNotLoaded(String),
     AssetNotFound,
     ComponentNotFound,
 }
@@ -22,7 +22,7 @@ impl Display for AssetLoadError {
             Self::Gltf(gltf_error) => {
                 write!(f, "Asset Load Failure: {}", gltf_error)
             }
-            Self::AssetNotLoaded => f.write_str("This asset is not yet loaded"),
+            Self::AssetNotLoaded(s) => write!(f, "The asset is not yet loaded. Message: {}", s),
             Self::AssetNotFound => f.write_str("No such asset exists"),
             Self::ComponentNotFound => {
                 f.write_str("The component associated with this asset does not exist")

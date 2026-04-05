@@ -24,6 +24,7 @@ pub struct EntityManager {
     global_transforms: SparseSet<PhysicalPositionComponent, 100>,
 }
 
+#[derive(Debug)]
 pub struct Renderables<'frame> {
     pub mesh_collection: Option<(GPUAllocationHandle, &'frame MeshCollectionComponent)>,
 }

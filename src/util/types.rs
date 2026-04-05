@@ -1,6 +1,10 @@
-use std::{fmt::Debug, ops::Deref};
+use std::{fmt::Debug, num::NonZero, ops::Deref};
 
 use bytemuck::AnyBitPattern;
+
+use crate::{
+    asset_manager::gltf_assets::model_builder_new::GltfMeshData, world::world::RenderView,
+};
 
 pub type Mat4F32 = [[f32; 4]; 4];
 
@@ -25,6 +29,10 @@ pub trait ModelVertex: Debug + bytemuck::Pod {
             .collect()
     }
     fn desc() -> wgpu::VertexBufferLayout<'static>;
+
+    fn debug_str() -> String;
+
+    fn has_view_data(view: &RenderView) -> bool;
 }
 pub trait IndexType: AnyBitPattern + bytemuck::NoUninit + Debug {
     const GLTF_INDEX_TYPE: gltf::accessor::DataType;
@@ -34,6 +42,31 @@ pub trait IndexType: AnyBitPattern + bytemuck::NoUninit + Debug {
 impl IndexType for u16 {
     const GLTF_INDEX_TYPE: gltf::accessor::DataType = gltf::accessor::DataType::U16;
     const BYTE_SIZE: usize = 2;
+}
+pub trait InstanceData {
+    fn desc() -> wgpu::VertexBufferLayout<'static>;
+}
+
+pub trait StorageData {
+    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
+}
+
+impl StorageData for LocalTransform {
+    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("LT bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
+                },
+                count: None,
+            }],
+        })
+    }
 }
 
 #[repr(C)]
@@ -74,6 +107,12 @@ const PNUJW_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
 ];
 
 impl ModelVertex for PNUJWVertex {
+    fn has_view_data(view: &RenderView) -> bool {
+        view.pnujw_draws.is_some()
+    }
+    fn debug_str() -> String {
+        String::from("PNUJW Vertex")
+    }
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
@@ -169,6 +208,12 @@ const PNU_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
 ];
 
 impl ModelVertex for PNUVertex {
+    fn has_view_data(view: &RenderView) -> bool {
+        view.pnu_draws.is_some()
+    }
+    fn debug_str() -> String {
+        String::from("PNU Vertex")
+    }
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         use std::mem;
         wgpu::VertexBufferLayout {
@@ -217,9 +262,6 @@ const ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
              8 => Float32x4,
 
 ];
-pub trait InstanceData {
-    fn desc() -> wgpu::VertexBufferLayout<'static>;
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
