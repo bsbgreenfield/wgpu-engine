@@ -50,6 +50,6 @@ fn vs_main(obj: VertexInput, instance: InstanceInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-	let colors = vec4<f32>(0.9, 0.2, 0.1, 1.0);
+	let colors = vec4<f32>(0.8, 0.3, 0.1, 1.0);
 	return colors;
 }

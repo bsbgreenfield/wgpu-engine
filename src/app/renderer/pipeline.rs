@@ -1,7 +1,8 @@
 use crate::{
     app::{app_config::AppConfig, renderer::renderer::RenderCategory},
     util::types::{
-        GlobalTransform, InstanceData, LocalTransform, ModelVertex, PNUJWVertex, StorageData,
+        GlobalTransform, InstanceData, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex,
+        StorageData,
     },
     world::camera::Camera,
 };
@@ -21,14 +22,24 @@ impl PipelineCollection {
     pub(super) fn new(config: &AppConfig) -> Self {
         use super::renderer::RenderCategory::*;
         Self {
-            opaque_skinned: Self::create_pipeline(OpaqueStatic, config),
-            opaque_static: Self::create_pipeline(OpaqueSkinned, config),
+            opaque_skinned: Self::create_pipeline(OpaqueSkinned, config),
+            opaque_static: Self::create_pipeline(OpaqueStatic, config),
         }
     }
 
     fn opaque_static_layout(device: &wgpu::Device) -> wgpu::PipelineLayout {
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("opaque_static pipeline layout"),
+            bind_group_layouts: &[
+                &Camera::get_bind_group_layout(device),
+                &LocalTransform::get_bind_group_layout(device),
+            ],
+            immediate_size: 4,
+        })
+    }
+    fn opaque_skinned_layout(device: &wgpu::Device) -> wgpu::PipelineLayout {
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("opaque_skinned pipeline layout"),
             bind_group_layouts: &[
                 &Camera::get_bind_group_layout(device),
                 &LocalTransform::get_bind_group_layout(device),
@@ -73,7 +84,7 @@ impl PipelineCollection {
                             vertex: wgpu::VertexState {
                                 module: &shader,
                                 entry_point: Some("vs_main"),
-                                buffers: &[PNUJWVertex::desc(), GlobalTransform::desc()],
+                                buffers: &[PNUVertex::desc(), GlobalTransform::desc()],
                                 compilation_options: Default::default(),
                             },
                             primitive: wgpu::PrimitiveState {
@@ -109,10 +120,10 @@ impl PipelineCollection {
                     .create_shader_module(wgpu::ShaderModuleDescriptor {
                         label: Some("opaque_static shader"),
                         source: wgpu::ShaderSource::Wgsl(
-                            include_str!("../../static_shader.wgsl").into(),
+                            include_str!("../../skinned_shader.wgsl").into(),
                         ),
                     });
-                let layout = Self::opaque_static_layout(&config.device);
+                let layout = Self::opaque_skinned_layout(&config.device);
 
                 let color_targets: [Option<wgpu::ColorTargetState>; 1] =
                     if config.surface_config.as_ref().is_none() {
@@ -132,7 +143,7 @@ impl PipelineCollection {
                     config
                         .device
                         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                            label: Some("opaque_static pipeline"),
+                            label: Some("opaque_skinned pipeline"),
                             layout: Some(&layout),
                             vertex: wgpu::VertexState {
                                 module: &shader,

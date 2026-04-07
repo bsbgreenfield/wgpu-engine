@@ -31,6 +31,8 @@ impl Display for AssetLoadError {
     }
 }
 
+impl std::error::Error for AssetLoadError {}
+
 impl From<ModelBuilderError> for AssetLoadError {
     fn from(value: ModelBuilderError) -> Self {
         Self::Gltf(GltfLoadError::ModelBuilderError(Box::new(value)))
@@ -59,4 +61,9 @@ pub trait Asset {
 pub struct LoadedAsset {
     pub handle: AssetHandle,
     pub gltf_mesh_data: GltfLoadResult,
+}
+
+pub trait ModelVertexData {
+    fn has_pnu(&self) -> bool;
+    fn has_pnujw(&self) -> bool;
 }

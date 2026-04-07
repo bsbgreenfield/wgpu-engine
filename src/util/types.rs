@@ -2,9 +2,7 @@ use std::{fmt::Debug, num::NonZero, ops::Deref};
 
 use bytemuck::AnyBitPattern;
 
-use crate::{
-    asset_manager::gltf_assets::model_builder_new::GltfMeshData, world::world::RenderView,
-};
+use crate::world::world::RenderView;
 
 pub type Mat4F32 = [[f32; 4]; 4];
 
@@ -296,5 +294,27 @@ impl InstanceData for GlobalTransform {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &ATTRIBUTES,
         }
+    }
+}
+
+pub struct NonEmptyVec<T> {
+    data: Vec<T>,
+}
+
+impl<T> NonEmptyVec<T> {
+    pub fn new(data: Vec<T>) -> Option<Self> {
+        if data.is_empty() {
+            return None;
+        } else {
+            return Some(Self { data });
+        }
+    }
+}
+
+impl<T> Deref for NonEmptyVec<T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }

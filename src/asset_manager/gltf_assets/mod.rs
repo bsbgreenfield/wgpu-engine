@@ -36,6 +36,8 @@ impl Display for ModelBuilderError {
     }
 }
 
+impl std::error::Error for ModelBuilderError {}
+
 impl From<GltfValidationError> for ModelBuilderError {
     fn from(value: GltfValidationError) -> Self {
         Self::ValidationError(value)

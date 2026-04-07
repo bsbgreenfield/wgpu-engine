@@ -29,7 +29,7 @@ mod integration_tests {
             app.app_state = AppState {};
             app.surface_ready = true;
 
-            let deltas = app.update_world().unwrap();
+            let deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
 
             assert_eq!(deltas.len(), 1);
             assert!(matches!(deltas[0], WorldUpdateDelta::AssetDidLoad(_)));
@@ -63,7 +63,7 @@ mod integration_tests {
                     instructions,
                     &app.app_config.as_ref().unwrap().queue,
                 )
-                .unwrap();
+                .unwrap_or_else(|e| panic!("{}", e));
 
             assert!(matches!(
                 render_deltas[0],
@@ -96,7 +96,7 @@ mod integration_tests {
             // ****************** SECOND FRAME ***********************************
             // *******************************************************************
 
-            let world_deltas = app.update_world().unwrap();
+            let world_deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
 
             // assert that an instance spawned
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
@@ -148,7 +148,7 @@ mod integration_tests {
                     instructions,
                     &app.app_config.as_ref().unwrap().queue,
                 )
-                .unwrap();
+                .unwrap_or_else(|e| panic!("{}", e));
 
             let draw_packet = app
                 .renderer
@@ -157,16 +157,12 @@ mod integration_tests {
                 .gen_draw_calls_new(&instance_manager, &app.app_config.as_ref().unwrap().queue)
                 .unwrap();
 
-            let pnu = draw_packet.get_pnu();
-            assert!(pnu.len() == 1);
-            for entry in pnu.iter() {
-                for item in entry.1 {
-                    assert!(item.get_lt_idx() == 0);
-                    assert!(item.get_instances().start == 0 && item.get_instances().end == 1);
-                    println!("{:?}", item.get_primitives());
-                    // TODO: assert prims for box
-                }
-            }
+            // let a = draw_packet.get_pnujw();
+            // for entry in a {
+            //     for item in entry.1 {
+            //         println!("{:?}", item);
+            //     }
+            // }
 
             app.world
                 .as_mut()

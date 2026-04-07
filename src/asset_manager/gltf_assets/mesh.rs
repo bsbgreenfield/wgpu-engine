@@ -12,11 +12,11 @@ pub(super) struct Mesh {
 pub(super) struct Primitive {
     pub vertex_type: TypeId,
     pub vertices: Range<u32>,
-    pub indices: Range<u32>,
+    pub indices: Option<Range<u32>>,
 }
 
 impl Primitive {
-    pub fn new<V: ModelVertex>(vertices: Range<u32>, indices: Range<u32>) -> Self {
+    pub fn new<V: ModelVertex>(vertices: Range<u32>, indices: Option<Range<u32>>) -> Self {
         Self {
             vertices,
             indices,

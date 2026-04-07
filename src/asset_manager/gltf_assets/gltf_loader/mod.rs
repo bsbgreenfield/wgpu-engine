@@ -29,6 +29,7 @@ impl Display for GltfLoadError {
         }
     }
 }
+impl std::error::Error for GltfLoadError {}
 
 impl From<ModelBuilderError> for GltfLoadError {
     fn from(value: ModelBuilderError) -> Self {

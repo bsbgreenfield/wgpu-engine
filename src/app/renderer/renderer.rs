@@ -24,11 +24,12 @@ use crate::{
     },
 };
 
-pub(super) enum RenderCategory {
+pub enum RenderCategory {
     OpaqueStatic,
     OpaqueSkinned,
 }
 
+#[derive(Debug)]
 pub struct DrawItem {
     lt_idx: u32,
     instances: Range<u32>,
@@ -144,9 +145,9 @@ impl EngineRenderPass {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.6,
+                        r: 0.3,
                         g: 0.3,
-                        b: 0.3,
+                        b: 0.7,
                         a: 1.0,
                     }),
                     store: wgpu::StoreOp::Store,
@@ -202,6 +203,9 @@ impl Renderer {
             passes: Vec::new(),
             groups: Vec::new(),
         }
+    }
+    pub fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
+        self.passes.push(EngineRenderPass { label, categories });
     }
 
     /// Organize draw calls into Buffer -> DrawItem
@@ -371,52 +375,62 @@ impl Renderer {
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some(format!("Render Encoder for {}", pass.label).as_str()),
                     });
-            let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
-            render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
-            render_pass.set_bind_group(
-                1,
-                self.vertex_arenas.local_transform_arena.get_bind_group(),
-                &[],
-            );
-            for render_category in pass.categories.iter() {
-                match render_category {
-                    RenderCategory::OpaqueStatic => {
-                        let pipeline = &self.pipelines.opaque_static;
-                        render_pass.set_pipeline(&pipeline.pipeline);
-                        for draw_entry in draw_packet.pnu.iter() {
-                            render_pass.set_vertex_buffer(
-                                0,
-                                self.vertex_arenas
-                                    .static_arena
-                                    .buffer_from_chunk_id(*draw_entry.0)
-                                    .slice(..),
-                            );
+            {
+                let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
 
-                            for draw in draw_entry.1.iter() {
-                                render_pass.set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
-                                render_pass.draw(draw.primitives.clone(), draw.instances.clone());
+                render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+                render_pass.set_bind_group(
+                    1,
+                    self.vertex_arenas.local_transform_arena.get_bind_group(),
+                    &[],
+                );
+                render_pass.set_vertex_buffer(1, self.global_transform_buffer.slice(..));
+                for render_category in pass.categories.iter() {
+                    match render_category {
+                        RenderCategory::OpaqueStatic => {
+                            let pipeline = &self.pipelines.opaque_static;
+                            render_pass.set_pipeline(&pipeline.pipeline);
+                            for draw_entry in draw_packet.pnu.iter() {
+                                render_pass.set_vertex_buffer(
+                                    0,
+                                    self.vertex_arenas
+                                        .static_arena
+                                        .buffer_from_chunk_id(*draw_entry.0)
+                                        .slice(..),
+                                );
+
+                                for draw in draw_entry.1.iter() {
+                                    render_pass
+                                        .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
+                                    render_pass
+                                        .draw(draw.primitives.clone(), draw.instances.clone());
+                                }
                             }
                         }
-                    }
-                    RenderCategory::OpaqueSkinned => {
-                        let pipeline = &self.pipelines.opaque_skinned;
-                        render_pass.set_pipeline(&pipeline.pipeline);
-                        for draw_entry in draw_packet.pnujw.iter() {
-                            render_pass.set_vertex_buffer(
-                                0,
-                                self.vertex_arenas
-                                    .skinned_arena
-                                    .buffer_from_chunk_id(*draw_entry.0)
-                                    .slice(..),
-                            );
-                            for draw in draw_entry.1.iter() {
-                                render_pass.set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
-                                render_pass.draw(draw.primitives.clone(), draw.instances.clone());
+                        RenderCategory::OpaqueSkinned => {
+                            let pipeline = &self.pipelines.opaque_skinned;
+                            render_pass.set_pipeline(&pipeline.pipeline);
+                            for draw_entry in draw_packet.pnujw.iter() {
+                                render_pass.set_vertex_buffer(
+                                    0,
+                                    self.vertex_arenas
+                                        .skinned_arena
+                                        .buffer_from_chunk_id(*draw_entry.0)
+                                        .slice(..),
+                                );
+                                for draw in draw_entry.1.iter() {
+                                    render_pass
+                                        .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
+                                    render_pass
+                                        .draw(draw.primitives.clone(), draw.instances.clone());
+                                }
                             }
                         }
                     }
                 }
             }
+            config.queue.submit(std::iter::once(encoder.finish()));
+            output.present();
         }
         Ok(())
     }

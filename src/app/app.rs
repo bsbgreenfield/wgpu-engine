@@ -5,7 +5,10 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{Instruction, Operations, VMValue, renderer::Renderer},
+        renderer::{
+            Instruction, Operations, VMValue,
+            renderer::{RenderCategory, Renderer},
+        },
     },
     asset_manager::AssetHandle,
     world::{
@@ -166,7 +169,13 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let world =
                 World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
             self.world = Some(world);
-            self.renderer = Some(Renderer::new(&self.app_config.as_ref().unwrap()))
+            let mut renderer = Renderer::new(&self.app_config.as_ref().unwrap());
+            renderer.add_pass(
+                "Opaque Pass".to_string(),
+                vec![RenderCategory::OpaqueStatic, RenderCategory::OpaqueSkinned],
+            );
+
+            self.renderer = Some(renderer)
         }
     }
 
@@ -199,7 +208,9 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 }
 
                 match self.run_frame() {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        self.window.as_ref().unwrap().request_redraw();
+                    }
                     Err(FrameError::SurfaceError(_)) => {
                         // let size = self.window.as_ref().unwrap().inner_size();
                         // self.app_config

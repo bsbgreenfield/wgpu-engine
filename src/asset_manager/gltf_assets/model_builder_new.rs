@@ -14,7 +14,8 @@ use crate::{
         },
     },
     util::types::{
-        IndexType, LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex, mat4_from_cgmath,
+        IndexType, LocalTransform, Mat4F32, ModelVertex, NonEmptyVec, PNUJWVertex, PNUVertex,
+        mat4_from_cgmath,
     },
 };
 
@@ -38,8 +39,13 @@ impl LoadedAsset {
     pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(
         &self,
     ) -> Option<(Vec<u32>, Vec<Range<u32>>)> {
-        if self.gltf_mesh_data.mesh_data.is_empty() {
-            this doesnt  work!!
+        if TypeId::of::<V>() == TypeId::of::<PNUVertex>()
+            && self.gltf_mesh_data.pnu_vertices.is_empty()
+        {
+            return None;
+        } else if TypeId::of::<V>() == TypeId::of::<PNUJWVertex>()
+            && self.gltf_mesh_data.pnujw_vertices.is_empty()
+        {
             return None;
         }
         let mut mesh_ids = Vec::<u32>::new();
@@ -228,7 +234,9 @@ trait GltfBuilder {
             let mut meshes = Vec::<Mesh>::new();
             for primitive_data in model_primitive_data.iter() {
                 // TODO: either coerce all indices to u16 OR handle diff index types
-                assert_eq!(primitive_data.indices.as_ref().unwrap().byte_size, 2);
+                if primitive_data.indices.is_some() {
+                    assert_eq!(primitive_data.indices.as_ref().unwrap().byte_size, 2);
+                }
 
                 // binary data per vertex attribute
                 let primitive_vertex_data = Primitive::get_primitive_vertex_data(
@@ -237,19 +245,26 @@ trait GltfBuilder {
                     &binary_data,
                 )?;
 
-                // range within the blob in which the indices for this primitive are located
-                let primitive_index_range =
-                    Primitive::get_index_range(primitive_data.indices.as_ref(), buffer_offsets)?;
+                let index_range: Option<Range<u32>> = if !index_ranges.is_empty() {
+                    // range within the blob in which the indices for this primitive are located
+                    let maybe_primitive_index_range = Primitive::get_index_range(
+                        primitive_data.indices.as_ref(),
+                        buffer_offsets,
+                    )?;
 
-                // range of this primitives indices within the final GPU index buffer
-                let relative_index_range = Self::get_relative_indices(
-                    index_ranges,
-                    &primitive_index_range.unwrap_or(Range { start: 0, end: 0 }),
-                )?;
+                    // range of this primitives indices within the final GPU index buffer
+                    let maybe_relative_index_range =
+                        maybe_primitive_index_range.map(|primitive_index_range| {
+                            Self::get_relative_indices(index_ranges, &primitive_index_range)
+                                .unwrap()
+                        });
 
-                let index_range = Range {
-                    start: (relative_index_range.start / size_of::<u16>()) as u32,
-                    end: (relative_index_range.end / size_of::<u16>()) as u32,
+                    maybe_relative_index_range.map(|relative_index_range| Range {
+                        start: (relative_index_range.start / size_of::<u16>()) as u32,
+                        end: (relative_index_range.end / size_of::<u16>()) as u32,
+                    })
+                } else {
+                    None
                 };
 
                 let is_jointed = primitive_data.joints.is_some().clone();
@@ -257,15 +272,13 @@ trait GltfBuilder {
                 let mut vertex_range = Range::<u32>::default();
                 let mut current_primitive: Option<Primitive> = None;
                 if is_jointed {
-                    vertex_range.start = (pnujw_vertices.len() * size_of::<PNUJWVertex>()) as u32;
-                    vertex_range.end = ((pnujw_vertices.len() + primitive_vertex_data.count)
-                        * size_of::<PNUJWVertex>()) as u32;
+                    vertex_range.start = pnujw_vertices.len() as u32;
+                    vertex_range.end = (pnujw_vertices.len() + primitive_vertex_data.count) as u32;
                     let _ = current_primitive
                         .insert(Primitive::new::<PNUJWVertex>(vertex_range, index_range));
                 } else {
-                    vertex_range.start = (pnujw_vertices.len() * size_of::<PNUVertex>()) as u32;
-                    vertex_range.end = ((pnujw_vertices.len() + primitive_vertex_data.count)
-                        * size_of::<PNUVertex>()) as u32;
+                    vertex_range.start = pnu_vertices.len() as u32;
+                    vertex_range.end = (pnu_vertices.len() + primitive_vertex_data.count) as u32;
                     let _ = current_primitive
                         .insert(Primitive::new::<PNUVertex>(vertex_range, index_range));
                 }
@@ -345,7 +358,7 @@ impl Asset for GltfAsset {
         })
     }
     fn load_asset(&self, handle: AssetHandle) -> Result<LoadedAsset, AssetLoadError> {
-        let a = Self::load_gltf(&self.gltf, &self.bin).unwrap();
+        let a = Self::load_gltf(&self.gltf, &self.bin)?;
         Ok(LoadedAsset {
             gltf_mesh_data: a,
             handle,

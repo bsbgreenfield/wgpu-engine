@@ -135,15 +135,15 @@ impl World {
         if let Some(updates) = self.load_queue.poll_entity_jobs(&mut self.asset_manager)? {
             deltas.extend(updates);
         }
-        println!("{}", self.load_queue.completed_queue.len());
         for completed in self.load_queue.completed_queue.iter() {
-            println!("completed entity: {:?}", completed.0);
             // TODO: allow spawning of multiple instances
             let instances = Self::spawn(
                 &mut self.instance_manager,
                 *completed.0,
                 APosition {
-                    position: cgmath::Matrix4::<f32>::identity().into(),
+                    position: (cgmath::Matrix4::<f32>::from_scale(0.05)
+                        * cgmath::Matrix4::<f32>::identity())
+                    .into(),
                 },
             )?;
             deltas.push(WorldUpdateDelta::EntityDidSpawn(instances[0].clone()));

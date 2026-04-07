@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
+    fmt::Debug,
     marker::PhantomData,
+    num::NonZero,
     ops::{Deref, Range},
 };
 
@@ -17,7 +19,7 @@ use crate::{
 //****************************************************************
 //
 #[allow(unused)]
-pub struct GPUArena<T: bytemuck::Pod> {
+pub struct GPUArena<T: bytemuck::Pod + Debug> {
     max_chunks: usize,
     chunks: Vec<GPUChunk<T>>,
     alloc_table: HashMap<u32, AllocMetaData>,
@@ -25,7 +27,7 @@ pub struct GPUArena<T: bytemuck::Pod> {
     bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
-struct GPUChunk<T: bytemuck::Pod> {
+struct GPUChunk<T: bytemuck::Pod + Debug> {
     remaining_space: u32,
     buffer: wgpu::Buffer,
     bind_group: Option<wgpu::BindGroup>,
@@ -59,7 +61,7 @@ impl GPUChunk<LocalTransform> {
     }
 }
 
-impl<T: bytemuck::Pod> GPUChunk<T> {
+impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
     fn gpu_alloc(
         &mut self,
         data: &[T],
@@ -72,9 +74,12 @@ impl<T: bytemuck::Pod> GPUChunk<T> {
         } else {
             return Err(VertexArenaError::DataTooLarge(size, label.to_string()));
         };
+        // for datum in data.iter().take(10) {
+        //     println!("{:?}", datum);
+        // }
         let offset = self.allocator.offset_of(node_idx) as u32;
         queue.write_buffer(&self.buffer, offset.into(), bytemuck::cast_slice(data));
-        Ok((node_idx, offset..offset + size))
+        Ok((node_idx, offset..offset + (data.len() as u32)))
     }
 }
 
@@ -119,7 +124,7 @@ impl GPUAllocator<LocalTransform> for GPUArena<LocalTransform> {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
-                    min_binding_size: None,
+                    min_binding_size: Some(NonZero::new(64).unwrap()),
                 },
                 visibility: wgpu::ShaderStages::VERTEX,
             }],
@@ -231,13 +236,14 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
         handle: &GPUAllocationHandle,
     ) -> (Range<u32>, &wgpu::Buffer, Option<&wgpu::BindGroup>) {
         let meta = self.alloc_table.get(&handle.global_allocation_id).unwrap();
-        let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
+        let mut range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
+        range.start = range.start / size_of::<V>() as u32;
+        range.end = range.end / size_of::<V>() as u32;
         (range, &self.chunks[meta.chunk_id].buffer, None)
     }
 
     #[inline]
     fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
-        println!("{:?}", V::debug_str());
         self.alloc_table[&handle.global_allocation_id].chunk_id
     }
 

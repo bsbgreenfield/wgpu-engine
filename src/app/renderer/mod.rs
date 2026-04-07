@@ -100,6 +100,7 @@ impl Display for RenderError {
 }
 
 impl Error for RenderUpdateError {}
+impl Error for RenderError {}
 
 trait VertexArenaSelector<V: ModelVertex> {
     fn upload_mesh(

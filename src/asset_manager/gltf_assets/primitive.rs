@@ -194,7 +194,7 @@ impl Primitive {
             uv: tex_coords,
             joints: joints,
             weights: weights,
-            count: primitive_data.positions.num_elements as usize,
+            count: primitive_data.positions.count as usize,
         })
     }
 }
@@ -209,7 +209,6 @@ fn copy_binary_data_from_gltf(
     let mut copy_dest: Vec<u8> = Vec::with_capacity(
         accessor.byte_size as usize * accessor.num_elements as usize * accessor.count as usize,
     );
-    assert_eq!(copy_dest.capacity(), 288);
     let mut byte_loc = byte_offset;
     let extra_stride = if let Some(stride) = accessor.stride {
         stride as usize - (accessor.byte_size as usize * accessor.num_elements as usize)

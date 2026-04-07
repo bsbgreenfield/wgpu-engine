@@ -30,6 +30,8 @@ impl Display for FrameError {
     }
 }
 
+impl std::error::Error for FrameError {}
+
 impl From<WorldUpdateError> for FrameError {
     fn from(value: WorldUpdateError) -> Self {
         FrameError::UpdateError(value)

@@ -11,7 +11,7 @@ use crate::{
 mod free_list;
 pub(super) mod vertex_arena;
 
-static CHUNK_SIZE: u32 = 1024 * 4;
+static CHUNK_SIZE: u32 = 4_194_304;
 pub(super) trait GPUAllocator<T: Pod> {
     type UploadJob<'a>;
     type AllocationError: Error;
@@ -56,6 +56,7 @@ impl Display for FreeListAllocError {
         }
     }
 }
+
 #[derive(Debug)]
 pub enum VertexArenaError {
     DataTooLarge(u32, String),
