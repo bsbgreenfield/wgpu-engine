@@ -22,6 +22,7 @@ use crate::{
 pub struct DrawSet {
     pub mesh_ids: Vec<u32>,
     pub primtitive_ranges: Vec<Range<u32>>,
+    pub index_ranges: Option<Vec<Range<u32>>>,
 }
 
 impl DrawSet {
@@ -31,11 +32,14 @@ impl DrawSet {
         start..(start + (prim_range.end - prim_range.start) as u32)
     }
 
-    pub fn from_ids_and_prims(data: Option<(Vec<u32>, Vec<Range<u32>>)>) -> Option<Self> {
-        if let Some((ids, prims)) = data {
+    pub fn from_ids_and_prims(
+        data: Option<(Vec<u32>, Vec<Range<u32>>, Option<Vec<Range<u32>>>)>,
+    ) -> Option<Self> {
+        if let Some((ids, prims, indices)) = data {
             Some(Self {
                 mesh_ids: ids,
                 primtitive_ranges: prims,
+                index_ranges: indices,
             })
         } else {
             None
@@ -52,12 +56,14 @@ pub struct RenderView {
 pub struct RenderGroup {
     pub instance_handle: InstanceHandle,
     pub views: Vec<RenderView>,
+    pub indexed: bool,
 }
 impl RenderGroup {
-    pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>) -> Self {
+    pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>, is_indexed: bool) -> Self {
         Self {
             instance_handle,
             views,
+            indexed: is_indexed,
         }
     }
 }
@@ -141,7 +147,7 @@ impl World {
                 &mut self.instance_manager,
                 *completed.0,
                 APosition {
-                    position: (cgmath::Matrix4::<f32>::from_scale(0.05)
+                    position: (cgmath::Matrix4::<f32>::from_scale(1.0)
                         * cgmath::Matrix4::<f32>::identity())
                     .into(),
                 },

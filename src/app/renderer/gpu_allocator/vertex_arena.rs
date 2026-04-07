@@ -10,11 +10,11 @@ use crate::{
     app::renderer::{
         GPUAllocationHandle,
         gpu_allocator::{
-            CHUNK_SIZE, GPUAllocator, LocalTransformUploadJob, UploadMeshJob, VertexArenaError,
-            free_list::FreeListAllocator,
+            CHUNK_SIZE, GPUAllocator, LocalTransformUploadJob, UploadIndexJob, UploadMeshJob,
+            VertexArenaError, free_list::FreeListAllocator,
         },
     },
-    util::types::{GlobalTransform, LocalTransform, ModelVertex},
+    util::types::{GlobalTransform, LocalTransform, ModelVertex, VIndex},
 };
 //****************************************************************
 //
@@ -83,13 +83,30 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
     }
 }
 
+impl GPUChunk<VIndex> {
+    fn new(device: &wgpu::Device) -> Self {
+        Self {
+            remaining_space: CHUNK_SIZE,
+            bind_group: None,
+            buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Index Buffer (u16)"),
+                size: CHUNK_SIZE as u64,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            allocator: FreeListAllocator::new(),
+            _t: PhantomData,
+        }
+    }
+}
+
 impl<T: ModelVertex> GPUChunk<T> {
     fn new(device: &wgpu::Device) -> Self {
         Self {
             remaining_space: CHUNK_SIZE,
             bind_group: None,
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
-                label: None,
+                label: Some(format!("Vertex Buffer for {:?}", T::debug_str()).as_str()),
                 size: CHUNK_SIZE as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -192,6 +209,60 @@ impl GPUArena<LocalTransform> {
     }
 }
 
+impl GPUAllocator<VIndex> for GPUArena<VIndex> {
+    type UploadJob<'a> = UploadIndexJob<'a>;
+    type AllocationError = VertexArenaError;
+
+    fn new(device: &wgpu::Device) -> Self {
+        Self {
+            max_chunks: 16,
+            chunks: vec![GPUChunk::<VIndex>::new(device)],
+            alloc_table: HashMap::new(),
+            label: Some(String::from("Index arena allocator")),
+            bind_group_layout: None,
+        }
+    }
+    fn upload<'a>(
+        &mut self,
+        job: Self::UploadJob<'a>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), Self::AllocationError> {
+        'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
+            match chunk.gpu_alloc(job.indices, queue, self.label.as_ref().unwrap()) {
+                Ok((node_idx, _)) => {
+                    self.alloc_table
+                        .insert(job.global_alloc_id, AllocMetaData::new(chunk_idx, node_idx));
+                    return Ok(());
+                }
+
+                Err(e) => match e {
+                    VertexArenaError::DataTooLarge(_, _) => {
+                        return Err(e);
+                    }
+                    _ => continue 'outer,
+                },
+            }
+        }
+        Err(VertexArenaError::MaxAllocationReached)
+    }
+
+    fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer {
+        &self.chunks[chunk_id].buffer
+    }
+    fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
+        self.alloc_table[&handle.global_allocation_id].chunk_id
+    }
+    fn resolve(
+        &self,
+        handle: &GPUAllocationHandle,
+    ) -> (Range<u32>, &wgpu::Buffer, Option<&wgpu::BindGroup>) {
+        let meta = self.alloc_table.get(&handle.global_allocation_id).unwrap();
+        let mut range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
+        range.start = range.start / size_of::<VIndex>() as u32;
+        range.end = range.end / size_of::<VIndex>() as u32;
+        (range, &self.chunks[meta.chunk_id].buffer, None)
+    }
+}
 impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
     type UploadJob<'a> = UploadMeshJob<'a, V>;
     type AllocationError = VertexArenaError;
@@ -202,7 +273,7 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
             max_chunks: 16,
             chunks: vec![GPUChunk::<V>::new(device)],
             alloc_table: HashMap::new(),
-            label: Some(V::debug_str()),
+            label: Some(format!("Arena Allocator for {:?}", V::debug_str())),
         }
     }
 

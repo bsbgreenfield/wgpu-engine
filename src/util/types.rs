@@ -1,7 +1,5 @@
 use std::{fmt::Debug, num::NonZero, ops::Deref};
 
-use bytemuck::AnyBitPattern;
-
 use crate::world::world::RenderView;
 
 pub type Mat4F32 = [[f32; 4]; 4];
@@ -32,15 +30,10 @@ pub trait ModelVertex: Debug + bytemuck::Pod {
 
     fn has_view_data(view: &RenderView) -> bool;
 }
-pub trait IndexType: AnyBitPattern + bytemuck::NoUninit + Debug {
-    const GLTF_INDEX_TYPE: gltf::accessor::DataType;
-    const BYTE_SIZE: usize;
-}
 
-impl IndexType for u16 {
-    const GLTF_INDEX_TYPE: gltf::accessor::DataType = gltf::accessor::DataType::U16;
-    const BYTE_SIZE: usize = 2;
-}
+#[repr(C)]
+#[derive(Debug, bytemuck::Pod, Clone, Copy, bytemuck::Zeroable)]
+pub struct VIndex(u16);
 pub trait InstanceData {
     fn desc() -> wgpu::VertexBufferLayout<'static>;
 }

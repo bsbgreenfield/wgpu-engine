@@ -8,7 +8,7 @@ use crate::{
             primitive::GltfValidationError,
         },
     },
-    util::types::{LocalTransform, PNUJWVertex, PNUVertex},
+    util::types::{LocalTransform, PNUJWVertex, PNUVertex, VIndex},
 };
 
 pub(super) mod gltf_loader;
@@ -53,7 +53,7 @@ pub struct GltfAsset {
 pub struct GltfLoadResult {
     pub pnujw_vertices: Vec<PNUJWVertex>,
     pub pnu_vertices: Vec<PNUVertex>,
-    pub indices: Vec<u16>,
+    pub indices: Option<Vec<VIndex>>,
     pub local_transforms: Vec<LocalTransform>,
     pub mesh_data: Vec<GltfMeshData>,
 }

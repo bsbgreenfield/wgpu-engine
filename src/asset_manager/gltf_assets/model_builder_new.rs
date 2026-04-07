@@ -14,7 +14,7 @@ use crate::{
         },
     },
     util::types::{
-        IndexType, LocalTransform, Mat4F32, ModelVertex, NonEmptyVec, PNUJWVertex, PNUVertex,
+        LocalTransform, Mat4F32, ModelVertex, NonEmptyVec, PNUJWVertex, PNUVertex, VIndex,
         mat4_from_cgmath,
     },
 };
@@ -36,9 +36,9 @@ impl ModelData {
     }
 }
 impl LoadedAsset {
-    pub fn mesh_ids_and_prim_ranges_of<V: ModelVertex>(
+    pub fn mesh_ids_and_alloc_ranges_of<V: ModelVertex>(
         &self,
-    ) -> Option<(Vec<u32>, Vec<Range<u32>>)> {
+    ) -> Option<(Vec<u32>, Vec<Range<u32>>, Option<Vec<Range<u32>>>)> {
         if TypeId::of::<V>() == TypeId::of::<PNUVertex>()
             && self.gltf_mesh_data.pnu_vertices.is_empty()
         {
@@ -50,6 +50,11 @@ impl LoadedAsset {
         }
         let mut mesh_ids = Vec::<u32>::new();
         let mut primitive_ranges = Vec::<Range<u32>>::new();
+        let mut maybe_index_ranges = if self.gltf_mesh_data.indices.is_some() {
+            Some(Vec::<Range<u32>>::new())
+        } else {
+            None
+        };
         for mesh_data in self.gltf_mesh_data.mesh_data.iter() {
             // find all meshes which contain primitives of the correct type
             let filtered_meshes = mesh_data.meshes.iter().filter(|m| {
@@ -63,11 +68,14 @@ impl LoadedAsset {
                         mesh_ids.push(filtered_mesh.id);
                         // ADD PRIMITIVE COUNT FOR MODEL IF NECESSARY HERE
                         primitive_ranges.push(candidate_primitive.vertices.clone());
+                        if let Some(index_ranges) = maybe_index_ranges.as_mut() {
+                            index_ranges.push(candidate_primitive.indices.clone().expect("this primtive belongs to a models with defined indices, but it itself does not have any indicices specified"));
+                        }
                     }
                 }
             }
         }
-        Some((mesh_ids, primitive_ranges))
+        Some((mesh_ids, primitive_ranges, maybe_index_ranges))
     }
 }
 #[allow(unused)]
@@ -202,18 +210,18 @@ trait GltfBuilder {
         Err(ModelBuilderError::IndexRangeError)
     }
 
-    fn set_index_data<I: IndexType>(
-        index_ranges: &Vec<Range<usize>>,
-        index_data: &mut Vec<I>,
-        bin: &Vec<u8>,
-    ) {
-        let mut index_vec: Vec<I> = Vec::new();
-        for range in index_ranges.iter() {
-            let indices_bytes: &[u8] = &bin[range.start..range.end];
-            let indices: &[I] = bytemuck::cast_slice::<u8, I>(indices_bytes);
-            index_vec.extend(indices.to_vec());
+    fn set_index_data(index_ranges: &Vec<Range<usize>>, bin: &Vec<u8>) -> Option<Vec<VIndex>> {
+        if index_ranges.is_empty() {
+            return None;
+        } else {
+            let mut index_vec: Vec<VIndex> = Vec::new();
+            for range in index_ranges.iter() {
+                let indices_bytes: &[u8] = &bin[range.start..range.end];
+                let indices: &[VIndex] = bytemuck::cast_slice::<u8, VIndex>(indices_bytes);
+                index_vec.extend(indices.to_vec());
+            }
+            Some(index_vec)
         }
-        index_data.extend(index_vec);
     }
 
     fn build_all_models(
@@ -252,7 +260,7 @@ trait GltfBuilder {
                         buffer_offsets,
                     )?;
 
-                    // range of this primitives indices within the final GPU index buffer
+                    // range of this primitives indices within the final GPU index buffer allocation
                     let maybe_relative_index_range =
                         maybe_primitive_index_range.map(|primitive_index_range| {
                             Self::get_relative_indices(index_ranges, &primitive_index_range)
@@ -306,13 +314,12 @@ trait GltfBuilder {
             mesh_data.push(GltfMeshData { meshes });
         }
 
-        let mut index_data = Vec::<u16>::new();
-        Self::set_index_data(&index_ranges, &mut index_data, &binary_data);
+        let maybe_index_data = Self::set_index_data(&index_ranges, &binary_data);
         Ok(GltfLoadResult {
             pnujw_vertices,
             pnu_vertices,
             local_transforms,
-            indices: index_data,
+            indices: maybe_index_data,
             mesh_data,
         })
     }

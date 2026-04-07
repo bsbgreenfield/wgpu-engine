@@ -1,5 +1,5 @@
 use crate::{
-    app::{app_config::AppConfig, renderer::renderer::RenderCategory},
+    app::{app_config::AppConfig, renderer::RenderCategory},
     util::types::{
         GlobalTransform, InstanceData, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex,
         StorageData,
@@ -20,7 +20,7 @@ pub struct PipelineCollection {
 
 impl PipelineCollection {
     pub(super) fn new(config: &AppConfig) -> Self {
-        use super::renderer::RenderCategory::*;
+        use super::RenderCategory::*;
         Self {
             opaque_skinned: Self::create_pipeline(OpaqueSkinned, config),
             opaque_static: Self::create_pipeline(OpaqueStatic, config),
@@ -118,7 +118,7 @@ impl PipelineCollection {
                 let shader = config
                     .device
                     .create_shader_module(wgpu::ShaderModuleDescriptor {
-                        label: Some("opaque_static shader"),
+                        label: Some("opaque_skinned shader"),
                         source: wgpu::ShaderSource::Wgsl(
                             include_str!("../../skinned_shader.wgsl").into(),
                         ),

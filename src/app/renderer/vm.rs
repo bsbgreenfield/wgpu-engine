@@ -4,11 +4,12 @@ use std::{iter::Peekable, slice::Iter};
 use crate::{
     app::renderer::{
         GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
-        UploadMeshJob, VMValue, VertexArenaSelector, gpu_allocator::LocalTransformUploadJob,
+        UploadMeshJob, VMValue, VertexArenaSelector,
+        gpu_allocator::{LocalTransformUploadJob, UploadIndexJob},
         renderer::Renderer,
     },
     asset_manager::LoadedAsset,
-    util::types::{ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{ModelVertex, PNUJWVertex, PNUVertex, VIndex},
     world::{
         entity_manager::Renderables,
         instance_manager::InstanceHandle,
@@ -45,6 +46,13 @@ trait MeshUploadable<V: ModelVertex> {
         global_alloc_id: u32,
     ) -> Option<UploadMeshJob<'frame, V>>;
 }
+
+trait IndexUploadable {
+    fn as_index_job<'frame>(
+        indices: Option<&'frame [VIndex]>,
+        global_alloc_id: u32,
+    ) -> Option<UploadIndexJob<'frame>>;
+}
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 
 impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
@@ -56,6 +64,22 @@ impl<V: ModelVertex> MeshUploadable<V> for LoadedAsset {
             Some(UploadMeshJob {
                 global_alloc_id,
                 verts,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl IndexUploadable for LoadedAsset {
+    fn as_index_job<'frame>(
+        indices: Option<&'frame [VIndex]>,
+        global_alloc_id: u32,
+    ) -> Option<UploadIndexJob<'frame>> {
+        if let Some(indices) = indices {
+            Some(UploadIndexJob {
+                global_alloc_id,
+                indices,
             })
         } else {
             None
@@ -101,6 +125,11 @@ impl<'frame> Renderer {
                                 global_allocation_id,
                             );
 
+                        let maybe_index_job: Option<UploadIndexJob<'_>> = LoadedAsset::as_index_job(
+                            loaded_asset.gltf_mesh_data.indices.as_deref(),
+                            global_allocation_id,
+                        );
+
                         let lt_job: LocalTransformUploadJob = LocalTransformUploadJob {
                             local_transforms: &loaded_asset.gltf_mesh_data.local_transforms,
                             global_alloc_id: global_allocation_id,
@@ -112,6 +141,10 @@ impl<'frame> Renderer {
                         }
                         if let Some(skinned_job) = maybe_skinned_job {
                             self.upload_mesh(skinned_job, queue)?;
+                        }
+
+                        if let Some(index_job) = maybe_index_job {
+                            self.upload_indices(index_job, queue)?;
                         }
 
                         res.push(RenderUpdateDelta::AssetGPULoaded(GPUAllocationHandle {
@@ -135,14 +168,18 @@ impl<'frame> Renderer {
                             let la_const_idx = Self::get_constant_idx(&mut instr_peek);
                             let la = constants[la_const_idx as usize].unwrap_loaded_asset();
 
-                            let pnu_data = la.mesh_ids_and_prim_ranges_of::<PNUVertex>();
-                            let pnujw_data = la.mesh_ids_and_prim_ranges_of::<PNUJWVertex>();
+                            let pnu_data = la.mesh_ids_and_alloc_ranges_of::<PNUVertex>();
+                            let pnujw_data = la.mesh_ids_and_alloc_ranges_of::<PNUJWVertex>();
                             let view = RenderView {
                                 gpu_handle: mesh_collection_renderable.0.to_owned(),
                                 pnu_draws: DrawSet::from_ids_and_prims(pnu_data),
                                 pnujw_draws: DrawSet::from_ids_and_prims(pnujw_data),
                             };
-                            self.add_render_group(vec![view], instance_handle.clone());
+                            self.add_render_group(
+                                vec![view],
+                                instance_handle.clone(),
+                                la.gltf_mesh_data.indices.is_some(),
+                            );
                         }
                     }
                 },

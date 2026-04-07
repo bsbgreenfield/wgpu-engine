@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZero, ops::Range};
+use std::{collections::HashMap, num::NonZero};
 
 use wgpu::RenderPass;
 
@@ -6,122 +6,24 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            Instruction, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
+            BufferChunks, DrawItem, DrawListBuilder, DrawPacket, Instruction, RenderCategory,
+            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
             VertexArenaError, VertexArenaSelector,
             gpu_allocator::{
-                GPUAllocator, LocalTransformUploadJob,
+                GPUAllocator, LocalTransformUploadJob, UploadIndexJob,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
             },
             pipeline::PipelineCollection,
         },
     },
-    util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
     world::{
         camera::Camera,
         components::ComponentData,
         instance_manager::{InstanceHandle, InstanceManager},
-        world::{DrawSet, RenderGroup, RenderView},
+        world::{RenderGroup, RenderView},
     },
 };
-
-pub enum RenderCategory {
-    OpaqueStatic,
-    OpaqueSkinned,
-}
-
-#[derive(Debug)]
-pub struct DrawItem {
-    lt_idx: u32,
-    instances: Range<u32>,
-    primitives: Range<u32>,
-    // TODO: indices
-}
-
-#[cfg(test)]
-impl DrawItem {
-    pub fn get_lt_idx(&self) -> u32 {
-        self.lt_idx
-    }
-
-    pub fn get_instances(&self) -> Range<u32> {
-        self.instances.clone()
-    }
-    pub fn get_primitives(&self) -> Range<u32> {
-        self.primitives.clone()
-    }
-}
-
-trait DrawListBuilder<V: ModelVertex> {
-    fn write_list(
-        view: &RenderView,
-        arena: &GPUArena<V>,
-        draw_list: &mut Vec<DrawItem>,
-        instance_idx: u32,
-        lt_offset: u32,
-    );
-}
-
-impl DrawListBuilder<PNUVertex> for DrawPacket {
-    fn write_list(
-        view: &RenderView,
-        arena: &GPUArena<PNUVertex>,
-        draw_list: &mut Vec<DrawItem>,
-        instance_idx: u32,
-        lt_offset: u32,
-    ) {
-        for (i, mesh_id) in view.pnu_draws.as_ref().unwrap().mesh_ids.iter().enumerate() {
-            let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
-            let prim_range = DrawSet::within(
-                &view.pnu_draws.as_ref().unwrap().primtitive_ranges[i],
-                &alloc_range,
-            );
-            draw_list.push(DrawItem {
-                lt_idx: lt_offset + mesh_id,
-                instances: instance_idx..instance_idx + 1,
-                primitives: prim_range,
-            });
-        }
-    }
-}
-
-impl DrawListBuilder<PNUJWVertex> for DrawPacket {
-    fn write_list(
-        view: &RenderView,
-        arena: &GPUArena<PNUJWVertex>,
-        draw_list: &mut Vec<DrawItem>,
-        instance_idx: u32,
-        lt_offset: u32,
-    ) {
-        for i in 0..view.pnujw_draws.as_ref().unwrap().mesh_ids.len() {
-            let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
-            let prim_range = DrawSet::within(
-                &view.pnujw_draws.as_ref().unwrap().primtitive_ranges[i],
-                &alloc_range,
-            );
-            draw_list.push(DrawItem {
-                lt_idx: lt_offset,
-                instances: instance_idx..instance_idx + 1,
-                primitives: prim_range,
-            });
-        }
-    }
-}
-
-pub struct DrawPacket {
-    pnu: HashMap<usize, Vec<DrawItem>>,
-    pnujw: HashMap<usize, Vec<DrawItem>>,
-}
-
-#[cfg(test)]
-impl DrawPacket {
-    pub fn get_pnu(&self) -> &HashMap<usize, Vec<DrawItem>> {
-        &self.pnu
-    }
-
-    pub fn get_pnujw(&self) -> &HashMap<usize, Vec<DrawItem>> {
-        &self.pnujw
-    }
-}
 
 pub(super) struct EngineRenderPass {
     label: String,
@@ -169,6 +71,7 @@ impl EngineRenderPass {
 }
 
 struct VertexArenaCollection {
+    index_arena: GPUArena<VIndex>,
     static_arena: GPUArena<PNUVertex>,
     skinned_arena: GPUArena<PNUJWVertex>,
     local_transform_arena: GPUArena<LocalTransform>,
@@ -177,6 +80,7 @@ struct VertexArenaCollection {
 impl VertexArenaCollection {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
+            index_arena: GPUArena::<VIndex>::new(device),
             static_arena: GPUArena::<PNUVertex>::new(device),
             skinned_arena: GPUArena::<PNUJWVertex>::new(device),
             local_transform_arena: GPUArena::<LocalTransform>::new(device),
@@ -213,7 +117,7 @@ impl Renderer {
     /// then find the final indices within that allocation range
     fn write_draw_list<V: ModelVertex>(
         &self,
-        draw_map: &mut HashMap<usize, Vec<DrawItem>>,
+        draw_map: &mut HashMap<BufferChunks, Vec<DrawItem>>,
         gt_map: &Vec<u16>,
     ) where
         DrawPacket: DrawListBuilder<V>,
@@ -227,10 +131,16 @@ impl Renderer {
                 if !V::has_view_data(view) {
                     continue;
                 }
-                let buf_id = arena.chunk_id(&view.gpu_handle);
+                let vertex_buf_id = arena.chunk_id(&view.gpu_handle);
+                let index_buf_id = self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle);
                 // if the buffer has NOT already been visited, store the allocation range
                 // in the alloc map, and an empty vec in the packet map
-                let draw_list = draw_map.entry(buf_id).or_insert_with(|| vec![]);
+                let draw_list = draw_map
+                    .entry(BufferChunks {
+                        vertex: vertex_buf_id,
+                        index: index_buf_id,
+                    })
+                    .or_insert_with(|| vec![]);
                 let (local_transform_range, _, _) = self
                     .vertex_arenas
                     .local_transform_arena
@@ -292,8 +202,10 @@ impl Renderer {
         &mut self,
         views: Vec<RenderView>,
         instance_handle: InstanceHandle,
+        is_indexed: bool,
     ) {
-        self.groups.push(RenderGroup::new(instance_handle, views));
+        self.groups
+            .push(RenderGroup::new(instance_handle, views, is_indexed));
     }
 
     pub(super) fn get_global_alloc_id(&mut self) -> u32 {
@@ -318,6 +230,15 @@ impl Renderer {
         self.vertex_arenas
             .local_transform_arena
             .upload(job, queue)?;
+        Ok(())
+    }
+
+    pub(super) fn upload_indices<'frame>(
+        &mut self,
+        job: UploadIndexJob,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError> {
+        self.vertex_arenas.index_arena.upload(job, queue)?;
         Ok(())
     }
 
@@ -395,15 +316,30 @@ impl Renderer {
                                     0,
                                     self.vertex_arenas
                                         .static_arena
-                                        .buffer_from_chunk_id(*draw_entry.0)
+                                        .buffer_from_chunk_id(draw_entry.0.vertex)
                                         .slice(..),
+                                );
+                                render_pass.set_index_buffer(
+                                    self.vertex_arenas
+                                        .index_arena
+                                        .buffer_from_chunk_id(draw_entry.0.index)
+                                        .slice(..),
+                                    wgpu::IndexFormat::Uint16,
                                 );
 
                                 for draw in draw_entry.1.iter() {
                                     render_pass
                                         .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
-                                    render_pass
-                                        .draw(draw.primitives.clone(), draw.instances.clone());
+                                    if let Some(indices) = &draw.indices {
+                                        render_pass.draw_indexed(
+                                            indices.clone(),
+                                            draw.primitives.start as i32,
+                                            draw.instances.clone(),
+                                        );
+                                    } else {
+                                        render_pass
+                                            .draw(draw.primitives.clone(), draw.instances.clone());
+                                    }
                                 }
                             }
                         }
@@ -415,14 +351,29 @@ impl Renderer {
                                     0,
                                     self.vertex_arenas
                                         .skinned_arena
-                                        .buffer_from_chunk_id(*draw_entry.0)
+                                        .buffer_from_chunk_id(draw_entry.0.vertex)
                                         .slice(..),
+                                );
+                                render_pass.set_index_buffer(
+                                    self.vertex_arenas
+                                        .index_arena
+                                        .buffer_from_chunk_id(draw_entry.0.index)
+                                        .slice(..),
+                                    wgpu::IndexFormat::Uint16,
                                 );
                                 for draw in draw_entry.1.iter() {
                                     render_pass
                                         .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
-                                    render_pass
-                                        .draw(draw.primitives.clone(), draw.instances.clone());
+                                    if let Some(indices) = &draw.indices {
+                                        render_pass.draw_indexed(
+                                            indices.clone(),
+                                            draw.primitives.start as i32,
+                                            draw.instances.clone(),
+                                        );
+                                    } else {
+                                        render_pass
+                                            .draw(draw.primitives.clone(), draw.instances.clone());
+                                    }
                                 }
                             }
                         }

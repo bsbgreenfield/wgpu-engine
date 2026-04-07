@@ -5,7 +5,7 @@ use std::error::Error;
 
 use crate::{
     app::renderer::GPUAllocationHandle,
-    util::types::{LocalTransform, ModelVertex},
+    util::types::{LocalTransform, ModelVertex, VIndex},
 };
 
 mod free_list;
@@ -90,8 +90,12 @@ impl Display for VertexArenaError {
 
 impl Error for VertexArenaError {}
 
-#[allow(unused)]
 pub(super) struct UploadMeshJob<'frame, V: ModelVertex> {
     pub verts: &'frame [V],
+    pub(super) global_alloc_id: u32,
+}
+
+pub(super) struct UploadIndexJob<'frame> {
+    pub indices: &'frame [VIndex],
     pub(super) global_alloc_id: u32,
 }

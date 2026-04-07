@@ -5,10 +5,7 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{
-            Instruction, Operations, VMValue,
-            renderer::{RenderCategory, Renderer},
-        },
+        renderer::{Instruction, Operations, RenderCategory, VMValue, renderer::Renderer},
     },
     asset_manager::AssetHandle,
     world::{
