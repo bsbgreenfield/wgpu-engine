@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use cgmath::SquareMatrix;
+use cgmath::{SquareMatrix, Vector3};
 
 use super::scene::Scene;
 use crate::{
@@ -96,22 +96,31 @@ impl World {
         let mut entity_manager = EntityManager::new();
 
         // ************************** CREATE BOX ********************************
-        let box_asset = asset_manager.register_asset::<GltfAsset>("box")?; // asset
+        //        let box_asset = asset_manager.register_asset::<GltfAsset>("box")?; // asset
+        let fox_asset = asset_manager.register_asset::<GltfAsset>("fox")?;
 
         let box_entity = entity_manager.new_entity()?;
+        let fox_entity = entity_manager.new_entity()?;
 
-        let mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
-            // MeshCollection
-            resource_backing: box_asset,
+        //       let box_mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
+        //           // MeshCollection
+        //           resource_backing: box_asset,
+        //           allocation_handle: None,
+        //           mesh_ids: &[0],
+        //       });
+        let fox_mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
+            resource_backing: fox_asset,
             allocation_handle: None,
             mesh_ids: &[0],
         });
 
-        entity_manager.add_mesh_collection_for_entity(box_entity, mesh); // mesh
+        //       entity_manager.add_mesh_collection_for_entity(box_entity, box_mesh); // mesh
+        entity_manager.add_mesh_collection_for_entity(fox_entity, fox_mesh); // mesh
         entity_manager.add_physical_position_for_entity(box_entity); // position
 
         let mut scene = Scene::new();
-        scene.add_entity(box_entity);
+        //      scene.add_entity(box_entity);
+        scene.add_entity(fox_entity);
         scene.set_load_level(SceneLoadLevel::GPU);
 
         Ok(Self {
@@ -141,17 +150,31 @@ impl World {
         if let Some(updates) = self.load_queue.poll_entity_jobs(&mut self.asset_manager)? {
             deltas.extend(updates);
         }
-        for completed in self.load_queue.completed_queue.iter() {
+        for (i, completed) in self.load_queue.completed_queue.iter().enumerate() {
             // TODO: allow spawning of multiple instances
-            let instances = World::spawn(
-                &mut self.instance_manager,
-                *completed.0,
-                APosition {
-                    position: (cgmath::Matrix4::<f32>::from_scale(1.0)
-                        * cgmath::Matrix4::<f32>::identity())
-                    .into(),
-                },
-            )?;
+            let instances = if i == 1 {
+                World::spawn(
+                    &mut self.instance_manager,
+                    *completed.0,
+                    APosition {
+                        position: (cgmath::Matrix4::<f32>::from_scale(1.0)
+                            * cgmath::Matrix4::<f32>::identity())
+                        .into(),
+                    },
+                )?
+            } else {
+                World::spawn(
+                    &mut self.instance_manager,
+                    *completed.0,
+                    APosition {
+                        position: (cgmath::Matrix4::<f32>::from_scale(0.05)
+                            * cgmath::Matrix4::<f32>::from_translation(Vector3::new(
+                                0.8, 0.0, 0.0,
+                            )))
+                        .into(),
+                    },
+                )?
+            };
             deltas.push(WorldUpdateDelta::EntityDidSpawn(instances[0].clone()));
         }
         self.load_queue.dequeue_completed();
@@ -198,6 +221,7 @@ impl World {
 
     pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDelta]) {
         for delta in render_deltas {
+            println!("{delta:?}");
             match delta {
                 RenderUpdateDelta::AssetGPULoaded(allocation_handle) => {
                     self.asset_manager

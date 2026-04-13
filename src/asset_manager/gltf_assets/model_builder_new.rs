@@ -14,8 +14,7 @@ use crate::{
         },
     },
     util::types::{
-        LocalTransform, Mat4F32, ModelVertex, NonEmptyVec, PNUJWVertex, PNUVertex, VIndex,
-        mat4_from_cgmath,
+        LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex, VIndex, mat4_from_cgmath,
     },
 };
 
@@ -176,12 +175,15 @@ trait GltfBuilder {
         let mut index_range_vec: Vec<Range<usize>> = Vec::new();
         for (_, data_buf) in primitive_data.iter() {
             for data in data_buf.iter() {
-                crate::asset_manager::range_splicer::define_index_ranges(
-                    &mut index_range_vec,
+                let maybe_index_ranges =
                     &Primitive::get_index_range(data.indices.as_ref(), buffer_offsets)
-                        .map_err(|err| ModelBuilderError::ValidationError(err))?
-                        .unwrap_or(Range { start: 0, end: 0 }),
-                );
+                        .map_err(|err| ModelBuilderError::ValidationError(err))?;
+                if let Some(index_ranges) = maybe_index_ranges {
+                    crate::asset_manager::range_splicer::define_index_ranges(
+                        &mut index_range_vec,
+                        index_ranges,
+                    );
+                }
             }
         }
 
@@ -253,6 +255,7 @@ trait GltfBuilder {
                     &binary_data,
                 )?;
 
+                println!("INDEX RANGES{:?}", index_ranges);
                 let index_range: Option<Range<u32>> = if !index_ranges.is_empty() {
                     // range within the blob in which the indices for this primitive are located
                     let maybe_primitive_index_range = Primitive::get_index_range(

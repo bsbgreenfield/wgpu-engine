@@ -80,7 +80,6 @@ impl AssetLoadResult {
 }
 
 pub struct AssetManager {
-    registered_handles: Vec<AssetHandle>,
     registered_assets: HashMap<AssetHandle, Box<dyn Asset>>,
     loaded_assets: Vec<LoadedAsset>,
 }
@@ -88,14 +87,13 @@ pub struct AssetManager {
 impl AssetManager {
     pub fn new() -> Self {
         Self {
-            registered_handles: Vec::new(),
             loaded_assets: Vec::new(),
             registered_assets: HashMap::new(),
         }
     }
     fn gen_handle(&self) -> AssetHandle {
         AssetHandle {
-            id: self.registered_handles.len() as u32,
+            id: self.registered_assets.len() as u32,
         }
     }
     fn res_level_of(&self, asset_handle: &AssetHandle) -> Result<&AssetResidency, AssetLoadError> {
@@ -219,7 +217,9 @@ impl AssetManager {
     {
         let asset = A::new(source)?;
         let handle = self.gen_handle();
+        println!("registered len: {}", self.registered_assets.len());
         self.registered_assets.insert(handle, Box::new(asset));
+
         Ok(handle)
     }
 }

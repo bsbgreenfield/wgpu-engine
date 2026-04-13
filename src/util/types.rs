@@ -29,6 +29,7 @@ pub trait ModelVertex: Debug + bytemuck::Pod {
     fn debug_str() -> String;
 
     fn has_view_data(view: &RenderView) -> bool;
+    fn is_indexed(view: &RenderView) -> bool;
 }
 
 #[repr(C)]
@@ -98,6 +99,13 @@ const PNUJW_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
 ];
 
 impl ModelVertex for PNUJWVertex {
+    fn is_indexed(view: &RenderView) -> bool {
+        if let Some(pnujw_draws) = &view.pnujw_draws {
+            return pnujw_draws.index_ranges.is_some();
+        } else {
+            false
+        }
+    }
     fn has_view_data(view: &RenderView) -> bool {
         view.pnujw_draws.is_some()
     }
@@ -199,6 +207,13 @@ const PNU_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
 ];
 
 impl ModelVertex for PNUVertex {
+    fn is_indexed(view: &RenderView) -> bool {
+        if let Some(pnu_draws) = &view.pnu_draws {
+            return pnu_draws.index_ranges.is_some();
+        } else {
+            false
+        }
+    }
     fn has_view_data(view: &RenderView) -> bool {
         view.pnu_draws.is_some()
     }

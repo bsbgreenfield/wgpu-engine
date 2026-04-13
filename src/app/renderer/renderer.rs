@@ -132,7 +132,11 @@ impl Renderer {
                     continue;
                 }
                 let vertex_buf_id = arena.chunk_id(&view.gpu_handle);
-                let index_buf_id = self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle);
+                let index_buf_id = if V::is_indexed(view) {
+                    Some(self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle))
+                } else {
+                    None
+                };
                 // if the buffer has NOT already been visited, store the allocation range
                 // in the alloc map, and an empty vec in the packet map
                 let draw_list = draw_map
@@ -319,14 +323,15 @@ impl Renderer {
                                         .buffer_from_chunk_id(draw_entry.0.vertex)
                                         .slice(..),
                                 );
-                                render_pass.set_index_buffer(
-                                    self.vertex_arenas
-                                        .index_arena
-                                        .buffer_from_chunk_id(draw_entry.0.index)
-                                        .slice(..),
-                                    wgpu::IndexFormat::Uint16,
-                                );
-
+                                if let Some(index_buf_id) = draw_entry.0.index {
+                                    render_pass.set_index_buffer(
+                                        self.vertex_arenas
+                                            .index_arena
+                                            .buffer_from_chunk_id(index_buf_id)
+                                            .slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
+                                }
                                 for draw in draw_entry.1.iter() {
                                     render_pass
                                         .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
@@ -354,13 +359,15 @@ impl Renderer {
                                         .buffer_from_chunk_id(draw_entry.0.vertex)
                                         .slice(..),
                                 );
-                                render_pass.set_index_buffer(
-                                    self.vertex_arenas
-                                        .index_arena
-                                        .buffer_from_chunk_id(draw_entry.0.index)
-                                        .slice(..),
-                                    wgpu::IndexFormat::Uint16,
-                                );
+                                if let Some(index_buf_id) = draw_entry.0.index {
+                                    render_pass.set_index_buffer(
+                                        self.vertex_arenas
+                                            .index_arena
+                                            .buffer_from_chunk_id(index_buf_id)
+                                            .slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
+                                }
                                 for draw in draw_entry.1.iter() {
                                     render_pass
                                         .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));

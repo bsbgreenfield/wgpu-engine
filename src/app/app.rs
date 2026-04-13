@@ -52,6 +52,7 @@ impl App<'_> {
         for delta in deltas.iter() {
             match delta {
                 WorldUpdateDelta::AssetDidLoad(asset_handle) => {
+                    println!("HANDLE: {:?}", asset_handle);
                     // it makes no sense to emit an "AssetDidLoad" event if either
                     // 1. the asset didn't load to the CPU
                     // 2. the asset is alread GPU resident.

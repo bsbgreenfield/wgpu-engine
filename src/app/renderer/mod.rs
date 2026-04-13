@@ -19,6 +19,7 @@ mod pipeline;
 pub mod renderer;
 mod vm;
 
+#[derive(Debug)]
 pub enum RenderUpdateDelta {
     AssetGPULoaded(GPUAllocationHandle),
     EntityGPULoaded(EntityHandle),
@@ -207,7 +208,7 @@ impl DrawListBuilder<PNUJWVertex> for DrawPacket {
 
 #[derive(Hash, PartialEq, PartialOrd, Eq)]
 pub struct BufferChunks {
-    index: usize,
+    index: Option<usize>,
     vertex: usize,
 }
 pub struct DrawPacket {
