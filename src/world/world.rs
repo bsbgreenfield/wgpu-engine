@@ -143,7 +143,7 @@ impl World {
         }
         for completed in self.load_queue.completed_queue.iter() {
             // TODO: allow spawning of multiple instances
-            let instances = Self::spawn(
+            let instances = World::spawn(
                 &mut self.instance_manager,
                 *completed.0,
                 APosition {

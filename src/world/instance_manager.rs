@@ -19,11 +19,6 @@ pub trait Archetype {
     ) -> InstanceHandle;
 
     fn despawn_self(manager: &mut InstanceManager, handle: InstanceHandle);
-
-    fn get_state<'a, C: ComponentData + 'a>(
-        manager: &'a InstanceManager,
-        handle: InstanceHandle,
-    ) -> Option<&'a impl ComponentData>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,13 +62,6 @@ impl Archetype for APosition {
 
     fn despawn_self(manager: &mut InstanceManager, handle: InstanceHandle) {
         manager.pos.remove(handle);
-    }
-
-    fn get_state<'a, C: ComponentData + 'a>(
-        manager: &'a InstanceManager,
-        handle: InstanceHandle,
-    ) -> Option<&'a impl ComponentData> {
-        manager.pos.resolve::<C>(handle)
     }
 }
 
@@ -198,12 +186,5 @@ impl InstanceManager {
 
     pub fn despawn<A: Archetype>(&mut self, handle: InstanceHandle) {
         A::despawn_self(self, handle);
-    }
-
-    pub fn get_state<'a, A: Archetype + 'a, C: ComponentData + 'a>(
-        &'a self,
-        handle: InstanceHandle,
-    ) -> Option<&'a impl ComponentData> {
-        A::get_state::<C>(self, handle)
     }
 }
