@@ -20,7 +20,7 @@ use crate::{
     world::{
         camera::Camera,
         components::ComponentData,
-        instance_manager::{InstanceHandle, InstanceManager},
+        instance_manager::{ArchetypeId, ArchetypeTable, InstanceHandle, InstanceManager},
         world::{RenderGroup, RenderView},
     },
 };
@@ -88,6 +88,35 @@ impl VertexArenaCollection {
     }
 }
 
+pub struct InstanceDataCollector<'a> {
+    pub offset_map: OffsetMap,
+    pub global_transforms: Vec<&'a [GlobalTransform]>,
+    pub gt_len: usize,
+}
+
+#[derive(Default)]
+pub struct OffsetMap {
+    pub a_postion_offset: u16,
+    // other tables
+}
+impl OffsetMap {
+    fn offset_of(&self, a_id: ArchetypeId) -> u16 {
+        match a_id {
+            ArchetypeId::Position => self.a_postion_offset,
+        }
+    }
+}
+
+impl<'a> InstanceDataCollector<'a> {
+    fn new() -> Self {
+        Self {
+            gt_len: 0,
+            offset_map: OffsetMap::default(),
+            global_transforms: Vec::new(),
+        }
+    }
+}
+
 pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
@@ -95,6 +124,7 @@ pub struct Renderer {
     pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
     groups: Vec<RenderGroup>,
+    draw_packet: DrawPacket,
 }
 
 impl Renderer {
@@ -106,100 +136,94 @@ impl Renderer {
             pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
             groups: Vec::new(),
+            draw_packet: DrawPacket {
+                pnu: HashMap::new(),
+                pnujw: HashMap::new(),
+            },
         }
     }
     pub fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
         self.passes.push(EngineRenderPass { label, categories });
     }
-
-    /// Organize draw calls into Buffer -> DrawItem
-    /// for each view that belongs to a buffer, find the allocation range within the buffer
-    /// then find the final indices within that allocation range
     fn write_draw_list<V: ModelVertex>(
         &self,
+        view: &RenderView,
         draw_map: &mut HashMap<BufferChunks, Vec<DrawItem>>,
-        gt_map: &Vec<u16>,
+        instance_idx: u16,
     ) where
-        DrawPacket: DrawListBuilder<V>,
         Self: VertexArenaSelector<V>,
+        DrawPacket: DrawListBuilder<V>,
     {
         let arena: &GPUArena<V> = self.get_arena();
-        for group in self.groups.iter() {
-            let instance_index = gt_map[group.instance_handle.global_id as usize];
-            // for each allocation view
-            for view in group.views.iter() {
-                if !V::has_view_data(view) {
-                    continue;
-                }
-                let vertex_buf_id = arena.chunk_id(&view.gpu_handle);
-                let index_buf_id = if V::is_indexed(view) {
-                    Some(self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle))
-                } else {
-                    None
-                };
-                // if the buffer has NOT already been visited, store the allocation range
-                // in the alloc map, and an empty vec in the packet map
-                let draw_list = draw_map
-                    .entry(BufferChunks {
-                        vertex: vertex_buf_id,
-                        index: index_buf_id,
-                    })
-                    .or_insert_with(|| vec![]);
-                let (local_transform_range, _, _) = self
-                    .vertex_arenas
-                    .local_transform_arena
-                    .resolve(&view.gpu_handle);
+        let vertex_buf_id = arena.chunk_id(&view.gpu_handle);
+        let index_buf_id = if PNUVertex::is_indexed(view) {
+            Some(self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle))
+        } else {
+            None
+        };
+        let draw_list = draw_map
+            .entry(BufferChunks {
+                vertex: vertex_buf_id,
+                index: index_buf_id,
+            })
+            .or_insert_with(|| vec![]);
+        let (local_transform_range, _, _) = self
+            .vertex_arenas
+            .local_transform_arena
+            .resolve(&view.gpu_handle);
 
-                DrawPacket::write_list(
-                    view,
-                    arena,
-                    draw_list,
-                    instance_index as u32,
-                    local_transform_range.start,
-                );
-            }
-        }
+        DrawPacket::write_list(
+            view,
+            arena,
+            draw_list,
+            instance_idx as u32,
+            local_transform_range.start,
+        );
     }
 
     pub fn gen_draw_calls_new<'frame>(
         &'frame self,
         instance_manager: &'frame InstanceManager,
+        packet: &mut DrawPacket,
         queue: &wgpu::Queue,
-    ) -> Option<DrawPacket> {
-        let (gt_map, positions): (Vec<u16>, Vec<&'frame [GlobalTransform]>) =
-            GlobalTransform::get_instance_data(instance_manager).unwrap();
+    ) {
+        let mut collector = InstanceDataCollector::new();
 
-        let mut packet = DrawPacket {
-            pnu: HashMap::new(),
-            pnujw: HashMap::new(),
-        };
+        instance_manager.pos.collect(&mut collector, 0);
+        // instance_manager.next_table.collect(&mut collector, instance_manager.pos.len())
+        // ... and so on
 
-        // get the total length of the gt buffer
-        let total_length: usize = positions.iter().fold(0, |acc, e| acc + e.len());
-        if total_length == 0 {
-            return None;
-        }
-
-        // populate the gt buffer with all global transform data
-        if let Some(mut buffer_view) = queue.write_buffer_with(
-            &self.global_transform_buffer,
-            0,
-            NonZero::new((total_length * size_of::<GlobalTransform>()) as u64).unwrap(),
-        ) {
-            let mut offset: usize = 0;
-            for pos_slice in positions {
-                buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
-                    .copy_from_slice(bytemuck::cast_slice(pos_slice));
-                offset += pos_slice.len() * size_of::<GlobalTransform>();
+        // COPY GLOBAL TRANSFORMS
+        {
+            let global_transforms = collector.global_transforms;
+            if let Some(mut buffer_view) = queue.write_buffer_with(
+                &self.global_transform_buffer,
+                0,
+                NonZero::new((collector.gt_len * size_of::<GlobalTransform>()) as u64).unwrap(),
+            ) {
+                let mut offset: usize = 0;
+                for pos_slice in &global_transforms {
+                    buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
+                        .copy_from_slice(bytemuck::cast_slice(pos_slice));
+                    offset += pos_slice.len() * size_of::<GlobalTransform>();
+                }
             }
-
-            self.write_draw_list::<PNUVertex>(&mut packet.pnu, &gt_map);
-            self.write_draw_list::<PNUJWVertex>(&mut packet.pnujw, &gt_map);
         }
+        for group in self.groups.iter() {
+            let instance_idx = group.instance_handle.instance_id
+                + collector
+                    .offset_map
+                    .offset_of(group.instance_handle.archetype); // for each allocation view
 
-        // for each instance
-
-        Some(packet)
+            for view in group.views.iter() {
+                if PNUVertex::has_view_data(view) {
+                    self.write_draw_list::<PNUVertex>(view, &mut packet.pnu, instance_idx);
+                }
+                if PNUJWVertex::has_view_data(view) {
+                    self.write_draw_list::<PNUJWVertex>(view, &mut packet.pnujw, instance_idx);
+                }
+            }
+        }
     }
 
     pub(super) fn add_render_group(
@@ -286,7 +310,7 @@ impl Renderer {
         &self,
         config: &AppConfig,
         camera: &Camera,
-        draw_packet: DrawPacket,
+        draw_packet: &DrawPacket,
     ) -> Result<(), RenderError> {
         for pass in &self.passes {
             let output = config.surface.as_ref().unwrap().get_current_texture()?;

@@ -161,9 +161,8 @@ impl DrawListBuilder<PNUVertex> for DrawPacket {
         lt_offset: u32,
     ) {
         let pnu_draws = view.pnu_draws.as_ref().unwrap();
+        let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
         for (i, mesh_id) in pnu_draws.mesh_ids.iter().enumerate() {
-            let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
-
             let prim_range = DrawSet::within(&pnu_draws.primtitive_ranges[i], &alloc_range);
 
             let indices = pnu_draws
@@ -189,8 +188,8 @@ impl DrawListBuilder<PNUJWVertex> for DrawPacket {
         lt_offset: u32,
     ) {
         let pnujw_draws = view.pnujw_draws.as_ref().unwrap();
+        let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
         for (i, mesh_id) in pnujw_draws.mesh_ids.iter().enumerate() {
-            let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
             let prim_range = DrawSet::within(&pnujw_draws.primtitive_ranges[i], &alloc_range);
             let indices = pnujw_draws
                 .index_ranges
@@ -215,7 +214,22 @@ pub struct DrawPacket {
     pnu: HashMap<BufferChunks, Vec<DrawItem>>,
     pnujw: HashMap<BufferChunks, Vec<DrawItem>>,
 }
+impl DrawPacket {
+    pub fn new() -> Self {
+        Self {
+            pnu: HashMap::new(),
+            pnujw: HashMap::new(),
+        }
+    }
+    pub fn clear(&mut self) {
+        self.pnu.clear();
+        self.pnujw.clear();
+    }
 
+    pub fn is_empty(&self) -> bool {
+        self.pnu.is_empty() && self.pnujw.is_empty()
+    }
+}
 #[cfg(test)]
 impl DrawPacket {
     pub fn get_pnu(&self) -> &HashMap<BufferChunks, Vec<DrawItem>> {

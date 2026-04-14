@@ -40,8 +40,8 @@ impl<A: Archetype> InstanceArenaNew<A> {
         };
 
         let new_handle = InstanceHandle {
+            archetype: A::ARCHETYPE_ID,
             entity_handle,
-            global_id,
             instance_id: slot_index,
             generation: self.slots[slot_index as usize].generation,
         };

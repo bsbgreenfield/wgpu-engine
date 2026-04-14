@@ -5,7 +5,7 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{Instruction, RenderCategory, VMValue, renderer::Renderer},
+        renderer::{DrawPacket, Instruction, RenderCategory, VMValue, renderer::Renderer},
     },
     asset_manager::{AssetHandle, asset_manager::AssetManager},
     world::{
@@ -30,6 +30,7 @@ pub struct App<'a> {
     pub renderer: Option<Renderer>,
     pub app_state: AppState,
     pub surface_ready: bool,
+    pub draw_packet: DrawPacket,
 }
 
 impl App<'_> {
@@ -41,6 +42,7 @@ impl App<'_> {
             surface_ready: false,
             renderer: None,
             world: None,
+            draw_packet: DrawPacket::new(),
         }
     }
 
@@ -60,11 +62,14 @@ impl App<'_> {
             instructions,
             &self.app_config.as_ref().unwrap().queue,
         )?;
+        self.draw_packet.clear();
 
-        if let Some(draw_packet) = self.renderer.as_ref().unwrap().gen_draw_calls_new(
+        self.renderer.as_ref().unwrap().gen_draw_calls_new(
             &self.world.as_ref().unwrap().instance_manager,
+            &mut self.draw_packet,
             &self.app_config.as_ref().unwrap().queue,
-        ) {
+        );
+        if !self.draw_packet.is_empty() {
             let _ = self
                 .renderer
                 .as_ref()
@@ -72,7 +77,7 @@ impl App<'_> {
                 .render(
                     self.app_config.as_ref().unwrap(),
                     &self.world.as_ref().unwrap().camera,
-                    draw_packet,
+                    &self.draw_packet,
                 )
                 .map_err(|e| FrameError::RenderError(e));
         } else {

@@ -6,7 +6,10 @@ mod integration_tests {
             app::App,
             app_config::AppConfig,
             app_state::AppState,
-            renderer::{DrawItem, DrawPacket, Instruction, Operations, RenderUpdateDelta, VMValue, renderer::Renderer},
+            renderer::{
+                DrawItem, DrawPacket, Instruction, Operations, RenderUpdateDelta, VMValue,
+                renderer::Renderer,
+            },
         },
         asset_manager::{AssetHandle, asset_manager::AssetManager},
         world::{
@@ -140,6 +143,15 @@ mod integration_tests {
             .post_frame_update(&render_deltas);
     }
 
+    fn gen_draw_calls(app: &mut App) {
+        app.draw_packet.clear();
+        app.renderer.as_ref().unwrap().gen_draw_calls_new(
+            &app.world.as_ref().unwrap().instance_manager,
+            &mut app.draw_packet,
+            &app.app_config.as_ref().unwrap().queue,
+        );
+    }
+
     #[test]
     fn render_box() {
         pollster::block_on(async {
@@ -150,28 +162,24 @@ mod integration_tests {
                 &[WorldDeltaKind::AssetDidLoad], // expected world update deltas
                 &[RenderDeltaKind::AssetGPULoaded], // expected render deltas
             );
-            assert!(
-                app.renderer
-                    .as_ref()
-                    .unwrap()
-                    .gen_draw_calls_new(
-                        &app.world.as_ref().unwrap().instance_manager,
-                        &app.app_config.as_ref().unwrap().queue,
-                    )
-                    .is_none()
-            );
+            gen_draw_calls(&mut app);
+            assert!(app.draw_packet.is_empty());
 
             run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
-            let draw_packet = app.renderer.as_ref().unwrap()
-                .gen_draw_calls_new(instance_manager, &app.app_config.as_ref().unwrap().queue)
-                .expect("expected draw packet");
-            let pnu_items: Vec<&DrawItem> = draw_packet.get_pnu().values().flatten().collect();
-            let pnujw_items: Vec<&DrawItem> = draw_packet.get_pnujw().values().flatten().collect();
+
+            gen_draw_calls(&mut app);
+            assert!(!app.draw_packet.is_empty());
+            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> =
+                app.draw_packet.get_pnujw().values().flatten().collect();
             assert_eq!(pnu_items.len(), 1, "box should produce 1 pnu draw item");
-            assert!(pnujw_items.is_empty(), "box should produce no pnujw draw items");
+            assert!(
+                pnujw_items.is_empty(),
+                "box should produce no pnujw draw items"
+            );
             assert_eq!(pnu_items[0].get_instances().count(), 1);
         });
     }
@@ -186,28 +194,24 @@ mod integration_tests {
                 &[WorldDeltaKind::AssetDidLoad],
                 &[RenderDeltaKind::AssetGPULoaded],
             );
-            assert!(
-                app.renderer
-                    .as_ref()
-                    .unwrap()
-                    .gen_draw_calls_new(
-                        &app.world.as_ref().unwrap().instance_manager,
-                        &app.app_config.as_ref().unwrap().queue,
-                    )
-                    .is_none()
-            );
+            gen_draw_calls(&mut app);
+            assert!(app.draw_packet.is_empty());
 
             run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
-            let draw_packet = app.renderer.as_ref().unwrap()
-                .gen_draw_calls_new(instance_manager, &app.app_config.as_ref().unwrap().queue)
-                .expect("expected draw packet");
-            let pnu_items: Vec<&DrawItem> = draw_packet.get_pnu().values().flatten().collect();
-            let pnujw_items: Vec<&DrawItem> = draw_packet.get_pnujw().values().flatten().collect();
+            gen_draw_calls(&mut app);
+
+            assert!(!app.draw_packet.is_empty());
+            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> =
+                app.draw_packet.get_pnujw().values().flatten().collect();
             assert!(pnu_items.is_empty(), "fox should produce no pnu draw items");
-            assert!(!pnujw_items.is_empty(), "fox should produce pnujw draw items");
+            assert!(
+                !pnujw_items.is_empty(),
+                "fox should produce pnujw draw items"
+            );
             for item in &pnujw_items {
                 assert_eq!(item.get_instances().count(), 1);
             }
@@ -227,16 +231,8 @@ mod integration_tests {
                     RenderDeltaKind::AssetGPULoaded,
                 ],
             );
-            assert!(
-                app.renderer
-                    .as_ref()
-                    .unwrap()
-                    .gen_draw_calls_new(
-                        &app.world.as_ref().unwrap().instance_manager,
-                        &app.app_config.as_ref().unwrap().queue,
-                    )
-                    .is_none()
-            );
+            gen_draw_calls(&mut app);
+            assert!(app.draw_packet.is_empty());
 
             run_frame(
                 &mut app,
@@ -249,13 +245,17 @@ mod integration_tests {
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 2);
             assert_eq!(instance_manager.get_pos_table().get_positions().len(), 2);
-            let draw_packet = app.renderer.as_ref().unwrap()
-                .gen_draw_calls_new(instance_manager, &app.app_config.as_ref().unwrap().queue)
-                .expect("expected draw packet");
-            let pnu_items: Vec<&DrawItem> = draw_packet.get_pnu().values().flatten().collect();
-            let pnujw_items: Vec<&DrawItem> = draw_packet.get_pnujw().values().flatten().collect();
+
+            gen_draw_calls(&mut app);
+            assert!(!app.draw_packet.is_empty());
+            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> =
+                app.draw_packet.get_pnujw().values().flatten().collect();
             assert_eq!(pnu_items.len(), 1, "box should produce 1 pnu draw item");
-            assert!(!pnujw_items.is_empty(), "fox should produce pnujw draw items");
+            assert!(
+                !pnujw_items.is_empty(),
+                "fox should produce pnujw draw items"
+            );
             assert_eq!(pnu_items[0].get_instances().count(), 1);
             for item in &pnujw_items {
                 assert_eq!(item.get_instances().count(), 1);

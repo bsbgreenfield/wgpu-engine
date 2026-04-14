@@ -66,11 +66,11 @@ pub trait ComponentData: Sized {
         Some((map, data))
     }
 
-    fn get_instance_data<'frame>(
-        _: &'frame InstanceManager,
-    ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
-        None
-    }
+    // fn get_instance_data<'frame>(
+    //     _: &'frame InstanceManager,
+    // ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
+    //     None
+    // }
 }
 
 impl ComponentData for GlobalTransform {
@@ -78,16 +78,16 @@ impl ComponentData for GlobalTransform {
         ComponentDataType::PhysicalPosition
     }
 
-    fn get_instance_data<'frame>(
-        instance_manager: &'frame InstanceManager,
-    ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
-        let (mut map, mut data_slices) = Self::get_instance_buffers(instance_manager).unwrap();
-        data_slices.push(&instance_manager.pos.positions[..]);
-        for (i, handle) in instance_manager.pos.arena.handles.iter().enumerate() {
-            map.insert(handle.global_id as usize, i as u16);
-        }
-        return Some((map, data_slices));
-    }
+    // fn get_instance_data<'frame>(
+    //     instance_manager: &'frame InstanceManager,
+    // ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
+    //     let (mut map, mut data_slices) = Self::get_instance_buffers(instance_manager).unwrap();
+    //     data_slices.push(&instance_manager.pos.positions[..]);
+    //     for (i, handle) in instance_manager.pos.arena.handles.iter().enumerate() {
+    //         map.insert(handle.global_id as usize, i as u16);
+    //     }
+    //     return Some((map, data_slices));
+    // }
 }
 pub struct VoidComponentData {}
 impl ComponentData for VoidComponentData {

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    app::renderer::renderer::InstanceDataCollector,
     util::types::GlobalTransform,
     world::{
         components::{ComponentData, ComponentDataType},
@@ -10,8 +11,7 @@ use crate::{
 };
 
 pub trait Archetype {
-    fn id() -> ArchetypeId;
-
+    const ARCHETYPE_ID: ArchetypeId;
     fn insert_self(
         self,
         manager: &mut InstanceManager,
@@ -41,6 +41,8 @@ pub trait ArchetypeTable {
     fn remove(&mut self, handle: InstanceHandle);
 
     fn resolve<C: ComponentData>(&self, handle: InstanceHandle) -> Option<&impl ComponentData>;
+
+    fn collect<'a>(&'a self, collector: &mut InstanceDataCollector<'a>, offset: u16);
 }
 
 pub struct APosition {
@@ -48,9 +50,7 @@ pub struct APosition {
 }
 
 impl Archetype for APosition {
-    fn id() -> ArchetypeId {
-        ArchetypeId::Position
-    }
+    const ARCHETYPE_ID: ArchetypeId = ArchetypeId::Position;
     fn insert_self(
         self,
         manager: &mut InstanceManager,
@@ -78,6 +78,12 @@ impl APositionTable {
 
 impl ArchetypeTable for APositionTable {
     type A = APosition;
+
+    fn collect<'a>(&'a self, collector: &mut InstanceDataCollector<'a>, offset: u16) {
+        collector.offset_map.a_postion_offset = offset;
+        collector.gt_len += self.positions.len();
+        collector.global_transforms.push(&self.positions[..]);
+    }
 
     fn new() -> Self {
         Self {
@@ -119,9 +125,10 @@ impl ArchetypeTable for APositionTable {
         }
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct InstanceHandle {
-    pub global_id: u16,
+    pub archetype: ArchetypeId,
     pub entity_handle: EntityHandle,
     pub instance_id: u16,
     pub generation: u16,
@@ -131,7 +138,7 @@ pub struct InstanceManager {
     free_ids: Vec<u16>,
     pub(super) next_id: u16,
     entity_to_instance: HashMap<EntityHandle, Vec<InstanceHandle>>,
-    pub(super) pos: APositionTable,
+    pub pos: APositionTable,
 }
 
 impl InstanceManager {
