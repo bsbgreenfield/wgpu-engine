@@ -10,15 +10,16 @@ use crate::{
     },
 };
 
-pub trait Archetype {
+pub trait ArchetypeIdent {
     const ARCHETYPE_ID: ArchetypeId;
+}
+
+pub trait Archetype {
     fn insert_self(
         self,
         manager: &mut InstanceManager,
         entity_handle: EntityHandle,
     ) -> InstanceHandle;
-
-    fn despawn_self(manager: &mut InstanceManager, handle: InstanceHandle);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,9 +49,10 @@ pub trait ArchetypeTable {
 pub struct APosition {
     pub position: GlobalTransform,
 }
-
-impl Archetype for APosition {
+impl ArchetypeIdent for APosition {
     const ARCHETYPE_ID: ArchetypeId = ArchetypeId::Position;
+}
+impl Archetype for APosition {
     fn insert_self(
         self,
         manager: &mut InstanceManager,
@@ -58,10 +60,6 @@ impl Archetype for APosition {
     ) -> InstanceHandle {
         let global_id = manager.gen_global_id();
         manager.pos.insert(self, global_id, entity_handle)
-    }
-
-    fn despawn_self(manager: &mut InstanceManager, handle: InstanceHandle) {
-        manager.pos.remove(handle);
     }
 }
 
@@ -192,6 +190,6 @@ impl InstanceManager {
     }
 
     pub fn despawn<A: Archetype>(&mut self, handle: InstanceHandle) {
-        A::despawn_self(self, handle);
+        // TODO
     }
 }

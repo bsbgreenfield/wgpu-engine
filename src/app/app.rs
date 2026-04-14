@@ -10,7 +10,8 @@ use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
     world::{
         WorldUpdateError,
-        entity_manager::{EntityManager, Renderables},
+        entity_manager::{EntityHandle, EntityManager, Renderables},
+        instance_manager::Archetype,
         world::{World, WorldUpdateDelta},
     },
 };
@@ -22,6 +23,10 @@ use winit::{
     keyboard::PhysicalKey,
     window::Window,
 };
+
+enum AppCommands {
+    Spawn((EntityHandle, Box<dyn Archetype>)),
+}
 
 pub struct App<'a> {
     pub window: Option<Arc<Window>>,

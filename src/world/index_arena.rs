@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::world::{
     entity_manager::EntityHandle,
-    instance_manager::{Archetype, InstanceHandle},
+    instance_manager::{Archetype, ArchetypeIdent, InstanceHandle},
 };
 
 struct Slot {
@@ -17,7 +17,7 @@ pub struct InstanceArenaNew<A: Archetype> {
     _t: PhantomData<A>,
 }
 
-impl<A: Archetype> InstanceArenaNew<A> {
+impl<A: Archetype + ArchetypeIdent> InstanceArenaNew<A> {
     pub fn new() -> Self {
         Self {
             slots: Vec::new(),
