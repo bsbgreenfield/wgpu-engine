@@ -4,7 +4,10 @@ use cgmath::{SquareMatrix, Vector3};
 
 use super::scene::Scene;
 use crate::{
-    app::renderer::{GPUAllocationHandle, RenderUpdateDelta},
+    app::{
+        app::App,
+        renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
+    },
     asset_manager::{
         AssetHandle, LoadedAsset, asset_manager::AssetManager, gltf_assets::GltfAsset,
     },
@@ -74,6 +77,55 @@ pub enum WorldUpdateDelta {
     AssetDidLoad(AssetHandle),
 }
 
+impl WorldUpdateDelta {
+    pub fn gen_bytecode<'frame>(
+        &self,
+        world: &'frame World,
+    ) -> (Vec<VMValue<'frame>>, Vec<Instruction>) {
+        let mut constants = Vec::<VMValue<'frame>>::new();
+        let mut instructions = Vec::<Instruction>::new();
+        match self {
+            Self::AssetDidLoad(asset_handle) => {
+                let la = world
+                    .get_loaded_asset_of(&asset_handle)
+                    .expect("loaded asset should be exactly CPU resident!");
+                // generate bytecode for renderer VM to load an asset
+                constants.push(VMValue::LoadedAsset(la));
+                instructions.push(Instruction::Op(Operations::AddAsset));
+                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+            }
+
+            Self::EntityDidSpawn(instance_handle) => {
+                let entity_handle = instance_handle.entity_handle.clone();
+                let renderables = world
+                    .entity_manager
+                    .get_renderables(&entity_handle, &world.asset_manager);
+
+                instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                let assets = App::get_ordered_assets(&renderables);
+                constants.push(VMValue::InstanceHandle(instance_handle.clone()));
+                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                constants.push(VMValue::Renderables(renderables));
+                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                // TODO: renderables can have a variable number of associated assets, this
+                // affects the indices of the constants
+                for asset_handle in assets {
+                    constants.push(VMValue::LoadedAsset(
+                        world
+                            .get_loaded_asset_of(&asset_handle)
+                            .expect("should be a registered asset"),
+                    ));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                }
+            }
+            WorldUpdateDelta::EntityDidLoad(_) => {
+                //TODO spawn based on user input
+            }
+        }
+        (constants, instructions)
+    }
+}
+
 pub struct World {
     pub camera: Camera,
     scene: Scene,
@@ -88,44 +140,22 @@ impl World {
         self.asset_manager.get_loaded_asset(asset_handle)
     }
 
-    pub fn new(aspect_ratio: f32, device: &wgpu::Device) -> Result<Self, WorldInitError> {
+    pub fn add_scene(&mut self, scene: Scene) {
+        self.scene = scene;
+    }
+
+    pub fn new(
+        aspect_ratio: f32,
+        asset_manager: AssetManager,
+        entity_manager: EntityManager,
+        device: &wgpu::Device,
+    ) -> Result<Self, WorldInitError> {
         let mut camera = crate::world::camera::get_camera_default();
         camera.build_camera_uniform(aspect_ratio, device);
 
-        let mut asset_manager = AssetManager::new();
-        let mut entity_manager = EntityManager::new();
-
-        // ************************** CREATE BOX ********************************
-        //        let box_asset = asset_manager.register_asset::<GltfAsset>("box")?; // asset
-        let fox_asset = asset_manager.register_asset::<GltfAsset>("fox")?;
-
-        let box_entity = entity_manager.new_entity()?;
-        let fox_entity = entity_manager.new_entity()?;
-
-        //       let box_mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
-        //           // MeshCollection
-        //           resource_backing: box_asset,
-        //           allocation_handle: None,
-        //           mesh_ids: &[0],
-        //       });
-        let fox_mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
-            resource_backing: fox_asset,
-            allocation_handle: None,
-            mesh_ids: &[0],
-        });
-
-        //       entity_manager.add_mesh_collection_for_entity(box_entity, box_mesh); // mesh
-        entity_manager.add_mesh_collection_for_entity(fox_entity, fox_mesh); // mesh
-        entity_manager.add_physical_position_for_entity(box_entity); // position
-
-        let mut scene = Scene::new();
-        //      scene.add_entity(box_entity);
-        scene.add_entity(fox_entity);
-        scene.set_load_level(SceneLoadLevel::GPU);
-
         Ok(Self {
             camera,
-            scene,
+            scene: Scene::new(),
             asset_manager,
             entity_manager,
             load_queue: EntityLoadQueue::new(),
@@ -167,10 +197,9 @@ impl World {
                     &mut self.instance_manager,
                     *completed.0,
                     APosition {
-                        position: (cgmath::Matrix4::<f32>::from_scale(0.05)
-                            * cgmath::Matrix4::<f32>::from_translation(Vector3::new(
-                                0.8, 0.0, 0.0,
-                            )))
+                        position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(
+                            1.0, 0.0, 0.0,
+                        )) * cgmath::Matrix4::<f32>::from_scale(0.05))
                         .into(),
                     },
                 )?

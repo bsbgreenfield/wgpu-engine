@@ -5,12 +5,12 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{Instruction, Operations, RenderCategory, VMValue, renderer::Renderer},
+        renderer::{Instruction, RenderCategory, VMValue, renderer::Renderer},
     },
-    asset_manager::AssetHandle,
+    asset_manager::{AssetHandle, asset_manager::AssetManager},
     world::{
         WorldUpdateError,
-        entity_manager::Renderables,
+        entity_manager::{EntityManager, Renderables},
         world::{World, WorldUpdateDelta},
     },
 };
@@ -50,53 +50,10 @@ impl App<'_> {
         let mut constants = Vec::<VMValue<'frame>>::new();
         let mut instructions = Vec::<Instruction>::new();
         for delta in deltas.iter() {
-            match delta {
-                WorldUpdateDelta::AssetDidLoad(asset_handle) => {
-                    println!("HANDLE: {:?}", asset_handle);
-                    // it makes no sense to emit an "AssetDidLoad" event if either
-                    // 1. the asset didn't load to the CPU
-                    // 2. the asset is alread GPU resident.
-                    // So this is a panic
-                    let la = self
-                        .world
-                        .as_ref()
-                        .expect("should exist in the asset manager")
-                        .get_loaded_asset_of(&asset_handle)
-                        .expect("loaded asset should be exactly CPU resident!");
-                    // generate bytecode for renderer VM to load an asset
-                    constants.push(VMValue::LoadedAsset(la));
-                    instructions.push(Instruction::Op(Operations::AddAsset));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                }
-
-                WorldUpdateDelta::EntityDidSpawn(instance_handle) => {
-                    let world = self.world.as_ref().unwrap();
-                    let entity_handle = instance_handle.entity_handle.clone();
-                    let renderables = world
-                        .entity_manager
-                        .get_renderables(&entity_handle, &world.asset_manager);
-
-                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                    let assets = Self::get_ordered_assets(&renderables);
-                    constants.push(VMValue::InstanceHandle(instance_handle.clone()));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    constants.push(VMValue::Renderables(renderables));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    // TODO: renderables can have a variable number of associated assets, this
-                    // affects the indices of the constants
-                    for asset_handle in assets {
-                        constants.push(VMValue::LoadedAsset(
-                            world
-                                .get_loaded_asset_of(&asset_handle)
-                                .expect("should be a registered asset"),
-                        ));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    }
-                }
-                WorldUpdateDelta::EntityDidLoad(_entity_handle) => {
-                    // TODO spawn based on user input or scene state
-                }
-            }
+            let (new_constants, new_instructions) =
+                delta.gen_bytecode(self.world.as_ref().unwrap());
+            constants.extend(new_constants);
+            instructions.extend(new_instructions);
         }
         let render_deltas = self.renderer.as_mut().unwrap().update(
             constants,
@@ -164,9 +121,26 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 pollster::block_on(AppConfig::new(self.window.as_ref().unwrap().clone())).unwrap(),
             );
             let aspect_ratio: f32 = self.app_config.as_ref().unwrap().get_aspect_ratio();
-            let world =
-                World::new(aspect_ratio, &self.app_config.as_ref().unwrap().device).unwrap();
-            self.world = Some(world);
+
+            if self.world.is_none() {
+                let asset_manager = AssetManager::new();
+                let entity_manager = EntityManager::new();
+                self.world = Some(
+                    World::new(
+                        aspect_ratio,
+                        asset_manager,
+                        entity_manager,
+                        &self.app_config.as_ref().unwrap().device,
+                    )
+                    .unwrap(),
+                );
+                //  #[cfg(test)]
+                //  {
+                //      let mut scene = Scene::fox_box(&mut self.world.as_mut().unwrap()).unwrap();
+                //      scene.set_load_level(crate::world::scene::SceneLoadLevel::GPU);
+                //      self.world.as_mut().unwrap().add_scene(scene);
+                //  }
+            }
             let mut renderer = Renderer::new(&self.app_config.as_ref().unwrap());
             renderer.add_pass(
                 "Opaque Pass".to_string(),

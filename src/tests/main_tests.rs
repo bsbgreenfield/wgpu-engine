@@ -6,168 +6,260 @@ mod integration_tests {
             app::App,
             app_config::AppConfig,
             app_state::AppState,
-            renderer::{Instruction, Operations, RenderUpdateDelta, VMValue, renderer::Renderer},
+            renderer::{DrawItem, DrawPacket, Instruction, Operations, RenderUpdateDelta, VMValue, renderer::Renderer},
         },
-        asset_manager::AssetHandle,
-        world::world::{World, WorldUpdateDelta},
+        asset_manager::{AssetHandle, asset_manager::AssetManager},
+        world::{
+            entity_manager::EntityManager,
+            scene::{Scene, SceneLoadLevel},
+            world::{World, WorldUpdateDelta},
+        },
     };
 
-    #[test]
-    fn main_test() {
-        pollster::block_on(async {
-            let mut app = App::new();
+    enum TestCases {
+        Box,
+        Fox,
+        BoxFox,
+    }
 
-            let config = AppConfig::new_headless().await;
+    /// Variant-only mirrors of WorldUpdateDelta — use these to declare what a frame should produce.
+    enum WorldDeltaKind {
+        AssetDidLoad,
+        EntityDidSpawn,
+        EntityDidLoad,
+    }
 
-            let world = World::new(1.0, &config.device).unwrap();
+    /// Variant-only mirrors of RenderUpdateDelta — use these to declare what the renderer should emit.
+    enum RenderDeltaKind {
+        AssetGPULoaded,
+        EntityGPULoaded,
+    }
 
-            let renderer = Renderer::new(&config);
+    fn get_bytecode<'a>(
+        world: &'a World,
+        deltas: &[WorldUpdateDelta],
+    ) -> (Vec<VMValue<'a>>, Vec<Instruction>) {
+        let mut constants = Vec::<VMValue<'a>>::new();
+        let mut instructions = Vec::<Instruction>::new();
 
-            app.world = Some(world);
-            app.app_config = Some(config);
-            app.renderer = Some(renderer);
-            app.app_state = AppState {};
-            app.surface_ready = true;
+        for delta in deltas.iter() {
+            let (new_constants, new_instructions) = delta.gen_bytecode(world);
+            constants.extend(new_constants);
+            instructions.extend(new_instructions);
+        }
 
-            let deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
+        (constants, instructions)
+    }
 
-            assert_eq!(deltas.len(), 1);
-            assert!(matches!(deltas[0], WorldUpdateDelta::AssetDidLoad(_)));
-
-            let mut constants = Vec::<VMValue>::new();
-            let mut instructions = Vec::<Instruction>::new();
-            let asset_handle: Option<AssetHandle>;
-            match deltas[0] {
-                WorldUpdateDelta::AssetDidLoad(handle) => {
-                    asset_handle = Some(handle);
-                    let la = app
-                        .world
-                        .as_ref()
-                        .expect("should exist in the asset manager")
-                        .get_loaded_asset_of(&handle)
-                        .expect("loaded asset should be exactly CPU resident!");
-                    // generate bytecode for renderer VM to load an asset
-                    constants.push(VMValue::LoadedAsset(la));
-                    instructions.push(Instruction::Op(Operations::AddAsset));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                }
-                _ => panic!("wrong delta"),
-            }
-
-            let render_deltas = app
-                .renderer
-                .as_mut()
-                .unwrap()
-                .update(
-                    constants,
-                    instructions,
-                    &app.app_config.as_ref().unwrap().queue,
+    fn assert_world_deltas(actual: &[WorldUpdateDelta], expected: &[WorldDeltaKind]) {
+        assert_eq!(actual.len(), expected.len(), "world delta count mismatch");
+        for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
+            let matches = matches!(
+                (a, e),
+                (
+                    WorldUpdateDelta::AssetDidLoad(_),
+                    WorldDeltaKind::AssetDidLoad
+                ) | (
+                    WorldUpdateDelta::EntityDidSpawn(_),
+                    WorldDeltaKind::EntityDidSpawn
+                ) | (
+                    WorldUpdateDelta::EntityDidLoad(_),
+                    WorldDeltaKind::EntityDidLoad
                 )
-                .unwrap_or_else(|e| panic!("{}", e));
-
-            assert!(matches!(
-                render_deltas[0],
-                RenderUpdateDelta::AssetGPULoaded(_)
-            ));
-
-            let draw_packet = app.renderer.as_ref().unwrap().gen_draw_calls_new(
-                &app.world.as_ref().unwrap().instance_manager,
-                &app.app_config.as_ref().unwrap().queue,
             );
-            assert!(draw_packet.is_none());
+            assert!(matches, "world delta[{i}] variant mismatch");
+        }
+    }
 
-            //let _ = app
-            //    .renderer
-            //    .as_ref()
-            //    .unwrap()
-            //    .render_blank(&app.app_config.as_ref().unwrap());
-
-            app.world
-                .as_mut()
-                .unwrap()
-                .post_frame_update(&render_deltas);
-
-            app.world
-                .as_ref()
-                .unwrap()
-                .asset_manager
-                .get_alloc_handle_of(&asset_handle.unwrap());
-
-            // ****************** SECOND FRAME ***********************************
-            // *******************************************************************
-
-            let world_deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
-
-            // assert that an instance spawned
-            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
-            let instances = instance_manager.get_all_instances();
-
-            assert!(instances.len() == 1);
-
-            let trasnforms = instance_manager.get_pos_table().get_positions();
-            assert!(trasnforms.len() == 1);
-
-            let mut constants = Vec::<VMValue>::new();
-            let mut instructions = Vec::<Instruction>::new();
-
-            match &world_deltas[0] {
-                WorldUpdateDelta::EntityDidSpawn(instance_handle) => {
-                    let world = app.world.as_ref().unwrap();
-                    let entity_handle = instance_handle.entity_handle.clone();
-                    let renderables = world
-                        .entity_manager
-                        .get_renderables(&entity_handle, &world.asset_manager);
-
-                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                    let assets = App::get_ordered_assets(&renderables);
-                    constants.push(VMValue::InstanceHandle(instance_handle.clone()));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    constants.push(VMValue::Renderables(renderables));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    for asset_handle in assets {
-                        constants.push(VMValue::LoadedAsset(
-                            world
-                                .get_loaded_asset_of(&asset_handle)
-                                .expect("should be a registered asset"),
-                        ));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                    }
-                }
-                _ => panic!("should be an entity did spawn delta"),
-            }
-
-            assert!(matches!(constants[0], VMValue::InstanceHandle(_)));
-            assert!(matches!(constants[1], VMValue::Renderables(_)));
-            assert!(matches!(constants[2], VMValue::LoadedAsset(_)));
-            let render_deltas = app
-                .renderer
-                .as_mut()
-                .unwrap()
-                .update(
-                    constants,
-                    instructions,
-                    &app.app_config.as_ref().unwrap().queue,
+    fn assert_render_deltas(actual: &[RenderUpdateDelta], expected: &[RenderDeltaKind]) {
+        assert_eq!(actual.len(), expected.len(), "render delta count mismatch");
+        for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
+            let matches = matches!(
+                (a, e),
+                (
+                    RenderUpdateDelta::AssetGPULoaded(_),
+                    RenderDeltaKind::AssetGPULoaded
+                ) | (
+                    RenderUpdateDelta::EntityGPULoaded(_),
+                    RenderDeltaKind::EntityGPULoaded
                 )
-                .unwrap_or_else(|e| panic!("{}", e));
+            );
+            assert!(matches, "render delta[{i}] variant mismatch");
+        }
+    }
 
-            let draw_packet = app
-                .renderer
-                .as_ref()
-                .unwrap()
-                .gen_draw_calls_new(&instance_manager, &app.app_config.as_ref().unwrap().queue)
-                .unwrap();
+    async fn setup_world<'a>(test_case: TestCases) -> App<'a> {
+        let mut app = App::new();
+        let config = AppConfig::new_headless().await;
+        let renderer = Renderer::new(&config);
+        let asset_manager = AssetManager::new();
+        let entity_manager = EntityManager::new();
+        let mut world = World::new(1.0, asset_manager, entity_manager, &config.device).unwrap();
+        let mut scene = match test_case {
+            TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
+            TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),
+            TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
+        };
+        scene.set_load_level(SceneLoadLevel::GPU);
+        world.add_scene(scene);
+        app.world = Some(world);
+        app.app_config = Some(config);
+        app.renderer = Some(renderer);
+        app.app_state = AppState {};
+        app.surface_ready = true;
 
-            // let a = draw_packet.get_pnujw();
-            // for entry in a {
-            //     for item in entry.1 {
-            //         println!("{:?}", item);
-            //     }
-            // }
+        app
+    }
 
-            app.world
-                .as_mut()
-                .unwrap()
-                .post_frame_update(&render_deltas);
+    fn run_frame(
+        app: &mut App<'_>,
+        expected_world_deltas: &[WorldDeltaKind],
+        expected_render_deltas: &[RenderDeltaKind],
+    ) {
+        let deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
+        assert_world_deltas(&deltas, expected_world_deltas);
+
+        let (constants, instructions) = get_bytecode(app.world.as_ref().unwrap(), &deltas);
+
+        let render_deltas = app
+            .renderer
+            .as_mut()
+            .unwrap()
+            .update(
+                constants,
+                instructions,
+                &app.app_config.as_ref().unwrap().queue,
+            )
+            .unwrap_or_else(|e| panic!("{}", e));
+
+        assert_render_deltas(&render_deltas, expected_render_deltas);
+
+        app.world
+            .as_mut()
+            .unwrap()
+            .post_frame_update(&render_deltas);
+    }
+
+    #[test]
+    fn render_box() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::Box).await;
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad], // expected world update deltas
+                &[RenderDeltaKind::AssetGPULoaded], // expected render deltas
+            );
+            assert!(
+                app.renderer
+                    .as_ref()
+                    .unwrap()
+                    .gen_draw_calls_new(
+                        &app.world.as_ref().unwrap().instance_manager,
+                        &app.app_config.as_ref().unwrap().queue,
+                    )
+                    .is_none()
+            );
+
+            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            assert_eq!(instance_manager.get_all_instances().len(), 1);
+            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
+            let draw_packet = app.renderer.as_ref().unwrap()
+                .gen_draw_calls_new(instance_manager, &app.app_config.as_ref().unwrap().queue)
+                .expect("expected draw packet");
+            let pnu_items: Vec<&DrawItem> = draw_packet.get_pnu().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> = draw_packet.get_pnujw().values().flatten().collect();
+            assert_eq!(pnu_items.len(), 1, "box should produce 1 pnu draw item");
+            assert!(pnujw_items.is_empty(), "box should produce no pnujw draw items");
+            assert_eq!(pnu_items[0].get_instances().count(), 1);
+        });
+    }
+
+    #[test]
+    fn render_fox() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::Fox).await;
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+            assert!(
+                app.renderer
+                    .as_ref()
+                    .unwrap()
+                    .gen_draw_calls_new(
+                        &app.world.as_ref().unwrap().instance_manager,
+                        &app.app_config.as_ref().unwrap().queue,
+                    )
+                    .is_none()
+            );
+
+            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            assert_eq!(instance_manager.get_all_instances().len(), 1);
+            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
+            let draw_packet = app.renderer.as_ref().unwrap()
+                .gen_draw_calls_new(instance_manager, &app.app_config.as_ref().unwrap().queue)
+                .expect("expected draw packet");
+            let pnu_items: Vec<&DrawItem> = draw_packet.get_pnu().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> = draw_packet.get_pnujw().values().flatten().collect();
+            assert!(pnu_items.is_empty(), "fox should produce no pnu draw items");
+            assert!(!pnujw_items.is_empty(), "fox should produce pnujw draw items");
+            for item in &pnujw_items {
+                assert_eq!(item.get_instances().count(), 1);
+            }
+        });
+    }
+
+    #[test]
+    fn render_fox_box() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::BoxFox).await;
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad, WorldDeltaKind::AssetDidLoad],
+                &[
+                    RenderDeltaKind::AssetGPULoaded,
+                    RenderDeltaKind::AssetGPULoaded,
+                ],
+            );
+            assert!(
+                app.renderer
+                    .as_ref()
+                    .unwrap()
+                    .gen_draw_calls_new(
+                        &app.world.as_ref().unwrap().instance_manager,
+                        &app.app_config.as_ref().unwrap().queue,
+                    )
+                    .is_none()
+            );
+
+            run_frame(
+                &mut app,
+                &[
+                    WorldDeltaKind::EntityDidSpawn,
+                    WorldDeltaKind::EntityDidSpawn,
+                ],
+                &[],
+            );
+            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            assert_eq!(instance_manager.get_all_instances().len(), 2);
+            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 2);
+            let draw_packet = app.renderer.as_ref().unwrap()
+                .gen_draw_calls_new(instance_manager, &app.app_config.as_ref().unwrap().queue)
+                .expect("expected draw packet");
+            let pnu_items: Vec<&DrawItem> = draw_packet.get_pnu().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> = draw_packet.get_pnujw().values().flatten().collect();
+            assert_eq!(pnu_items.len(), 1, "box should produce 1 pnu draw item");
+            assert!(!pnujw_items.is_empty(), "fox should produce pnujw draw items");
+            assert_eq!(pnu_items[0].get_instances().count(), 1);
+            for item in &pnujw_items {
+                assert_eq!(item.get_instances().count(), 1);
+            }
         });
     }
 }
