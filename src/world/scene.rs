@@ -1,6 +1,6 @@
-use crate::world::entity_manager::EntityHandle;
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
+use crate::world::{entity_manager::EntityHandle, instance_manager::Archetype};
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub enum SceneLoadLevel {
@@ -18,6 +18,7 @@ pub enum SceneEvent {
 pub struct Scene {
     pub entitites: Vec<EntityHandle>,
     dirty: bool,
+    spawn_count: usize,
     pub load_level: SceneLoadLevel,
     event_queue: Vec<SceneEvent>,
 }
@@ -27,6 +28,7 @@ impl Scene {
         Self {
             entitites: vec![],
             dirty: false,
+            spawn_count: 0,
             load_level: SceneLoadLevel::NotLoaded,
             event_queue: Vec::new(),
         }

@@ -36,6 +36,7 @@ pub struct App<'a> {
     pub app_state: AppState,
     pub surface_ready: bool,
     pub draw_packet: DrawPacket,
+    command_queue: Vec<AppCommands>,
 }
 
 impl App<'_> {
@@ -48,6 +49,7 @@ impl App<'_> {
             renderer: None,
             world: None,
             draw_packet: DrawPacket::new(),
+            command_queue: Vec::new(),
         }
     }
 

@@ -104,7 +104,7 @@ impl EntityManager {
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct EntityHandle(u16);
+pub struct EntityHandle(pub u16);
 
 const INVALID: usize = usize::MAX;
 struct SparseSet<T, const N: usize> {

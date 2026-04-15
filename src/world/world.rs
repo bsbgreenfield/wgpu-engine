@@ -181,29 +181,9 @@ impl World {
             deltas.extend(updates);
         }
         for (i, completed) in self.load_queue.completed_queue.iter().enumerate() {
-            // TODO: allow spawning of multiple instances
-            let instances = if i == 1 {
-                World::spawn(
-                    &mut self.instance_manager,
-                    *completed.0,
-                    APosition {
-                        position: (cgmath::Matrix4::<f32>::from_scale(1.0)
-                            * cgmath::Matrix4::<f32>::identity())
-                        .into(),
-                    },
-                )?
-            } else {
-                World::spawn(
-                    &mut self.instance_manager,
-                    *completed.0,
-                    APosition {
-                        position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(
-                            1.0, 0.0, 0.0,
-                        )) * cgmath::Matrix4::<f32>::from_scale(0.05))
-                        .into(),
-                    },
-                )?
-            };
+            match completed.1.load_level {
+                // TODO
+            }
             deltas.push(WorldUpdateDelta::EntityDidSpawn(instances[0].clone()));
         }
         self.load_queue.dequeue_completed();
@@ -229,8 +209,6 @@ impl World {
                         // }
                     }
                     SceneEvent::LoadLevelChanged(old, new) => {
-                        assert!(matches!(new, SceneLoadLevel::GPU));
-                        assert!(matches!(old, SceneLoadLevel::NotLoaded));
                         if new > old {
                             let entities = self.scene.entitites.clone();
                             for entity in entities {

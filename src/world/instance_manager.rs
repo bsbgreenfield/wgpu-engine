@@ -189,7 +189,10 @@ impl InstanceManager {
         self.entity_to_instance.get(&entity_handle).unwrap()
     }
 
-    pub fn despawn<A: Archetype>(&mut self, handle: InstanceHandle) {
-        // TODO
+    pub fn despawn(&mut self, handle: InstanceHandle) {
+        match handle.archetype {
+            ArchetypeId::Position => self.pos.remove(handle),
+        }
+        // TODO: other tables
     }
 }

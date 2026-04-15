@@ -40,7 +40,9 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
         match self {
             AssetResidency::Registered => match other {
                 SceneLoadLevel::NotLoaded => return Some(Ordering::Equal),
-                SceneLoadLevel::CPU | SceneLoadLevel::GPU => return Some(Ordering::Less),
+                SceneLoadLevel::CPU | SceneLoadLevel::GPU => {
+                    return Some(Ordering::Less);
+                }
             },
             AssetResidency::CPU(_) => match other {
                 SceneLoadLevel::NotLoaded => return Some(Ordering::Greater),

@@ -125,7 +125,7 @@ impl EntityLoadQueue {
         if self.entity_jobs.len() == 0 {
             return Ok(None);
         }
-        let mut res = Vec::new();
+        let mut res: Vec<WorldUpdateDelta> = Vec::new();
         let handle_iter: Vec<EntityHandle> = self
             .entity_jobs
             .iter()

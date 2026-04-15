@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod integration_tests {
 
+    use cgmath::SquareMatrix;
+
     use crate::{
         app::{
             app::App,
@@ -13,7 +15,8 @@ mod integration_tests {
         },
         asset_manager::{AssetHandle, asset_manager::AssetManager},
         world::{
-            entity_manager::EntityManager,
+            entity_manager::{EntityHandle, EntityManager},
+            instance_manager::APosition,
             scene::{Scene, SceneLoadLevel},
             world::{World, WorldUpdateDelta},
         },
