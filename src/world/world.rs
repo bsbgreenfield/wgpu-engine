@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Deref, Range};
 
 use cgmath::{SquareMatrix, Vector3};
 
@@ -163,10 +163,10 @@ impl World {
         })
     }
 
-    pub fn spawn<A: Archetype>(
+    pub fn spawn(
         instance_manager: &mut InstanceManager,
         entity_handle: EntityHandle,
-        archetype: A,
+        archetype: Box<dyn Archetype>,
     ) -> Result<&Vec<InstanceHandle>, WorldUpdateError> {
         Ok(instance_manager.spawn(entity_handle, archetype))
     }
@@ -175,16 +175,7 @@ impl World {
         let mut deltas = Vec::<WorldUpdateDelta>::new();
         // check scenes
         if self.scene.is_dirty() {
-            self.handle_scene_event()?; // TODO: allow for multiple scenes
-        }
-        if let Some(updates) = self.load_queue.poll_entity_jobs(&mut self.asset_manager)? {
-            deltas.extend(updates);
-        }
-        for (i, completed) in self.load_queue.completed_queue.iter().enumerate() {
-            match completed.1.load_level {
-                // TODO
-            }
-            deltas.push(WorldUpdateDelta::EntityDidSpawn(instances[0].clone()));
+            self.handle_scene_event(&mut deltas)?; // TODO: allow for multiple scenes
         }
         self.load_queue.dequeue_completed();
 
@@ -193,13 +184,35 @@ impl World {
         Ok(deltas)
     }
 
-    fn handle_scene_event(&mut self) -> Result<(), WorldUpdateError> {
+    fn try_handle_scene_load(
+        &mut self,
+        deltas: &mut Vec<WorldUpdateDelta>,
+    ) -> Result<bool, WorldUpdateError> {
+        deltas.extend(
+            self.load_queue
+                .poll_scene_job(self.scene.scene_id, &mut self.asset_manager)?,
+        );
+        if self
+            .load_queue
+            .completed_queue
+            .get(&self.scene.scene_id)
+            .is_some()
+        {
+            self.scene.pop_event();
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    fn handle_scene_event(
+        &mut self,
+        deltas: &mut Vec<WorldUpdateDelta>,
+    ) -> Result<(), WorldUpdateError> {
         loop {
-            let maybe_event = self.scene.pop_event();
-            if maybe_event.is_none() {
-                break;
-            } else {
-                match maybe_event.unwrap() {
+            let scene_event = self.scene.current_event();
+            if scene_event.is_some() {
+                match scene_event.unwrap() {
                     SceneEvent::EntitiesAdded(_) => {
                         todo!()
                         // for entity_handle in entities {
@@ -209,18 +222,40 @@ impl World {
                         // }
                     }
                     SceneEvent::LoadLevelChanged(old, new) => {
-                        if new > old {
-                            let entities = self.scene.entitites.clone();
-                            for entity in entities {
-                                let _ = self.load_queue.new_entity_load(
-                                    entity,
-                                    self.scene.load_level,
-                                    &self.entity_manager.rbcs_of(entity),
-                                );
+                        if self.load_queue.has_pending_scene_job(self.scene.scene_id) {
+                            if !self.try_handle_scene_load(deltas)? {
+                                break;
                             }
+                        } else if new > old {
+                            self.load_queue
+                                .new_scene_job(&self.scene, &self.entity_manager);
+                            if !self.try_handle_scene_load(deltas)? {
+                                break;
+                            }
+                        } else {
+                            //TODO: continue?
                         }
                     }
+                    SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
+                        SceneEvent::Spawn(mut instance_data) => {
+                            let completed_scene_load = self
+                                .load_queue
+                                .completed_queue
+                                .get(&self.scene.scene_id)
+                                .expect("should be completed");
+                            for (entity, archetype) in completed_scene_load
+                                .entity_load_jobs
+                                .iter()
+                                .zip(instance_data.drain(..))
+                            {
+                                World::spawn(&mut self.instance_manager, *entity, archetype);
+                            }
+                        }
+                        _ => unreachable!(),
+                    },
                 }
+            } else {
+                break;
             }
         }
         Ok(())

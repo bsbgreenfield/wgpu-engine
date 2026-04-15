@@ -9,13 +9,16 @@ pub enum SceneLoadLevel {
     GPU,
 }
 
-#[derive(Clone)]
 pub enum SceneEvent {
     EntitiesAdded(Vec<EntityHandle>),
     LoadLevelChanged(SceneLoadLevel, SceneLoadLevel),
+    Spawn(Vec<Box<dyn Archetype>>),
 }
 
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+pub struct SceneId(usize);
 pub struct Scene {
+    pub scene_id: SceneId,
     pub entitites: Vec<EntityHandle>,
     dirty: bool,
     spawn_count: usize,
@@ -26,12 +29,26 @@ pub struct Scene {
 impl Scene {
     pub fn new() -> Self {
         Self {
+            scene_id: SceneId(0), // TODO: scene ids to keep track of loads, querys, etc??
             entitites: vec![],
             dirty: false,
             spawn_count: 0,
             load_level: SceneLoadLevel::NotLoaded,
             event_queue: Vec::new(),
         }
+    }
+
+    pub fn current_event(&self) -> Option<&SceneEvent> {
+        self.event_queue.last()
+    }
+
+    pub fn spawn(&mut self, instance_data: Vec<Box<dyn Archetype>>) {
+        self.dirty = true;
+        self.event_queue.push(SceneEvent::Spawn(instance_data));
+        if self.load_level < SceneLoadLevel::GPU {
+            self.set_load_level(SceneLoadLevel::GPU);
+        }
+        self.spawn_count += 1;
     }
 
     pub fn add_entity(&mut self, entity: EntityHandle) {

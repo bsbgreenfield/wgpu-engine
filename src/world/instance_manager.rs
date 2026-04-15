@@ -16,7 +16,7 @@ pub trait ArchetypeIdent {
 
 pub trait Archetype {
     fn insert_self(
-        self,
+        self: Box<Self>,
         manager: &mut InstanceManager,
         entity_handle: EntityHandle,
     ) -> InstanceHandle;
@@ -54,12 +54,12 @@ impl ArchetypeIdent for APosition {
 }
 impl Archetype for APosition {
     fn insert_self(
-        self,
+        self: Box<Self>,
         manager: &mut InstanceManager,
         entity_handle: EntityHandle,
     ) -> InstanceHandle {
         let global_id = manager.gen_global_id();
-        manager.pos.insert(self, global_id, entity_handle)
+        manager.pos.insert(*self, global_id, entity_handle)
     }
 }
 
@@ -170,10 +170,10 @@ impl InstanceManager {
         }
     }
 
-    pub(super) fn spawn<A: Archetype>(
+    pub(super) fn spawn(
         &mut self,
         entity_handle: EntityHandle,
-        data: A,
+        data: Box<dyn Archetype>,
     ) -> &Vec<InstanceHandle> {
         let instance_handle = data.insert_self(self, entity_handle);
 
