@@ -229,22 +229,23 @@ impl World {
                     }
                     SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
                         SceneEvent::Spawn(mut instance_data) => {
+                            // TODO: ive required the instance spawn code to contain the entity
+                            // handles that it wants to spawn. This may or may not be the right decision
                             let completed_scene_load = self
                                 .load_queue
                                 .completed_queue
                                 .get(&self.scene.scene_id)
                                 .expect("should be completed");
-                            for (entity, archetype) in completed_scene_load
-                                .entity_load_jobs
-                                .iter()
-                                .zip(instance_data.drain(..))
-                            {
-                                let instance_handle =
-                                    World::spawn(&mut self.instance_manager, *entity, archetype)?;
+                            for (entity_handle, archetype) in instance_data.drain(..) {
+                                let instance_handles = World::spawn(
+                                    &mut self.instance_manager,
+                                    entity_handle,
+                                    archetype,
+                                )?;
                                 deltas.push(WorldUpdateDelta::EntityDidSpawn(
-                                    instance_handle[0].clone(), // this is [0] because spawning
-                                                                // multiple instances is not yet
-                                                                // supported
+                                    instance_handles[0].clone(), // this is [0] because spawning
+                                                                 // multiple instances is not yet
+                                                                 // supported
                                 ));
                             }
                             self.load_queue.dequeue_spawned_scene(self.scene.scene_id);

@@ -26,7 +26,7 @@ impl From<&AssetLoadResult> for SceneLoadLevel {
 pub enum SceneEvent {
     EntitiesAdded(Vec<EntityHandle>),
     LoadLevelChanged(SceneLoadLevel, SceneLoadLevel),
-    Spawn(Vec<Box<dyn Archetype>>),
+    Spawn(Vec<(EntityHandle, Box<dyn Archetype>)>),
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
@@ -71,7 +71,7 @@ impl Scene {
         self.event_queue.last()
     }
 
-    pub fn spawn(&mut self, instance_data: Vec<Box<dyn Archetype>>) {
+    pub fn spawn(&mut self, instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>) {
         self.dirty = true;
         self.event_queue.push(SceneEvent::Spawn(instance_data));
         if self.load_level < SceneLoadLevel::GPU {
@@ -140,15 +140,21 @@ impl Scene {
         scene.add_entity(box_entity);
         scene.add_entity(fox_entity);
         scene.spawn(vec![
-            Box::new(APosition {
-                position: cgmath::Matrix4::<f32>::identity().into(),
-            }),
-            Box::new(APosition {
-                position: (cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
-                    1.5, 0.0, 0.0,
-                )) * cgmath::Matrix4::<f32>::from_scale(0.05))
-                .into(),
-            }),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::identity().into(),
+                }),
+            ),
+            (
+                EntityHandle(1),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
+                        1.5, 0.0, 0.0,
+                    )) * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
         ]);
         Ok(scene)
     }
@@ -181,9 +187,12 @@ impl Scene {
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
-        scene.spawn(vec![Box::new(APosition {
-            position: cgmath::Matrix4::<f32>::identity().into(),
-        })]);
+        scene.spawn(vec![(
+            EntityHandle(0),
+            Box::new(APosition {
+                position: cgmath::Matrix4::<f32>::identity().into(),
+            }),
+        )]);
         Ok(scene)
     }
     #[cfg(test)]
@@ -212,9 +221,12 @@ impl Scene {
 
         let mut scene = Scene::new();
         scene.add_entity(fox_entity);
-        scene.spawn(vec![Box::new(APosition {
-            position: cgmath::Matrix4::<f32>::from_scale(0.05).into(),
-        })]);
+        scene.spawn(vec![(
+            EntityHandle(0),
+            Box::new(APosition {
+                position: cgmath::Matrix4::<f32>::from_scale(0.05).into(),
+            }),
+        )]);
         Ok(scene)
     }
 }
