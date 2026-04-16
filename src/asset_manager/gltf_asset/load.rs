@@ -1,16 +1,15 @@
 use std::{
     error::Error,
-    fs::{self, DirEntry, ReadDir},
+    fs::{DirEntry, ReadDir, read_dir},
     path::PathBuf,
 };
 
 use base64::Engine;
 use gltf::Gltf;
 
-use crate::asset_manager::gltf_assets::gltf_loader::{BinarySource, GltfLoadError};
-pub struct GltfLoader;
+use crate::asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError};
 
-impl GltfLoader {
+impl GltfAsset {
     fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         use base64::prelude::BASE64_STANDARD;
         // Uses standard lib base64 via experimental feature or stable crate if you choose
@@ -39,7 +38,9 @@ impl GltfLoader {
         Ok(decoded)
     }
 
-    pub fn load_binary_data_from_source(source: &BinarySource) -> Result<Vec<u8>, GltfLoadError> {
+    pub(super) fn load_binary_data_from_source(
+        source: &BinarySource,
+    ) -> Result<Vec<u8>, GltfLoadError> {
         match source {
             BinarySource::BinFile(path) => {
                 return std::fs::read(path).map_err(|e| GltfLoadError::IOErr(e.kind()));
@@ -51,12 +52,13 @@ impl GltfLoader {
                 for buffer in gltf.buffers() {
                     let data = match buffer.source() {
                         gltf::buffer::Source::Bin => return Err(GltfLoadError::GltfNeedsBinFile),
-                        gltf::buffer::Source::Uri(uri) => GltfLoader::decode_gltf_data_uri(uri)
-                            .map_err(|_| {
+                        gltf::buffer::Source::Uri(uri) => {
+                            Self::decode_gltf_data_uri(uri).map_err(|_| {
                                 GltfLoadError::BadFile(
                                     path.to_str().unwrap_or("Provided GLTF File").to_string(),
                                 )
-                            }),
+                            })
+                        }
                     };
                     bin_data.extend(data?);
                 }
@@ -86,7 +88,7 @@ impl GltfLoader {
         Ok((gltf_res, BinarySource::GLTFBuffers(gltf_file)))
     }
 
-    pub fn load_gltf_from_resource(
+    pub(super) fn load_gltf_from_resource(
         dir_name: &str,
     ) -> Result<(gltf::Gltf, BinarySource), GltfLoadError> {
         let dir_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -99,8 +101,7 @@ impl GltfLoader {
         let mut dot_gltf: Option<PathBuf> = None;
         let mut dot_glb: Option<PathBuf> = None;
         let mut dot_bin: Option<PathBuf> = None;
-        let entries: ReadDir =
-            fs::read_dir(&dir_path).map_err(|e| GltfLoadError::IOErr(e.kind()))?;
+        let entries: ReadDir = read_dir(&dir_path).map_err(|e| GltfLoadError::IOErr(e.kind()))?;
 
         for maybe_entry in entries {
             let entry: DirEntry = maybe_entry.map_err(|_| GltfLoadError::InvalidFileError)?;

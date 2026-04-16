@@ -214,7 +214,7 @@ impl AssetManager {
 mod asset_manager_tests {
     use crate::asset_manager::{
         asset_manager::{AssetManager, AssetResidency},
-        gltf_assets::GltfAsset,
+        gltf_asset::GltfAsset,
     };
 
     #[test]

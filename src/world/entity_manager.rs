@@ -288,7 +288,7 @@ mod sparse_set_tests {
 #[cfg(test)]
 mod entity_manager_tests {
     use crate::{
-        asset_manager::{asset_manager::AssetManager, gltf_assets::GltfAsset},
+        asset_manager::{asset_manager::AssetManager, gltf_asset::GltfAsset},
         world::{
             components::{MeshCollectionComponent, MeshCollectionDescriptor},
             entity_manager::EntityManager,

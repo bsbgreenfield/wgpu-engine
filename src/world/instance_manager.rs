@@ -32,12 +32,7 @@ pub trait ArchetypeTable {
 
     fn new() -> Self;
 
-    fn insert(
-        &mut self,
-        data: Self::A,
-        globla_id: u16,
-        entity_handle: EntityHandle,
-    ) -> InstanceHandle;
+    fn insert(&mut self, data: Self::A, entity_handle: EntityHandle) -> InstanceHandle;
 
     fn remove(&mut self, handle: InstanceHandle);
 
@@ -58,8 +53,7 @@ impl Archetype for APosition {
         manager: &mut InstanceManager,
         entity_handle: EntityHandle,
     ) -> InstanceHandle {
-        let global_id = manager.gen_global_id();
-        manager.pos.insert(*self, global_id, entity_handle)
+        manager.pos.insert(*self, entity_handle)
     }
 }
 
@@ -92,14 +86,9 @@ impl ArchetypeTable for APositionTable {
         }
     }
 
-    fn insert(
-        &mut self,
-        data: APosition,
-        global_id: u16,
-        entity_handle: EntityHandle,
-    ) -> InstanceHandle {
+    fn insert(&mut self, data: APosition, entity_handle: EntityHandle) -> InstanceHandle {
         self.positions.push(data.position);
-        self.arena.insert(global_id, entity_handle)
+        self.arena.insert(entity_handle)
     }
 
     fn remove(&mut self, handle: InstanceHandle) {
@@ -135,7 +124,6 @@ pub struct InstanceHandle {
 }
 
 pub struct InstanceManager {
-    free_ids: Vec<u16>,
     pub(super) next_id: u16,
     entity_to_instance: HashMap<EntityHandle, Vec<InstanceHandle>>,
     pub pos: APositionTable,
@@ -157,18 +145,8 @@ impl InstanceManager {
     pub(super) fn new() -> Self {
         Self {
             next_id: 0,
-            free_ids: Vec::new(),
             entity_to_instance: HashMap::new(),
             pos: APositionTable::new(),
-        }
-    }
-
-    fn gen_global_id(&mut self) -> u16 {
-        if let Some(free) = self.free_ids.pop() {
-            free
-        } else {
-            self.next_id += 1;
-            self.next_id - 1
         }
     }
 

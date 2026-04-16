@@ -10,9 +10,8 @@ pub mod components;
 pub mod entity_manager;
 mod index_arena;
 pub mod instance_manager;
-mod load_queue;
+pub(super) mod load_queue;
 pub mod scene;
-pub mod tests;
 pub mod world;
 #[derive(Debug)]
 pub enum WorldInitError {

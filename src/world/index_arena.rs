@@ -26,7 +26,7 @@ impl<A: Archetype + ArchetypeIdent> InstanceArenaNew<A> {
             _t: PhantomData,
         }
     }
-    pub fn insert(&mut self, global_id: u16, entity_handle: EntityHandle) -> InstanceHandle {
+    pub fn insert(&mut self, entity_handle: EntityHandle) -> InstanceHandle {
         // select an open slot
         let slot_index = if let Some(free) = self.free_list.pop() {
             free

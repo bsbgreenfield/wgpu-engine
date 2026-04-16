@@ -1,15 +1,20 @@
-use std::ops::Range;
+use std::{any::TypeId, ops::Range};
 
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager::gltf_assets::{ModelBuilderError, mesh::Primitive},
-    util::types::PrimitiveVerticesData,
+    asset_manager::{ModelBuilderError, Primitive, gltf_asset::GltfValidationError},
+    util::types::{ModelVertex, PrimitiveVerticesData},
 };
 
-#[derive(Debug)]
-pub enum GltfValidationError {
-    NoView,
+impl Primitive {
+    pub fn new<V: ModelVertex>(vertices: Range<u32>, indices: Option<Range<u32>>) -> Self {
+        Self {
+            vertices,
+            indices,
+            vertex_type: TypeId::of::<V>(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -127,7 +132,7 @@ impl Primitive {
 
     /// get the indices within the binary that contain this primitives index data
     /// TODO: Assert that this is actually an indices accessor
-    pub fn get_index_range(
+    pub(super) fn get_index_range(
         maybe_accessor: Option<&GLTFDataAccessor>,
         buffer_offsets: &Vec<usize>,
     ) -> Result<Option<Range<usize>>, GltfValidationError> {
