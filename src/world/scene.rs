@@ -1,12 +1,26 @@
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
-use crate::world::{entity_manager::EntityHandle, instance_manager::Archetype};
+use crate::{
+    asset_manager::asset_manager::AssetLoadResult,
+    world::{entity_manager::EntityHandle, instance_manager::Archetype},
+};
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum SceneLoadLevel {
     NotLoaded,
     CPU,
     GPU,
+}
+
+impl From<&AssetLoadResult> for SceneLoadLevel {
+    fn from(value: &AssetLoadResult) -> Self {
+        match value {
+            AssetLoadResult::PendingCPU => SceneLoadLevel::NotLoaded,
+            AssetLoadResult::LoadedCPU => SceneLoadLevel::CPU,
+            AssetLoadResult::PendingGPU => SceneLoadLevel::CPU,
+            AssetLoadResult::LoadedGPU(_) => SceneLoadLevel::GPU,
+        }
+    }
 }
 
 pub enum SceneEvent {
@@ -27,6 +41,18 @@ pub struct Scene {
 }
 
 impl Scene {
+    #[cfg(test)]
+    pub fn new_with_id(id: usize) -> Self {
+        Self {
+            scene_id: SceneId(id),
+            entitites: vec![],
+            dirty: false,
+            spawn_count: 0,
+            load_level: SceneLoadLevel::NotLoaded,
+            event_queue: Vec::new(),
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             scene_id: SceneId(0), // TODO: scene ids to keep track of loads, querys, etc??
@@ -36,6 +62,9 @@ impl Scene {
             load_level: SceneLoadLevel::NotLoaded,
             event_queue: Vec::new(),
         }
+    }
+    pub fn mark_clean(&mut self) {
+        self.dirty = false;
     }
 
     pub fn current_event(&self) -> Option<&SceneEvent> {
@@ -55,7 +84,7 @@ impl Scene {
         self.entitites.push(entity);
     }
 
-    pub fn set_load_level(&mut self, level: SceneLoadLevel) {
+    fn set_load_level(&mut self, level: SceneLoadLevel) {
         self.event_queue
             .push(SceneEvent::LoadLevelChanged(self.load_level, level));
         self.load_level = level;
@@ -69,11 +98,18 @@ impl Scene {
     pub fn pop_event(&mut self) -> Option<SceneEvent> {
         self.event_queue.pop()
     }
-    #[cfg(test)]
-    pub fn fox_box(world: &mut World) -> Result<Self, WorldInitError> {
+
+    pub fn fox_box(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        use cgmath::SquareMatrix;
+
         use crate::{
             asset_manager::gltf_assets::GltfAsset,
-            world::components::{MeshCollectionComponent, MeshCollectionDescriptor},
+            world::{
+                components::{MeshCollectionComponent, MeshCollectionDescriptor},
+                instance_manager::APosition,
+            },
         };
 
         let box_asset = world.asset_manager.register_asset::<GltfAsset>("box")?; // asset
@@ -99,21 +135,34 @@ impl Scene {
         world
             .entity_manager
             .add_mesh_collection_for_entity(fox_entity, fox_mesh); // mesh
-        world
-            .entity_manager
-            .add_physical_position_for_entity(box_entity); // position
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
         scene.add_entity(fox_entity);
+        scene.spawn(vec![
+            Box::new(APosition {
+                position: cgmath::Matrix4::<f32>::identity().into(),
+            }),
+            Box::new(APosition {
+                position: (cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
+                    1.5, 0.0, 0.0,
+                )) * cgmath::Matrix4::<f32>::from_scale(0.05))
+                .into(),
+            }),
+        ]);
         Ok(scene)
     }
 
     #[cfg(test)]
     pub fn box_scene(world: &mut World) -> Result<Self, WorldInitError> {
+        use cgmath::SquareMatrix;
+
         use crate::{
             asset_manager::gltf_assets::GltfAsset,
-            world::components::{MeshCollectionComponent, MeshCollectionDescriptor},
+            world::{
+                components::{MeshCollectionComponent, MeshCollectionDescriptor},
+                instance_manager::APosition,
+            },
         };
 
         let box_asset = world.asset_manager.register_asset::<GltfAsset>("box")?; // asset
@@ -132,13 +181,19 @@ impl Scene {
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
+        scene.spawn(vec![Box::new(APosition {
+            position: cgmath::Matrix4::<f32>::identity().into(),
+        })]);
         Ok(scene)
     }
     #[cfg(test)]
     pub fn fox_scene(world: &mut World) -> Result<Self, WorldInitError> {
         use crate::{
             asset_manager::gltf_assets::GltfAsset,
-            world::components::{MeshCollectionComponent, MeshCollectionDescriptor},
+            world::{
+                components::{MeshCollectionComponent, MeshCollectionDescriptor},
+                instance_manager::APosition,
+            },
         };
 
         let fox_asset = world.asset_manager.register_asset::<GltfAsset>("fox")?; // asset
@@ -157,6 +212,9 @@ impl Scene {
 
         let mut scene = Scene::new();
         scene.add_entity(fox_entity);
+        scene.spawn(vec![Box::new(APosition {
+            position: cgmath::Matrix4::<f32>::from_scale(0.05).into(),
+        })]);
         Ok(scene)
     }
 }

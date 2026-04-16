@@ -1,6 +1,4 @@
-use std::ops::{Deref, Range};
-
-use cgmath::{SquareMatrix, Vector3};
+use std::ops::Range;
 
 use super::scene::Scene;
 use crate::{
@@ -8,17 +6,14 @@ use crate::{
         app::App,
         renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
     },
-    asset_manager::{
-        AssetHandle, LoadedAsset, asset_manager::AssetManager, gltf_assets::GltfAsset,
-    },
+    asset_manager::{AssetHandle, LoadedAsset, asset_manager::AssetManager},
     world::{
         WorldInitError, WorldUpdateError,
         camera::Camera,
-        components::{MeshCollectionComponent, MeshCollectionDescriptor},
         entity_manager::{EntityHandle, EntityManager},
-        instance_manager::{APosition, Archetype, InstanceHandle, InstanceManager},
+        instance_manager::{Archetype, InstanceHandle, InstanceManager},
         load_queue::EntityLoadQueue,
-        scene::{SceneEvent, SceneLoadLevel},
+        scene::SceneEvent,
     },
 };
 
@@ -71,6 +66,7 @@ impl RenderGroup {
     }
 }
 
+#[derive(Debug)]
 pub enum WorldUpdateDelta {
     EntityDidSpawn(InstanceHandle),
     EntityDidLoad(EntityHandle),
@@ -81,9 +77,9 @@ impl WorldUpdateDelta {
     pub fn gen_bytecode<'frame>(
         &self,
         world: &'frame World,
-    ) -> (Vec<VMValue<'frame>>, Vec<Instruction>) {
-        let mut constants = Vec::<VMValue<'frame>>::new();
-        let mut instructions = Vec::<Instruction>::new();
+        constants: &mut Vec<VMValue<'frame>>,
+        instructions: &mut Vec<Instruction>,
+    ) {
         match self {
             Self::AssetDidLoad(asset_handle) => {
                 let la = world
@@ -122,7 +118,6 @@ impl WorldUpdateDelta {
                 //TODO spawn based on user input
             }
         }
-        (constants, instructions)
     }
 }
 
@@ -177,8 +172,6 @@ impl World {
         if self.scene.is_dirty() {
             self.handle_scene_event(&mut deltas)?; // TODO: allow for multiple scenes
         }
-        self.load_queue.dequeue_completed();
-
         // TODO: emit EntityDidSpawn event when necessary
 
         Ok(deltas)
@@ -188,10 +181,8 @@ impl World {
         &mut self,
         deltas: &mut Vec<WorldUpdateDelta>,
     ) -> Result<bool, WorldUpdateError> {
-        deltas.extend(
-            self.load_queue
-                .poll_scene_job(self.scene.scene_id, &mut self.asset_manager)?,
-        );
+        self.load_queue
+            .poll_scene_job(self.scene.scene_id, &mut self.asset_manager, deltas)?;
         if self
             .load_queue
             .completed_queue
@@ -228,7 +219,7 @@ impl World {
                             }
                         } else if new > old {
                             self.load_queue
-                                .new_scene_job(&self.scene, &self.entity_manager);
+                                .new_scene_job(&self.scene, &self.entity_manager)?;
                             if !self.try_handle_scene_load(deltas)? {
                                 break;
                             }
@@ -248,13 +239,21 @@ impl World {
                                 .iter()
                                 .zip(instance_data.drain(..))
                             {
-                                World::spawn(&mut self.instance_manager, *entity, archetype);
+                                let instance_handle =
+                                    World::spawn(&mut self.instance_manager, *entity, archetype)?;
+                                deltas.push(WorldUpdateDelta::EntityDidSpawn(
+                                    instance_handle[0].clone(), // this is [0] because spawning
+                                                                // multiple instances is not yet
+                                                                // supported
+                                ));
                             }
+                            self.load_queue.dequeue_spawned_scene(self.scene.scene_id);
                         }
                         _ => unreachable!(),
                     },
                 }
             } else {
+                self.scene.mark_clean();
                 break;
             }
         }

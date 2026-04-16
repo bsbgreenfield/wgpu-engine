@@ -196,6 +196,9 @@ impl Renderer {
         // COPY GLOBAL TRANSFORMS
         {
             let global_transforms = collector.global_transforms;
+            if global_transforms.is_empty() {
+                return;
+            }
             if let Some(mut buffer_view) = queue.write_buffer_with(
                 &self.global_transform_buffer,
                 0,

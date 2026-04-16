@@ -65,22 +65,6 @@ pub enum AssetLoadResult {
     PendingCPU,
 }
 
-impl AssetLoadResult {
-    pub fn is_greater_than_or_equal_to(&self, load_level: SceneLoadLevel) -> bool {
-        match load_level {
-            SceneLoadLevel::NotLoaded => true,
-            SceneLoadLevel::CPU => match self {
-                Self::PendingCPU => false,
-                _ => true,
-            },
-            SceneLoadLevel::GPU => match self {
-                Self::LoadedGPU(_) => true,
-                _ => false,
-            },
-        }
-    }
-}
-
 pub struct AssetManager {
     registered_assets: HashMap<AssetHandle, Box<dyn Asset>>,
     loaded_assets: Vec<LoadedAsset>,

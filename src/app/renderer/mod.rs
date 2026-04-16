@@ -1,5 +1,7 @@
 use std::{collections::HashMap, error::Error, fmt::Display, ops::Range};
 
+#[cfg(test)]
+use crate::world::scene::SceneLoadLevel;
 use crate::{
     app::renderer::gpu_allocator::{
         GPUAllocator, UploadMeshJob, VertexArenaError, vertex_arena::GPUArena,
@@ -29,6 +31,16 @@ pub enum RenderUpdateDelta {
 pub struct GPUAllocationHandle {
     global_allocation_id: u32,
     pub asset_handle: AssetHandle,
+}
+
+#[cfg(test)]
+impl GPUAllocationHandle {
+    pub fn mock(global_allocation_id: u32, asset_handle: AssetHandle) -> Self {
+        Self {
+            global_allocation_id,
+            asset_handle,
+        }
+    }
 }
 
 //#[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]

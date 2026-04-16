@@ -49,9 +49,7 @@ mod integration_tests {
         let mut instructions = Vec::<Instruction>::new();
 
         for delta in deltas.iter() {
-            let (new_constants, new_instructions) = delta.gen_bytecode(world);
-            constants.extend(new_constants);
-            instructions.extend(new_instructions);
+            delta.gen_bytecode(world, &mut constants, &mut instructions);
         }
 
         (constants, instructions)
@@ -101,12 +99,11 @@ mod integration_tests {
         let asset_manager = AssetManager::new();
         let entity_manager = EntityManager::new();
         let mut world = World::new(1.0, asset_manager, entity_manager, &config.device).unwrap();
-        let mut scene = match test_case {
+        let scene = match test_case {
             TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
             TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),
             TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
         };
-        scene.set_load_level(SceneLoadLevel::GPU);
         world.add_scene(scene);
         app.world = Some(world);
         app.app_config = Some(config);

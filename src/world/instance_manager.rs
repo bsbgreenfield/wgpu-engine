@@ -78,9 +78,11 @@ impl ArchetypeTable for APositionTable {
     type A = APosition;
 
     fn collect<'a>(&'a self, collector: &mut InstanceDataCollector<'a>, offset: u16) {
-        collector.offset_map.a_postion_offset = offset;
-        collector.gt_len += self.positions.len();
-        collector.global_transforms.push(&self.positions[..]);
+        if !self.positions.is_empty() {
+            collector.gt_len += self.positions.len();
+            collector.global_transforms.push(&self.positions[..]);
+            collector.offset_map.a_postion_offset = offset;
+        }
     }
 
     fn new() -> Self {

@@ -19,24 +19,20 @@ pub(super) struct SceneLoadJob {
 }
 
 pub(super) struct EntityLoadJob {
-    state: LoadJobState,
+    pub(super) ref_count: usize,
     pub(super) asset_load_jobs: Vec<AssetHandle>,
 }
 
-#[derive(Debug)]
-enum LoadJobState {
-    Done,
-    Pending,
+pub(super) struct AssetLoadJob {
+    pub(super) current_load_level: SceneLoadLevel,
+    pub(super) max_load_level: SceneLoadLevel,
+    pub(super) ref_count: usize,
 }
-struct AssetLoadJob {
-    state: LoadJobState,
-    ref_count: usize,
-}
-pub(super) struct EntityLoadQueue {
+pub struct EntityLoadQueue {
     pub(super) completed_queue: HashMap<SceneId, SceneLoadJob>,
-    scene_jobs: HashMap<SceneId, SceneLoadJob>,
-    entity_jobs: HashMap<EntityHandle, EntityLoadJob>,
-    asset_jobs: HashMap<AssetHandle, AssetLoadJob>,
+    pub(super) scene_jobs: HashMap<SceneId, SceneLoadJob>,
+    pub(super) entity_jobs: HashMap<EntityHandle, EntityLoadJob>,
+    pub(super) asset_jobs: HashMap<AssetHandle, AssetLoadJob>,
 }
 
 impl EntityLoadQueue {
@@ -53,13 +49,26 @@ impl EntityLoadQueue {
         self.scene_jobs.get(&scene_id).is_some()
     }
 
-    pub(super) fn dequeue_completed(&mut self) {
-        for (_, job) in self.completed_queue.drain() {
-            for asset in job.asset_load_jobs {
-                let asset_job = self.asset_jobs.get_mut(&asset).unwrap();
-                asset_job.ref_count -= 1;
-                if asset_job.ref_count == 0 {
-                    self.asset_jobs.remove(&asset);
+    pub(super) fn dequeue_spawned_scene(&mut self, scene_id: SceneId) {
+        let Some(scene_job) = self.completed_queue.remove(&scene_id) else {
+            return;
+        };
+
+        for entity in scene_job.entity_load_jobs {
+            let entity_ref_count = {
+                let job = self.entity_jobs.get_mut(&entity).unwrap();
+                job.ref_count -= 1;
+                job.ref_count
+            };
+
+            if entity_ref_count == 0 {
+                let entity_job = self.entity_jobs.remove(&entity).unwrap();
+                for asset in entity_job.asset_load_jobs {
+                    let asset_job = self.asset_jobs.get_mut(&asset).unwrap();
+                    asset_job.ref_count -= 1;
+                    if asset_job.ref_count == 0 {
+                        self.asset_jobs.remove(&asset);
+                    }
                 }
             }
         }
@@ -72,7 +81,11 @@ impl EntityLoadQueue {
     ) -> Result<(), WorldUpdateError> {
         let entities = scene.entitites.clone();
         for entity in entities.iter() {
-            self.new_entity_load(entity.clone(), &entity_manager.rbcs_of(*entity))?;
+            self.new_entity_load(
+                entity.clone(),
+                &entity_manager.rbcs_of(*entity),
+                scene.load_level,
+            )?;
         }
         self.scene_jobs.insert(
             scene.scene_id,
@@ -85,15 +98,20 @@ impl EntityLoadQueue {
         Ok(())
     }
 
-    pub(super) fn new_entity_load(
+    fn new_entity_load(
         &mut self,
         entity: EntityHandle,
         assets: &HashSet<AssetHandle>,
+        load_level: SceneLoadLevel,
     ) -> Result<&EntityLoadJob, WorldUpdateError> {
+        if let Some(existing) = self.entity_jobs.get_mut(&entity) {
+            existing.ref_count += 1;
+            return Ok(self.entity_jobs.get(&entity).unwrap());
+        }
         let s = self.entity_jobs.insert(
             entity,
             EntityLoadJob {
-                state: LoadJobState::Pending,
+                ref_count: 1,
                 asset_load_jobs: assets.iter().map(|a| a.to_owned()).collect(),
             },
         );
@@ -103,16 +121,20 @@ impl EntityLoadQueue {
         }
 
         for asset in assets {
-            if self.asset_jobs.get(asset).is_none() {
+            if let Some(asset_job) = self.asset_jobs.get_mut(asset) {
+                if load_level > asset_job.max_load_level {
+                    asset_job.max_load_level = load_level;
+                }
+                asset_job.ref_count += 1;
+            } else {
                 self.asset_jobs.insert(
                     *asset,
                     AssetLoadJob {
                         ref_count: 1,
-                        state: LoadJobState::Pending,
+                        max_load_level: load_level,
+                        current_load_level: SceneLoadLevel::NotLoaded,
                     },
                 );
-            } else {
-                self.asset_jobs.get_mut(asset).unwrap().ref_count += 1;
             }
         }
         Ok(self.entity_jobs.get(&entity).as_ref().unwrap())
@@ -122,14 +144,14 @@ impl EntityLoadQueue {
         &mut self,
         scene_id: SceneId,
         manager: &mut AssetManager,
-    ) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
-        let mut deltas = Vec::<WorldUpdateDelta>::new();
+        deltas: &mut Vec<WorldUpdateDelta>,
+    ) -> Result<(), WorldUpdateError> {
         let mut complete = true;
-        let load_level = self.scene_jobs[&scene_id].load_level;
         let entity_count = self.scene_jobs[&scene_id].entity_load_jobs.len();
         for i in 0..entity_count {
+            let load_level = self.scene_jobs[&scene_id].load_level;
             let entity = self.scene_jobs[&scene_id].entity_load_jobs[i];
-            if !self.poll_entity(entity, manager, load_level, &mut deltas)? {
+            if !self.poll_entity(entity, manager, deltas, load_level)? {
                 complete = false;
             }
         }
@@ -138,82 +160,52 @@ impl EntityLoadQueue {
             self.completed_queue
                 .insert(completed_scene_job.0, completed_scene_job.1);
         }
-        Ok(deltas)
+        Ok(())
     }
-
-    // pub(super) fn poll_scene_jobs(
-    //     &mut self,
-    //     manager: &mut AssetManager,
-    // ) -> Result<(), WorldUpdateError> {
-    //     let mut deltas = Vec::<WorldUpdateDelta>::new();
-    //     let scenes: Vec<SceneId> = self.scene_jobs.keys().cloned().collect();
-    //     for scene in scenes {
-    //         let mut complete = true;
-    //         let load_level = self.scene_jobs[&scene].load_level;
-    //         let entity_count = self.scene_jobs[&scene].entity_load_jobs.len();
-    //         for i in 0..entity_count {
-    //             let entity = self.scene_jobs[&scene].entity_load_jobs[i];
-    //             if !self.poll_entity(entity, manager, load_level, &mut deltas)? {
-    //                 complete = false;
-    //             }
-    //         }
-    //         if complete {
-    //             let completed_scene_job = self.scene_jobs.remove_entry(&scene).unwrap();
-    //             self.completed_queue
-    //                 .insert(completed_scene_job.0, completed_scene_job.1);
-    //         }
-    //     }
-
-    //     todo!()
-    // }
 
     fn poll_entity(
         &mut self,
         entity_handle: EntityHandle,
         manager: &mut AssetManager,
-        load_level: SceneLoadLevel,
         deltas: &mut Vec<WorldUpdateDelta>,
+        load_level: SceneLoadLevel,
     ) -> Result<bool, WorldUpdateError> {
-        if self.poll_assets_for_job(entity_handle, manager, load_level, deltas)? {
+        if self.poll_assets_for_job(entity_handle, manager, deltas, load_level)? {
             return Ok(true);
         } else {
             return Ok(false);
         }
     }
 
-    pub(super) fn poll_assets_for_job(
+    fn poll_assets_for_job(
         &mut self,
         entity: EntityHandle,
         asset_manager: &mut AssetManager,
-        load_level: SceneLoadLevel,
         deltas: &mut Vec<WorldUpdateDelta>,
+        load_level: SceneLoadLevel,
     ) -> Result<bool, WorldUpdateError> {
         let job = self.entity_jobs.get(&entity).unwrap();
         let mut counter = job.asset_load_jobs.len();
         for asset in job.asset_load_jobs.iter() {
-            match self.asset_jobs.get_mut(asset).unwrap().state {
-                LoadJobState::Done => {
+            let asset_job = self.asset_jobs.get_mut(asset).unwrap();
+            if asset_job.current_load_level >= asset_job.max_load_level {
+                counter -= 1;
+                continue;
+            } else {
+                let load_result = asset_manager
+                    .set_minumum_load_level(*asset, asset_job.max_load_level)
+                    .unwrap();
+                if SceneLoadLevel::from(&load_result) >= load_level {
                     counter -= 1;
-                    continue;
-                }
-                LoadJobState::Pending => {
-                    let asset_load_result = asset_manager
-                        .set_minumum_load_level(*asset, load_level)
-                        .unwrap();
-
-                    if asset_load_result.is_greater_than_or_equal_to(load_level) {
-                        let asset_job = self.asset_jobs.get_mut(asset).unwrap();
-                        asset_job.state = LoadJobState::Done;
-                        counter -= 1;
-                    } else {
-                        match asset_load_result {
-                            AssetLoadResult::PendingGPU => {
-                                deltas.push(WorldUpdateDelta::AssetDidLoad(*asset));
-                            }
-                            _ => {}
+                } else {
+                    match load_result {
+                        AssetLoadResult::PendingGPU => {
+                            deltas.push(WorldUpdateDelta::AssetDidLoad(*asset));
                         }
+                        _ => {}
                     }
                 }
+                asset_job.current_load_level = SceneLoadLevel::from(&load_result);
             }
         }
         Ok(counter == 0)

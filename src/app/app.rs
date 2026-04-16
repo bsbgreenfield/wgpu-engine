@@ -12,6 +12,7 @@ use crate::{
         WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager, Renderables},
         instance_manager::Archetype,
+        scene::Scene,
         world::{World, WorldUpdateDelta},
     },
 };
@@ -59,10 +60,11 @@ impl App<'_> {
         let mut constants = Vec::<VMValue<'frame>>::new();
         let mut instructions = Vec::<Instruction>::new();
         for delta in deltas.iter() {
-            let (new_constants, new_instructions) =
-                delta.gen_bytecode(self.world.as_ref().unwrap());
-            constants.extend(new_constants);
-            instructions.extend(new_instructions);
+            delta.gen_bytecode(
+                self.world.as_ref().unwrap(),
+                &mut constants,
+                &mut instructions,
+            );
         }
         let render_deltas = self.renderer.as_mut().unwrap().update(
             constants,
@@ -137,6 +139,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             if self.world.is_none() {
                 let asset_manager = AssetManager::new();
                 let entity_manager = EntityManager::new();
+
                 self.world = Some(
                     World::new(
                         aspect_ratio,
@@ -146,6 +149,8 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                     )
                     .unwrap(),
                 );
+                let scene = Scene::fox_box(self.world.as_mut().unwrap()).unwrap();
+                self.world.as_mut().unwrap().add_scene(scene);
                 //  #[cfg(test)]
                 //  {
                 //      let mut scene = Scene::fox_box(&mut self.world.as_mut().unwrap()).unwrap();
