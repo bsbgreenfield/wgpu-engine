@@ -1,8 +1,15 @@
-use std::{any::TypeId, fmt::Display, ops::Range, path::PathBuf};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    fmt::Display,
+    ops::Range,
+    path::PathBuf,
+};
 
 use crate::{
     asset_manager::{Asset, LoadedAsset, Mesh, ModelBuilderError, asset_manager::AssetResidency},
     util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
+    world::world::{DrawSet, RenderView},
 };
 
 mod build;
@@ -61,7 +68,6 @@ pub struct GltfLoadResult {
     pub pnujw_vertices: Vec<PNUJWVertex>,
     pub pnu_vertices: Vec<PNUVertex>,
     pub indices: Option<Vec<VIndex>>,
-    pub local_transforms: Vec<LocalTransform>,
     pub mesh_data: Vec<GltfMeshData>,
 }
 #[derive(Debug)]
@@ -111,8 +117,33 @@ pub enum GltfValidationError {
 #[derive(Debug)]
 pub struct GltfMeshData {
     meshes: Vec<Mesh>,
+    local_transforms: Vec<LocalTransform> 
 }
 impl LoadedAsset {
+    pub fn render_view(&self) -> RenderView {
+        let mut pnu_ranges = Vec::new();
+        let mut pnujw_ranges = Vec::new();
+
+        for mesh_data in self.gltf_mesh_data.mesh_data.iter() {
+            for mesh in mesh_data.meshes.iter() {
+                let lt = mesh_data.local_transforms.get(k)
+                for primitive in mesh.primitives.iter() {
+                    if primitive.vertex_type == TypeId::of::<PNUVertex>() {
+                        pnu_ranges.push(primitive.vertices.clone());
+                    } else if primitive.vertex_type == TypeId::of::<PNUVertex>() {
+                        pnujw_ranges.push(primitive.vertices.clone());
+                    } else {
+                        panic!("vertex type not specified {:?}", primitive.vertex_type);
+                    }
+                }
+            }
+        }
+
+        todo!()
+    }
+
+    // TODO: this code assumes that there is only one primitive per vertex type. 
+    // We need to ensure this is the case by panicking otherwise, or develope a new system
     pub fn mesh_ids_and_alloc_ranges_of<V: ModelVertex>(
         &self,
     ) -> Option<(Vec<u32>, Vec<Range<u32>>, Option<Vec<Range<u32>>>)> {

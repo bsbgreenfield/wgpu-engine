@@ -122,7 +122,7 @@ when rendering, for each pipeline
 ## Allocating an asset in the GPU
 The payload needed for a gpu allocation right now is the "LoadedAsset"
 ```rust
-    pub struct LoadedAsset {
+    pub struct XXLoadedAsset {
         pub handle: AssetHandle,
         pub gltf_mesh_data: GltfLoadResult,
     }
@@ -266,3 +266,58 @@ instance indices/ranges, this is just a matter of the arena resolve() algorithm
 9. Next frame, poll entity jobs. For each completed entity job, add entity handle of the completed entity job to completed queue, emit an EntityDidSpawnEvent
 10. dequeue the completed entity load jobs, and call World::spawn(), emit EntityDidSpawn 
 11. in the renderer,  create a render group wich represents the instnace of the entity
+
+
+
+currently im when i process a gltf file I store the mesh data PER MODEL (root node), but when i store the data in the loaded asset, i flatten out the list of meshes into a single vec and then allocate based off of that.
+
+This works if there is only a single model, but if there are multiple models, then the LOCAL TRANSFORMS thhat apply to the list of meshes will be unique to that model, even if the meshes themselves are not, or even if the order of the meshes is the same. 
+
+Say we have two models in a single gltf file, and their meshes, as we traverse the node tree, end up  being
+
+{1, 2, 3} and {1, 2, 3} respectively. and the local transforms for the meshes are
+
+{x, y, z} {x, t, f}
+
+So this means the the meshes are the same, but they are arranged differently, so maybe a guy holding a sword above his head and a guy holding a sword below his head. The meshes also may have different textures or materials applied alond with the different transforms.
+
+When we allocated into the local transform buffer, we obviously need to allocate for at least every unique local transform. It would be an optimization for later to try and dedepulicate like transforms, but really its probably safe to assume that each model can have a unique allocation for the set of transforms because they will probably in fact be unique.
+
+
+So in the local transform buffer we need 
+
+[x, y, z, x, t, f]
+
+for the allocation. Now the difficulty is that this is all one allocation , so it has a single gpu allocation handle. and as the mesh IDS themselves are the same between the two models, we cant use them to index into the buffer.
+
+I want to keep the RenderView as a representation of a single allocation in a for a single pipeline, so the rendere view wouldlook like 
+```rust
+
+RenderView {
+    gpu_handle: 0,
+    pnujw_draws: DrawSet {
+            mesh_ids: [ 1, 2, 3, 1, 2, 3 ],
+            primitive_ranges: [r1, r2, r3, r1, r2, r3],
+            index_ranges: [i1, i2, i3, i1, i2, i3],
+    }
+    ///pnu draws not included
+}
+```
+
+So two problems here: 
+1. primitive ranges and index ranges are unecessarily duplicated. There should be one entry PER mesh id.
+SOLUTION: there should only be one primitive range per mesh index. We index into the primitive range with the mesh id
+ so if we have meshes [1, 2, 3, 1, 4], prim ranges should be [r1, r2, r3, r4]
+
+2. there are no local transform indices
+SOLUTION: when rendering, we assume that each draw item is arranged in the same order that the local transforms were placed in. Therefore, all we need, is for each draw entry, we store a LT_OFFSET, which is the index of the first local transorm for the current allocation. Then
+
+```rust
+for each (i, draw ) in draw_entry.1.iter().enumurate() {
+    render_pass.set_immediates(0, bytemuck::cast_slice(&[draw_entry.lt_offset + i]));
+    render_pass.draw();
+}
+
+```
+
+

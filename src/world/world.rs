@@ -19,6 +19,7 @@ use crate::{
 
 pub struct DrawSet {
     pub mesh_ids: Vec<u32>,
+    local_transform_indices: Vec<u32>,
     pub primtitive_ranges: Vec<Range<u32>>,
     pub index_ranges: Option<Vec<Range<u32>>>,
 }

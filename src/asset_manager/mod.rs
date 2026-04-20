@@ -10,7 +10,7 @@ use crate::{
         asset_manager::AssetResidency,
         gltf_asset::{GltfLoadError, GltfLoadResult, GltfValidationError},
     },
-    util::types::Mat4F32,
+    util::types::{LocalTransform, Mat4F32},
 };
 
 pub mod asset_manager;
@@ -98,15 +98,28 @@ struct ModelData {
     id: usize,
     mesh_ids: Vec<usize>,
     joint_data: Option<ModelJointData>,
+    local_transforms: Vec<LocalTransform>,
 }
 
 impl ModelData {
-    fn new(id: usize) -> Self {
+    fn new(id: usize, mesh_count: usize) -> Self {
         Self {
             id,
-            mesh_ids: Vec::new(),
+            mesh_ids: Vec::with_capacity(mesh_count),
             joint_data: None,
+            local_transforms: Vec::with_capacity(mesh_count),
         }
+    }
+
+    fn get_local_transform_map(
+        mesh_ids: Vec<usize>,
+        local_transforms: Vec<LocalTransform>,
+    ) -> HashMap<usize, LocalTransform> {
+        let mut map = HashMap::new();
+        for (id, lt) in mesh_ids.iter().zip(local_transforms) {
+            map.insert(*id, lt);
+        }
+        map
     }
 }
 #[derive(Debug)]

@@ -131,7 +131,7 @@ impl<'frame> Renderer {
                         );
 
                         let lt_job: LocalTransformUploadJob = LocalTransformUploadJob {
-                            local_transforms: &loaded_asset.gltf_mesh_data.local_transforms,
+                            local_transforms: &loaded_asset.gltf_mesh_data.mesh_data,
                             global_alloc_id: global_allocation_id,
                         };
 

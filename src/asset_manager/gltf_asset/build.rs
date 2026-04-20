@@ -31,44 +31,39 @@ impl GltfAsset {
         let ids: Vec<usize> = mesh_node_iter.map(|node| node.index()).collect();
         Ok(ids)
     }
-    fn get_model_data(
-        gltf: &gltf::Gltf,
-    ) -> Result<(Vec<ModelData>, Vec<LocalTransform>), GltfLoadError> {
+
+    /// For each root node, build
+    fn get_model_data(gltf: &gltf::Gltf) -> Result<Vec<ModelData>, GltfLoadError> {
         let mut model_data_vec = Vec::<ModelData>::new();
         let mesh_count = gltf.meshes().len();
-        let mut local_transforms = Vec::<LocalTransform>::with_capacity(mesh_count);
         let root_nodes = Self::get_root_nodes(gltf)?;
         for (idx, rid) in root_nodes.iter().enumerate() {
             let root_node = gltf
                 .nodes()
                 .find(|root_node| root_node.index() == *rid)
                 .ok_or(ModelBuilderError::NodeNotFound(*rid))?;
-            let mut model_data = ModelData::new(idx);
-            model_data = Self::process_root_node(
-                &root_node,
-                cgmath::Matrix4::identity(),
-                &mut local_transforms,
-                model_data,
-            )?;
+            let mut model_data = ModelData::new(idx, mesh_count);
+            model_data =
+                Self::process_root_node(&root_node, cgmath::Matrix4::identity(), model_data)?;
             model_data_vec.push(model_data);
         }
-        Ok((model_data_vec, local_transforms))
+        Ok(model_data_vec)
     }
     fn process_root_node(
         root_node: &gltf::Node,
         base_transform: cgmath::Matrix4<f32>,
-        local_transforms: &mut Vec<LocalTransform>,
         mut model_data: ModelData,
     ) -> Result<ModelData, ModelBuilderError> {
         let cg_trans = cgmath::Matrix4::<f32>::from(root_node.transform().matrix());
         let new_trans = base_transform * cg_trans;
         if let Some(mesh) = root_node.mesh() {
             model_data.mesh_ids.push(mesh.index());
-            local_transforms.insert(mesh.index(), mat4_from_cgmath(new_trans).into());
+            model_data
+                .local_transforms
+                .push(mat4_from_cgmath(new_trans).into());
         }
         for child_node in root_node.children() {
-            model_data =
-                Self::process_root_node(&child_node, base_transform, local_transforms, model_data)?;
+            model_data = Self::process_root_node(&child_node, base_transform, model_data)?;
         }
 
         Ok(model_data)
@@ -76,10 +71,10 @@ impl GltfAsset {
     fn get_primitive_data_map(
         gltf: &gltf::Gltf,
         model_data_vec: &Vec<ModelData>,
-    ) -> Result<HashMap<usize, Vec<PrimitiveData>>, ModelBuilderError> {
-        let mut primtive_map = HashMap::new();
+    ) -> Result<Vec<Vec<PrimitiveData>>, ModelBuilderError> {
+        let mut all_mesh_primitives = Vec::new();
         for model_data in model_data_vec.iter() {
-            let mut primitive_data_buf = Vec::<PrimitiveData>::new();
+            let mut mesh_primitives = Vec::<PrimitiveData>::new();
             for mesh_id in model_data.mesh_ids.iter() {
                 let mesh = gltf
                     .meshes()
@@ -89,20 +84,21 @@ impl GltfAsset {
                 for primitive in mesh.primitives() {
                     let data = Primitive::get_primitive_data(mesh.index(), &primitive)
                         .map_err(|e| ModelBuilderError::ValidationError(e))?;
-                    primitive_data_buf.push(data);
+
+                    mesh_primitives.push(data);
                 }
             }
-            primtive_map.insert(model_data.id, primitive_data_buf);
+            all_mesh_primitives.push(mesh_primitives);
         }
 
-        Ok(primtive_map)
+        Ok(all_mesh_primitives)
     }
     fn get_index_range_vec(
-        primitive_data: &HashMap<usize, Vec<PrimitiveData>>,
+        primitive_data: &Vec<Vec<PrimitiveData>>,
         buffer_offsets: &Vec<usize>,
     ) -> Result<Vec<Range<usize>>, ModelBuilderError> {
         let mut index_range_vec: Vec<Range<usize>> = Vec::new();
-        for (_, data_buf) in primitive_data.iter() {
+        for data_buf in primitive_data.iter() {
             for data in data_buf.iter() {
                 let maybe_index_ranges =
                     &Primitive::get_index_range(data.indices.as_ref(), buffer_offsets)
@@ -159,9 +155,8 @@ impl GltfAsset {
         bin_source: &BinarySource,
         index_ranges: &Vec<Range<usize>>,
         buffer_offsets: &Vec<usize>,
-        local_transforms: Vec<LocalTransform>,
-        model_data_vec: &Vec<ModelData>,
-        primitive_data_map: &HashMap<usize, Vec<PrimitiveData>>,
+        model_data_vec: Vec<ModelData>,
+        all_mesh_primitives: &Vec<Vec<PrimitiveData>>,
     ) -> Result<GltfLoadResult, ModelBuilderError> {
         let binary_data = Self::load_binary_data_from_source(bin_source)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
@@ -169,7 +164,14 @@ impl GltfAsset {
         let mut pnujw_vertices: Vec<PNUJWVertex> = Vec::new();
         let mut pnu_vertices: Vec<PNUVertex> = Vec::new();
         let mut mesh_data = Vec::<GltfMeshData>::new();
-        for ((_, model_primitive_data), _) in primitive_data_map.iter().zip(model_data_vec.iter()) {
+
+        // model_primitive_data is a flat list of all primitives for a model, each tagged with the
+        // mesh id to which they belong. Model data contains node info for the model, like local transforms
+        for (model_primitive_data, model_data) in all_mesh_primitives.iter().zip(model_data_vec) {
+            let local_transform_map = ModelData::get_local_transform_map(
+                model_data.mesh_ids,
+                model_data.local_transforms,
+            );
             let mut meshes = Vec::<Mesh>::new();
             for primitive_data in model_primitive_data.iter() {
                 // TODO: either coerce all indices to u16 OR handle diff index types
@@ -184,7 +186,6 @@ impl GltfAsset {
                     &binary_data,
                 )?;
 
-                println!("INDEX RANGES{:?}", index_ranges);
                 let index_range: Option<Range<u32>> = if !index_ranges.is_empty() {
                     // range within the blob in which the indices for this primitive are located
                     let maybe_primitive_index_range = Primitive::get_index_range(
@@ -243,14 +244,16 @@ impl GltfAsset {
                 }
             }
 
-            mesh_data.push(GltfMeshData { meshes });
+            mesh_data.push(GltfMeshData {
+                meshes,
+                local_transforms: local_transform_map,
+            });
         }
 
         let maybe_index_data = Self::set_index_data(&index_ranges, &binary_data);
         Ok(GltfLoadResult {
             pnujw_vertices,
             pnu_vertices,
-            local_transforms,
             indices: maybe_index_data,
             mesh_data,
         })
@@ -261,15 +264,14 @@ impl GltfAsset {
         bin_source: &BinarySource,
     ) -> Result<GltfLoadResult, AssetLoadError> {
         let buffer_offsets = Self::get_buffer_offsets(gltf);
-        let (model_data_vec, local_transforms) = Self::get_model_data(gltf)?;
+        let model_data_vec = Self::get_model_data(gltf)?;
         let primitive_data = Self::get_primitive_data_map(gltf, &model_data_vec)?;
         let index_range_vec = Self::get_index_range_vec(&primitive_data, &buffer_offsets)?;
         let load_result = Self::build_all_models(
             bin_source,
             &index_range_vec,
             &buffer_offsets,
-            local_transforms,
-            &model_data_vec,
+            model_data_vec,
             &primitive_data,
         )?;
 
