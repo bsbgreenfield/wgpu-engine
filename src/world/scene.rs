@@ -1,7 +1,7 @@
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
 use crate::{
-    asset_manager::asset_manager::AssetLoadResult,
+    asset_manager_new::AssetLoadResult,
     world::{entity_manager::EntityHandle, instance_manager::Archetype},
 };
 
@@ -105,7 +105,7 @@ impl Scene {
         use cgmath::SquareMatrix;
 
         use crate::{
-            asset_manager::gltf_asset::GltfAsset,
+            asset_manager_new::gltf::GltfAsset,
             world::{
                 components::{MeshCollectionComponent, MeshCollectionDescriptor},
                 instance_manager::APosition,
@@ -164,7 +164,7 @@ impl Scene {
         use cgmath::SquareMatrix;
 
         use crate::{
-            asset_manager::gltf_asset::GltfAsset,
+            asset_manager_new::gltf::GltfAsset,
             world::{
                 components::{MeshCollectionComponent, MeshCollectionDescriptor},
                 instance_manager::APosition,
@@ -198,7 +198,7 @@ impl Scene {
     #[cfg(test)]
     pub fn fox_scene(world: &mut World) -> Result<Self, WorldInitError> {
         use crate::{
-            asset_manager::gltf_asset::GltfAsset,
+            asset_manager_new::gltf::GltfAsset,
             world::{
                 components::{MeshCollectionComponent, MeshCollectionDescriptor},
                 instance_manager::APosition,

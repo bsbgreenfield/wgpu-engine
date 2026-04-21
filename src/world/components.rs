@@ -1,6 +1,6 @@
 use crate::{
-    app::renderer::GPUAllocationHandle, asset_manager::AssetHandle, util::types::GlobalTransform,
-    world::instance_manager::InstanceManager,
+    app::renderer::GPUAllocationHandle, asset_manager_new::AssetHandle,
+    util::types::GlobalTransform, world::instance_manager::InstanceManager,
 };
 
 #[derive(Debug)]

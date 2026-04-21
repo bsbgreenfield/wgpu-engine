@@ -112,6 +112,7 @@ impl From<gltf::Error> for GltfLoadError {
 
 #[derive(Debug)]
 pub enum GltfValidationError {
+    UnsupportedScheme,
     NoView,
 }
 #[derive(Debug)]

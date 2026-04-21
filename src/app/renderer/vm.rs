@@ -2,11 +2,14 @@ use core::panic;
 use std::{iter::Peekable, slice::Iter};
 
 use crate::{
-    app::renderer::{
-        GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
-        UploadMeshJob, VMValue, VertexArenaSelector,
-        gpu_allocator::{LocalTransformUploadJob, UploadIndexJob},
-        renderer::Renderer,
+    app::{
+        GPUUploadJob,
+        renderer::{
+            GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
+            UploadMeshJob, VMValue, VertexArenaSelector,
+            gpu_allocator::{LocalTransformUploadJob, UploadIndexJob},
+            renderer::Renderer,
+        },
     },
     asset_manager::LoadedAsset,
     util::types::{ModelVertex, PNUJWVertex, PNUVertex, VIndex},
@@ -18,10 +21,10 @@ use crate::{
 };
 
 impl<'frame> VMValue<'frame> {
-    fn unwrap_loaded_asset(&self) -> &'frame LoadedAsset {
+    fn unwrap_gpu_upload_job(&'frame self) -> &'frame GPUUploadJob<'frame> {
         match self {
-            VMValue::LoadedAsset(la) => la,
-            _ => panic!("value is not a loaded asset ref. it is {:?}", self),
+            VMValue::UploadJob(gpu_job) => gpu_job,
+            _ => panic!("value is not a gpu upload job, it is {:?}", self),
         }
     }
 
@@ -110,31 +113,35 @@ impl<'frame> Renderer {
                 Instruction::Op(op) => match op {
                     Operations::AddAsset => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        let loaded_asset = constants[const_idx as usize].unwrap_loaded_asset();
+                        let gpu_upload_job: &GPUUploadJob =
+                            constants[const_idx as usize].unwrap_gpu_upload_job();
 
                         let global_allocation_id = self.get_global_alloc_id();
 
                         let maybe_skinned_job: Option<UploadMeshJob<'_, PNUJWVertex>> =
-                            LoadedAsset::as_mesh_job(
-                                &loaded_asset.gltf_mesh_data.pnujw_vertices,
-                                global_allocation_id,
-                            );
+                            gpu_upload_job.pnujw_vertices.map(|x| UploadMeshJob {
+                                verts: x,
+                                global_alloc_id: global_allocation_id,
+                            });
+
                         let maybe_static_job: Option<UploadMeshJob<'_, PNUVertex>> =
-                            LoadedAsset::as_mesh_job(
-                                &loaded_asset.gltf_mesh_data.pnu_vertices,
-                                global_allocation_id,
-                            );
+                            gpu_upload_job.pnu_vertices.map(|x| UploadMeshJob {
+                                verts: x,
+                                global_alloc_id: global_allocation_id,
+                            });
 
-                        let maybe_index_job: Option<UploadIndexJob<'_>> = LoadedAsset::as_index_job(
-                            loaded_asset.gltf_mesh_data.indices.as_deref(),
-                            global_allocation_id,
-                        );
+                        let maybe_index_job: Option<UploadIndexJob<'_>> =
+                            gpu_upload_job.indices.map(|x| UploadIndexJob {
+                                indices: x,
+                                global_alloc_id: global_allocation_id,
+                            });
 
-                        let lt_job: LocalTransformUploadJob = LocalTransformUploadJob {
-                            local_transforms: &loaded_asset.gltf_mesh_data.mesh_data,
-                            global_alloc_id: global_allocation_id,
-                        };
-
+                        let lt_job: Option<LocalTransformUploadJob> = gpu_upload_job
+                            .local_transforms
+                            .map(|x| LocalTransformUploadJob {
+                                local_transforms: x,
+                                global_alloc_id: global_allocation_id,
+                            });
                         self.upload_local_transform_data(lt_job, queue)?;
                         if let Some(static_job) = maybe_static_job {
                             self.upload_mesh(static_job, queue)?;
@@ -148,7 +155,6 @@ impl<'frame> Renderer {
                         }
 
                         res.push(RenderUpdateDelta::AssetGPULoaded(GPUAllocationHandle {
-                            asset_handle: loaded_asset.handle,
                             global_allocation_id,
                         }));
                     }
@@ -157,30 +163,29 @@ impl<'frame> Renderer {
                     }
                     Operations::MoveEntity => todo!(),
                     Operations::SpawnEntityInstance => {
-                        let instance_idx = Self::get_constant_idx(&mut instr_peek);
-                        let instance_handle =
-                            constants[instance_idx as usize].unwrap_instance_handle();
+                        //    let instance_idx = Self::get_constant_idx(&mut instr_peek);
+                        //    let instance_handle =
+                        //        constants[instance_idx as usize].unwrap_instance_handle();
 
-                        let renderables_idx = Self::get_constant_idx(&mut instr_peek);
-                        let renderables = constants[renderables_idx as usize].unwrap_renderables();
+                        //    let renderables_idx = Self::get_constant_idx(&mut instr_peek);
+                        //    let renderables = constants[renderables_idx as usize].unwrap_renderables();
 
-                        if let Some(mesh_collection_renderable) = &renderables.mesh_collection {
-                            let la_const_idx = Self::get_constant_idx(&mut instr_peek);
-                            let la = constants[la_const_idx as usize].unwrap_loaded_asset();
+                        //    if let Some(mesh_collection_renderable) = &renderables.mesh_collection {
+                        //        let la_const_idx = Self::get_constant_idx(&mut instr_peek);
+                        //        let la = constants[la_const_idx as usize].unwrap_loaded_asset();
 
-                            let pnu_data = la.mesh_ids_and_alloc_ranges_of::<PNUVertex>();
-                            let pnujw_data = la.mesh_ids_and_alloc_ranges_of::<PNUJWVertex>();
-                            let view = RenderView {
-                                gpu_handle: mesh_collection_renderable.0.to_owned(),
-                                pnu_draws: DrawSet::from_ids_and_prims(pnu_data),
-                                pnujw_draws: DrawSet::from_ids_and_prims(pnujw_data),
-                            };
-                            self.add_render_group(
-                                vec![view],
-                                instance_handle.clone(),
-                                la.gltf_mesh_data.indices.is_some(),
-                            );
-                        }
+                        //        let pnu_data = la.mesh_ids_and_alloc_ranges_of::<PNUVertex>();
+                        //        let pnujw_data = la.mesh_ids_and_alloc_ranges_of::<PNUJWVertex>();
+                        let view = RenderView {
+                            gpu_handle: mesh_collection_renderable.0.to_owned(),
+                            pnu_draws: DrawSet::from_ids_and_prims(pnu_data),
+                            pnujw_draws: DrawSet::from_ids_and_prims(pnujw_data),
+                        };
+                        self.add_render_group(
+                            vec![view],
+                            instance_handle.clone(),
+                            la.gltf_mesh_data.indices.is_some(),
+                        );
                     }
                 },
                 Instruction::Byte(_byte) => {}

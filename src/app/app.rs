@@ -7,7 +7,7 @@ use crate::{
         app_state::AppState,
         renderer::{DrawPacket, Instruction, RenderCategory, VMValue, renderer::Renderer},
     },
-    asset_manager::{AssetHandle, asset_manager::AssetManager},
+    asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
     world::{
         WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager, Renderables},
@@ -137,7 +137,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let aspect_ratio: f32 = self.app_config.as_ref().unwrap().get_aspect_ratio();
 
             if self.world.is_none() {
-                let asset_manager = AssetManager::new();
+                let asset_manager = AssetManagerNew::new();
                 let entity_manager = EntityManager::new();
 
                 self.world = Some(

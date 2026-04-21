@@ -1,8 +1,8 @@
-use std::{collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit};
+use std::{collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit, ops::Range};
 
 use crate::{
     app::renderer::GPUAllocationHandle,
-    asset_manager::{AssetHandle, asset_manager::AssetManager},
+    asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
     world::components::{ComponentDataType, MeshCollectionComponent, PhysicalPositionComponent},
 };
 
@@ -25,8 +25,11 @@ pub struct EntityManager {
 }
 
 #[derive(Debug)]
-pub struct Renderables<'frame> {
-    pub mesh_collection: Option<(GPUAllocationHandle, &'frame MeshCollectionComponent)>,
+pub struct Renderables {
+    allocation_handle: GPUAllocationHandle,
+    pnu_vertex_ranges: Option<Vec<Range<u32>>>,
+    pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
+    index_ranges: Option<Vec<Range<u32>>>,
 }
 
 impl EntityManager {
@@ -41,19 +44,9 @@ impl EntityManager {
     pub fn get_renderables<'frame>(
         &'frame self,
         entity: &EntityHandle,
-        asset_manager: &AssetManager,
-    ) -> Renderables<'frame> {
-        // panics if it cant find the alloc handle or the asset!
-        let mcc_entry = self.mesh_collections.get(entity.0 as usize).map(|mcc| {
-            (
-                asset_manager.get_alloc_handle_of(&mcc.resource_backing),
-                mcc,
-            )
-        });
-
-        Renderables {
-            mesh_collection: mcc_entry,
-        }
+        asset_manager: &AssetManagerNew,
+    ) -> Renderables {
+        let mesh_collection = self.mesh_collections.get(entity.0 as usize).unwrap();
     }
 
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
@@ -288,7 +281,7 @@ mod sparse_set_tests {
 #[cfg(test)]
 mod entity_manager_tests {
     use crate::{
-        asset_manager::{asset_manager::AssetManager, gltf_asset::GltfAsset},
+        asset_manager_new::{asset_manager_new::AssetManagerNew, gltf::GltfAsset},
         world::{
             components::{MeshCollectionComponent, MeshCollectionDescriptor},
             entity_manager::EntityManager,
@@ -306,7 +299,7 @@ mod entity_manager_tests {
 
     #[test]
     fn add_components() {
-        let mut asset_manager = AssetManager::new();
+        let mut asset_manager = AssetManagerNew::new();
         let box_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
         let mut manager = EntityManager::new();
         let entity = manager.new_entity().unwrap();

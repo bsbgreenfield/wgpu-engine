@@ -3,10 +3,11 @@ use std::ops::Range;
 use super::scene::Scene;
 use crate::{
     app::{
+        GPUUploadJob,
         app::App,
         renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
     },
-    asset_manager::{AssetHandle, LoadedAsset, asset_manager::AssetManager},
+    asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
     world::{
         WorldInitError, WorldUpdateError,
         camera::Camera,
@@ -39,6 +40,7 @@ impl DrawSet {
                 mesh_ids: ids,
                 primtitive_ranges: prims,
                 index_ranges: indices,
+                local_transform_indices: todo!(),
             })
         } else {
             None
@@ -83,37 +85,34 @@ impl WorldUpdateDelta {
     ) {
         match self {
             Self::AssetDidLoad(asset_handle) => {
-                let la = world
-                    .get_loaded_asset_of(&asset_handle)
-                    .expect("loaded asset should be exactly CPU resident!");
-                // generate bytecode for renderer VM to load an asset
-                constants.push(VMValue::LoadedAsset(la));
+                let gpu_upload_job = world.get_upload_job_for(asset_handle);
+                constants.push(VMValue::UploadJob(gpu_upload_job));
                 instructions.push(Instruction::Op(Operations::AddAsset));
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
 
             Self::EntityDidSpawn(instance_handle) => {
-                let entity_handle = instance_handle.entity_handle.clone();
-                let renderables = world
-                    .entity_manager
-                    .get_renderables(&entity_handle, &world.asset_manager);
+                // let entity_handle = instance_handle.entity_handle.clone();
+                // let renderables = world
+                //     .entity_manager
+                //     .get_renderables(&entity_handle, &world.asset_manager);
 
-                instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                let assets = App::get_ordered_assets(&renderables);
-                constants.push(VMValue::InstanceHandle(instance_handle.clone()));
-                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                constants.push(VMValue::Renderables(renderables));
-                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                // TODO: renderables can have a variable number of associated assets, this
-                // affects the indices of the constants
-                for asset_handle in assets {
-                    constants.push(VMValue::LoadedAsset(
-                        world
-                            .get_loaded_asset_of(&asset_handle)
-                            .expect("should be a registered asset"),
-                    ));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                }
+                // instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                // let assets = App::get_ordered_assets(&renderables);
+                // constants.push(VMValue::InstanceHandle(instance_handle.clone()));
+                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                // constants.push(VMValue::Renderables(renderables));
+                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                // // TODO: renderables can have a variable number of associated assets, this
+                // // affects the indices of the constants
+                // for asset_handle in assets {
+                //     constants.push(VMValue::LoadedAsset(
+                //         world
+                //             .get_loaded_asset_of(&asset_handle)
+                //             .expect("should be a registered asset"),
+                //     ));
+                //     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                // }
             }
             WorldUpdateDelta::EntityDidLoad(_) => {
                 //TODO spawn based on user input
@@ -125,24 +124,20 @@ impl WorldUpdateDelta {
 pub struct World {
     pub camera: Camera,
     scene: Scene,
-    pub asset_manager: AssetManager,
+    pub asset_manager: AssetManagerNew,
     pub entity_manager: EntityManager,
     load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
 }
 
 impl World {
-    pub fn get_loaded_asset_of(&self, asset_handle: &AssetHandle) -> Option<&LoadedAsset> {
-        self.asset_manager.get_loaded_asset(asset_handle)
-    }
-
     pub fn add_scene(&mut self, scene: Scene) {
         self.scene = scene;
     }
 
     pub fn new(
         aspect_ratio: f32,
-        asset_manager: AssetManager,
+        asset_manager: AssetManagerNew,
         entity_manager: EntityManager,
         device: &wgpu::Device,
     ) -> Result<Self, WorldInitError> {
@@ -159,6 +154,14 @@ impl World {
         })
     }
 
+    fn get_upload_job_for<'frame>(
+        &'frame self,
+        asset_handle: &AssetHandle,
+    ) -> GPUUploadJob<'frame> {
+        self.asset_manager
+            .get_upload_job_for(asset_handle)
+            .expect("should be uploadable")
+    }
     pub fn spawn(
         instance_manager: &mut InstanceManager,
         entity_handle: EntityHandle,

@@ -3,8 +3,11 @@ use std::{collections::HashMap, error::Error, fmt::Display, ops::Range};
 #[cfg(test)]
 use crate::world::scene::SceneLoadLevel;
 use crate::{
-    app::renderer::gpu_allocator::{
-        GPUAllocator, UploadMeshJob, VertexArenaError, vertex_arena::GPUArena,
+    app::{
+        GPUUploadJob,
+        renderer::gpu_allocator::{
+            GPUAllocator, UploadMeshJob, VertexArenaError, vertex_arena::GPUArena,
+        },
     },
     asset_manager::{AssetHandle, LoadedAsset},
     util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
@@ -30,15 +33,13 @@ pub enum RenderUpdateDelta {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct GPUAllocationHandle {
     global_allocation_id: u32,
-    pub asset_handle: AssetHandle,
 }
 
 #[cfg(test)]
 impl GPUAllocationHandle {
-    pub fn mock(global_allocation_id: u32, asset_handle: AssetHandle) -> Self {
+    pub fn mock(global_allocation_id: u32, _asset_handle: AssetHandle) -> Self {
         Self {
             global_allocation_id,
-            asset_handle,
         }
     }
 }
@@ -69,8 +70,7 @@ pub enum Operations {
 #[derive(Debug)]
 pub enum VMValue<'frame> {
     Transform(Mat4F32),
-    LoadedAsset(&'frame LoadedAsset),
-    MeshCollectionComponent(&'frame MeshCollectionComponent),
+    UploadJob(GPUUploadJob<'frame>),
     Renderables(Renderables<'frame>),
     InstanceHandle(InstanceHandle),
 }

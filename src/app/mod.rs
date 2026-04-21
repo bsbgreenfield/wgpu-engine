@@ -2,6 +2,8 @@ use std::fmt::Display;
 
 use crate::{
     app::renderer::{RenderError, RenderUpdateError},
+    asset_manager_new::AssetHandle,
+    util::types::{LocalTransform, PNUJWVertex, PNUVertex, VIndex},
     world::WorldUpdateError,
 };
 
@@ -9,6 +11,14 @@ pub mod app;
 pub mod app_config;
 pub mod app_state;
 pub mod renderer;
+
+#[derive(Debug)]
+pub struct GPUUploadJob<'a> {
+    pnu_vertices: Option<&'a [PNUVertex]>,
+    pnujw_vertices: Option<&'a [PNUJWVertex]>,
+    indices: Option<&'a [VIndex]>,
+    local_transforms: Option<&'a [LocalTransform]>,
+}
 
 #[allow(unused)]
 #[derive(Debug)]

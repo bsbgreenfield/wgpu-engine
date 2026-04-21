@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    asset_manager::{AssetHandle, AssetLoadError},
+    asset_manager_new::{AssetHandle, AssetLoadError},
     world::entity_manager::{EntityHandle, EntityManagerError},
 };
 

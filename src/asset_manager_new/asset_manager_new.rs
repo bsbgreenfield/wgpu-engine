@@ -1,0 +1,127 @@
+use std::collections::HashMap;
+
+use crate::{
+    app::GPUUploadJob,
+    asset_manager_new::{
+        Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, LoadableAsset,
+        LoadedAsset,
+    },
+    world::{components::MeshCollectionComponent, scene::SceneLoadLevel},
+};
+
+struct RegisteredAsset {
+    residency_level: AssetResidency,
+    asset: Box<dyn LoadableAsset>,
+}
+
+impl RegisteredAsset {
+    fn new<A: Asset + LoadableAsset + 'static>(asset: A) -> Self {
+        Self {
+            residency_level: AssetResidency::Registered,
+            asset: Box::new(asset),
+        }
+    }
+}
+
+pub struct AssetManagerNew {
+    registered_assets: HashMap<AssetHandle, RegisteredAsset>,
+    loaded_assets: Vec<Box<dyn LoadedAsset>>,
+}
+
+impl AssetManagerNew {
+    pub fn new() -> Self {
+        Self {
+            loaded_assets: Vec::new(),
+            registered_assets: HashMap::new(),
+        }
+    }
+    fn gen_handle(&self) -> AssetHandle {
+        AssetHandle(self.registered_assets.len() as u32)
+    }
+    fn res_level_of(&self, asset_handle: &AssetHandle) -> Result<&AssetResidency, AssetLoadError> {
+        Ok(&self
+            .registered_assets
+            .get(asset_handle)
+            .ok_or(AssetLoadError::AssetNotFound)?
+            .residency_level)
+    }
+
+    fn load(&mut self, asset_handle: &AssetHandle) -> Result<usize, AssetLoadError> {
+        let mut registered_asset = self.registered_assets.remove(asset_handle).unwrap();
+
+        let loaded_asset: Box<dyn LoadedAsset> = registered_asset.asset.load()?;
+        let la_index = self.loaded_assets.len().clone();
+        self.loaded_assets.push(loaded_asset);
+        registered_asset.residency_level = AssetResidency::CPU(la_index);
+        self.registered_assets
+            .insert(*asset_handle, registered_asset);
+        Ok(la_index)
+    }
+
+    pub fn get_upload_job_for(
+        &self,
+        asset_handle: &AssetHandle,
+    ) -> Result<GPUUploadJob, AssetLoadError> {
+        match self
+            .registered_assets
+            .get(asset_handle)
+            .unwrap()
+            .residency_level
+        {
+            AssetResidency::CPU(la_index) => {
+                let la = &self.loaded_assets[la_index];
+                return la.upload_job();
+            }
+            _ => return Err(AssetLoadError::AssetNotFound),
+        }
+    }
+    pub fn register_asset<A>(&mut self, source: &str) -> Result<AssetHandle, AssetLoadError>
+    where
+        A: Asset + LoadableAsset + 'static,
+    {
+        let asset = A::new(source)?;
+        let handle = self.gen_handle();
+        self.registered_assets
+            .insert(handle, RegisteredAsset::new(asset));
+        Ok(handle)
+    }
+
+    pub fn set_minumum_load_level(
+        &mut self,
+        asset_handle: &AssetHandle,
+        load_level: SceneLoadLevel,
+    ) -> Result<AssetLoadResult, AssetLoadError> {
+        let asset_res_level: &AssetResidency = self.res_level_of(asset_handle)?;
+        match load_level {
+            SceneLoadLevel::NotLoaded => {
+                todo!("unload assets")
+            }
+            SceneLoadLevel::CPU => match asset_res_level {
+                AssetResidency::Registered => {
+                    self.load(asset_handle)?;
+                    // TODO: start async operation and return PendingCPU
+                    return Ok(AssetLoadResult::LoadedCPU);
+                }
+                AssetResidency::CPU(_) => {
+                    return Ok(AssetLoadResult::LoadedCPU);
+                }
+                AssetResidency::GPU(_, _) => todo!("unload gpu?"),
+            },
+            SceneLoadLevel::GPU => match asset_res_level {
+                AssetResidency::Registered => {
+                    self.load(asset_handle)?;
+                    // TODO: return PendingCPU once async
+                    return Ok(AssetLoadResult::PendingGPU);
+                }
+                AssetResidency::CPU(_) => {
+                    return Ok(AssetLoadResult::PendingGPU);
+                }
+                AssetResidency::GPU(allocation_handle, _) => {
+                    return Ok(AssetLoadResult::LoadedGPU(allocation_handle.clone()));
+                }
+            },
+        }
+    }
+
+    pub fn get_renderables_for(mesh_collection_component: &MeshCollectionComponent) {}
+}

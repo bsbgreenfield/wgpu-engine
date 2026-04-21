@@ -19,7 +19,6 @@ use crate::{
     util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
     world::{
         camera::Camera,
-        components::ComponentData,
         instance_manager::{ArchetypeId, ArchetypeTable, InstanceHandle, InstanceManager},
         world::{RenderGroup, RenderView},
     },
@@ -255,12 +254,14 @@ impl Renderer {
 
     pub(super) fn upload_local_transform_data<'frame>(
         &mut self,
-        job: LocalTransformUploadJob,
+        job: Option<LocalTransformUploadJob>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
-        self.vertex_arenas
-            .local_transform_arena
-            .upload(job, queue)?;
+        if let Some(job) = job {
+            self.vertex_arenas
+                .local_transform_arena
+                .upload(job, queue)?;
+        }
         Ok(())
     }
 
