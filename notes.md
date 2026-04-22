@@ -321,3 +321,10 @@ for each (i, draw ) in draw_entry.1.iter().enumurate() {
 ```
 
 
+## New process
+
+1. scene is added to the world
+2. The assets of the scene are loaded by the asset manager, WorldUpdatgeDelta::AssetDidLoad emitted
+3. GPU upload job is passed to the renderer, vertices and indices are uploaded to the proper GPU buffers
+4. in post frame update, asset is marked as GPU loaded, next frame (or when all assets are GPU loaded), call World::spawn()
+5.

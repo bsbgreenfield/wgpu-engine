@@ -13,7 +13,7 @@ mod integration_tests {
                 renderer::Renderer,
             },
         },
-        asset_manager::{AssetHandle, asset_manager::AssetManager},
+        asset_manager_new::asset_manager_new::AssetManagerNew,
         world::{
             entity_manager::{EntityHandle, EntityManager},
             instance_manager::APosition,
@@ -43,7 +43,7 @@ mod integration_tests {
 
     fn get_bytecode<'a>(
         world: &'a World,
-        deltas: &[WorldUpdateDelta],
+        deltas: &'a [WorldUpdateDelta],
     ) -> (Vec<VMValue<'a>>, Vec<Instruction>) {
         let mut constants = Vec::<VMValue<'a>>::new();
         let mut instructions = Vec::<Instruction>::new();
@@ -81,7 +81,7 @@ mod integration_tests {
             let matches = matches!(
                 (a, e),
                 (
-                    RenderUpdateDelta::AssetGPULoaded(_),
+                    RenderUpdateDelta::AssetGPULoaded(..),
                     RenderDeltaKind::AssetGPULoaded
                 ) | (
                     RenderUpdateDelta::EntityGPULoaded(_),
@@ -96,7 +96,7 @@ mod integration_tests {
         let mut app = App::new();
         let config = AppConfig::new_headless().await;
         let renderer = Renderer::new(&config);
-        let asset_manager = AssetManager::new();
+        let asset_manager = AssetManagerNew::new();
         let entity_manager = EntityManager::new();
         let mut world = World::new(1.0, asset_manager, entity_manager, &config.device).unwrap();
         let scene = match test_case {

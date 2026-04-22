@@ -1,6 +1,5 @@
 pub mod animation;
 pub mod app;
-pub mod asset_manager;
 pub mod asset_manager_new;
 pub mod tests;
 pub mod util;

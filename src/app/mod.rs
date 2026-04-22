@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     app::renderer::{RenderError, RenderUpdateError},
-    asset_manager_new::AssetHandle,
+    asset_manager_new::{AssetHandle, AssetLoadError},
     util::types::{LocalTransform, PNUJWVertex, PNUVertex, VIndex},
     world::WorldUpdateError,
 };
@@ -14,10 +14,29 @@ pub mod renderer;
 
 #[derive(Debug)]
 pub struct GPUUploadJob<'a> {
+    asset_handle: &'a AssetHandle,
     pnu_vertices: Option<&'a [PNUVertex]>,
     pnujw_vertices: Option<&'a [PNUJWVertex]>,
     indices: Option<&'a [VIndex]>,
-    local_transforms: Option<&'a [LocalTransform]>,
+}
+
+impl<'a> GPUUploadJob<'a> {
+    pub fn new(
+        asset_handle: &'a AssetHandle,
+        pnu_vertices: Option<&'a [PNUVertex]>,
+        pnujw_vertices: Option<&'a [PNUJWVertex]>,
+        indices: Option<&'a [VIndex]>,
+    ) -> Result<Self, AssetLoadError> {
+        if pnu_vertices.is_none() && pnujw_vertices.is_none() {
+            return Err(AssetLoadError::NoVertexData);
+        }
+        Ok(Self {
+            asset_handle,
+            pnu_vertices,
+            pnujw_vertices,
+            indices,
+        })
+    }
 }
 
 #[allow(unused)]

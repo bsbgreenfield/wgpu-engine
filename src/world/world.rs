@@ -4,7 +4,6 @@ use super::scene::Scene;
 use crate::{
     app::{
         GPUUploadJob,
-        app::App,
         renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
     },
     asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
@@ -78,7 +77,7 @@ pub enum WorldUpdateDelta {
 
 impl WorldUpdateDelta {
     pub fn gen_bytecode<'frame>(
-        &self,
+        &'frame self,
         world: &'frame World,
         constants: &mut Vec<VMValue<'frame>>,
         instructions: &mut Vec<Instruction>,
@@ -86,8 +85,8 @@ impl WorldUpdateDelta {
         match self {
             Self::AssetDidLoad(asset_handle) => {
                 let gpu_upload_job = world.get_upload_job_for(asset_handle);
-                constants.push(VMValue::UploadJob(gpu_upload_job));
                 instructions.push(Instruction::Op(Operations::AddAsset));
+                constants.push(VMValue::UploadJob(gpu_upload_job));
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
 
@@ -156,7 +155,7 @@ impl World {
 
     fn get_upload_job_for<'frame>(
         &'frame self,
-        asset_handle: &AssetHandle,
+        asset_handle: &'frame AssetHandle,
     ) -> GPUUploadJob<'frame> {
         self.asset_manager
             .get_upload_job_for(asset_handle)
@@ -235,7 +234,7 @@ impl World {
                         SceneEvent::Spawn(mut instance_data) => {
                             // TODO: ive required the instance spawn code to contain the entity
                             // handles that it wants to spawn. This may or may not be the right decision
-                            let completed_scene_load = self
+                            let _completed_scene_load = self
                                 .load_queue
                                 .completed_queue
                                 .get(&self.scene.scene_id)
@@ -267,11 +266,10 @@ impl World {
 
     pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDelta]) {
         for delta in render_deltas {
-            println!("{delta:?}");
             match delta {
-                RenderUpdateDelta::AssetGPULoaded(allocation_handle) => {
+                RenderUpdateDelta::AssetGPULoaded(asset_handle, allocation_handle) => {
                     self.asset_manager
-                        .register_asset_gpu_residency(allocation_handle)
+                        .register_asset_gpu_residency(asset_handle, allocation_handle.clone())
                         .expect("Asset not found");
                 }
                 RenderUpdateDelta::EntityGPULoaded(_) => {

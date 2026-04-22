@@ -2,9 +2,9 @@ use std::error::Error;
 
 use base64::Engine;
 
-use crate::{
-    asset_manager::gltf_asset::GltfLoadError,
-    asset_manager_new::{AssetLoadError, gltf::BinarySource},
+use crate::asset_manager_new::{
+    AssetLoadError,
+    gltf::{BinarySource, GltfLoadError},
 };
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {

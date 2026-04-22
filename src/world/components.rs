@@ -19,22 +19,37 @@ impl ResourceBacking {
 }
 
 #[derive(Debug)]
-pub struct MeshCollectionComponent {
-    pub resource_backing: AssetHandle,
-    mesh_ids: Vec<u32>,
+pub enum MeshAcessor {
+    GltfRootNode(u32),
+    All,
 }
 
-pub struct MeshCollectionDescriptor<'a> {
+#[derive(Debug)]
+pub enum RigidAnimationMode {
+    Shared,
+    Independent,
+}
+
+#[derive(Debug)]
+pub struct MeshCollectionComponent {
+    pub resource_backing: AssetHandle,
+    mesh_accessor: MeshAcessor,
+    rigid_animation_mode: RigidAnimationMode,
+}
+
+pub struct MeshCollectionDescriptor {
     pub resource_backing: AssetHandle,
     pub allocation_handle: Option<GPUAllocationHandle>,
-    pub mesh_ids: &'a [u32],
+    pub mesh_accessor: MeshAcessor,
+    pub rigid_animation_mode: RigidAnimationMode,
 }
 
 impl MeshCollectionComponent {
     pub fn new(descriptor: MeshCollectionDescriptor) -> Self {
         Self {
             resource_backing: descriptor.resource_backing,
-            mesh_ids: descriptor.mesh_ids.to_vec(),
+            mesh_accessor: descriptor.mesh_accessor,
+            rigid_animation_mode: descriptor.rigid_animation_mode,
         }
     }
 }

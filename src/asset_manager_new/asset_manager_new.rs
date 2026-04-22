@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::GPUUploadJob,
+    app::{GPUUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, LoadableAsset,
         LoadedAsset,
     },
-    world::{components::MeshCollectionComponent, scene::SceneLoadLevel},
+    world::{
+        components::MeshCollectionComponent, entity_manager::Renderables, scene::SceneLoadLevel,
+    },
 };
 
 struct RegisteredAsset {
@@ -38,6 +40,7 @@ impl AssetManagerNew {
     fn gen_handle(&self) -> AssetHandle {
         AssetHandle(self.registered_assets.len() as u32)
     }
+
     fn res_level_of(&self, asset_handle: &AssetHandle) -> Result<&AssetResidency, AssetLoadError> {
         Ok(&self
             .registered_assets
@@ -58,9 +61,9 @@ impl AssetManagerNew {
         Ok(la_index)
     }
 
-    pub fn get_upload_job_for(
-        &self,
-        asset_handle: &AssetHandle,
+    pub fn get_upload_job_for<'a>(
+        &'a self,
+        asset_handle: &'a AssetHandle,
     ) -> Result<GPUUploadJob, AssetLoadError> {
         match self
             .registered_assets
@@ -70,7 +73,7 @@ impl AssetManagerNew {
         {
             AssetResidency::CPU(la_index) => {
                 let la = &self.loaded_assets[la_index];
-                return la.upload_job();
+                return la.upload_job(asset_handle);
             }
             _ => return Err(AssetLoadError::AssetNotFound),
         }
@@ -84,6 +87,29 @@ impl AssetManagerNew {
         self.registered_assets
             .insert(handle, RegisteredAsset::new(asset));
         Ok(handle)
+    }
+
+    pub fn register_asset_gpu_residency(
+        &mut self,
+        asset_handle: &AssetHandle,
+        allocation_handle: GPUAllocationHandle,
+    ) -> Result<(), AssetLoadError> {
+        if let Some(registered_asset) = self.registered_assets.get_mut(asset_handle) {
+            match registered_asset.residency_level {
+                AssetResidency::CPU(la_index) => {
+                    registered_asset.residency_level =
+                        AssetResidency::GPU(allocation_handle, la_index);
+                    return Ok(());
+                }
+                _ => {
+                    return Err(AssetLoadError::AssetNotLoaded(String::from(
+                        "tried to register asset GPU resident but it was not CPU resident",
+                    )));
+                }
+            }
+        } else {
+            return Err(AssetLoadError::AssetNotFound);
+        }
     }
 
     pub fn set_minumum_load_level(
@@ -123,5 +149,26 @@ impl AssetManagerNew {
         }
     }
 
-    pub fn get_renderables_for(mesh_collection_component: &MeshCollectionComponent) {}
+    pub fn get_renderables_for(
+        &self,
+        mesh_collection_component: &MeshCollectionComponent,
+    ) -> Option<Renderables> {
+        match self
+            .registered_assets
+            .get(&mesh_collection_component.resource_backing)
+            .unwrap()
+            .residency_level
+        {
+            AssetResidency::CPU(la_index) => {
+                let la = &self.loaded_assets[la_index];
+                la.get_renderables()
+            }
+            AssetResidency::Registered => {
+                panic!("this mesh_collection_component is not yet loaded")
+            }
+            AssetResidency::GPU(_, _) => {
+                panic!("this mesh_collection_component is already GPU loaded")
+            }
+        }
+    }
 }

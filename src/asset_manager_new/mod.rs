@@ -1,8 +1,8 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use crate::{
     app::{GPUUploadJob, renderer::GPUAllocationHandle},
-    asset_manager::{ModelBuilderError, gltf_asset::GltfLoadError},
+    asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
     world::{entity_manager::Renderables, scene::SceneLoadLevel},
 };
 
@@ -15,6 +15,7 @@ pub enum AssetLoadError {
     AssetNotLoaded(String),
     AssetNotFound,
     ComponentNotFound,
+    NoVertexData,
 }
 #[derive(Debug)]
 pub enum AssetLoadResult {
@@ -35,6 +36,7 @@ impl Display for AssetLoadError {
             Self::ComponentNotFound => {
                 f.write_str("The component associated with this asset does not exist")
             }
+            Self::NoVertexData => f.write_str("This Asset has no vertices to upload"),
         }
     }
 }
@@ -116,7 +118,38 @@ trait LoadableAsset: Asset {
     fn load(&self) -> Result<Box<dyn LoadedAsset>, ModelBuilderError>;
 }
 trait LoadedAsset {
-    fn upload_job<'a>(&'a self) -> Result<GPUUploadJob<'a>, AssetLoadError>;
+    fn upload_job<'a>(
+        &'a self,
+        asset_handle: &'a AssetHandle,
+    ) -> Result<GPUUploadJob<'a>, AssetLoadError>;
 
     fn get_renderables(&self) -> Option<Renderables>;
+}
+#[derive(Debug)]
+pub enum ModelBuilderError {
+    NodeNotFound(usize),
+    MeshNotFound(usize),
+    ValidationError(GltfValidationError),
+    BinarySourceNotFound,
+    IndexRangeError,
+}
+
+impl Display for ModelBuilderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NodeNotFound(node_id) => write!(f, "Node {} not found", node_id),
+            Self::MeshNotFound(mesh_id) => write!(f, "Could not resolve mesh {}", mesh_id),
+            Self::ValidationError(err) => err.fmt(f),
+            Self::BinarySourceNotFound => f.write_str("binary source not found"),
+            Self::IndexRangeError => f.write_str("index range out of bounds"),
+        }
+    }
+}
+
+impl std::error::Error for ModelBuilderError {}
+
+impl From<GltfValidationError> for ModelBuilderError {
+    fn from(value: GltfValidationError) -> Self {
+        Self::ValidationError(value)
+    }
 }

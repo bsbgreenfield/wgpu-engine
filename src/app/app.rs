@@ -105,16 +105,6 @@ impl App<'_> {
         Ok(())
     }
 
-    pub fn get_ordered_assets<'frame>(renderables: &'frame Renderables) -> Vec<AssetHandle> {
-        let mut assets = Vec::new();
-        if let Some(mcc) = &renderables.mesh_collection {
-            assets.push(mcc.1.resource_backing);
-        }
-
-        // TODO expand to other rbcs
-        assets
-    }
-
     pub fn update_world(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
         unsafe { self.world.as_mut().unwrap_unchecked().update() }
     }

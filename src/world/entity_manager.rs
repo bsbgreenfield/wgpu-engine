@@ -26,10 +26,10 @@ pub struct EntityManager {
 
 #[derive(Debug)]
 pub struct Renderables {
-    allocation_handle: GPUAllocationHandle,
-    pnu_vertex_ranges: Option<Vec<Range<u32>>>,
-    pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
-    index_ranges: Option<Vec<Range<u32>>>,
+    pub allocation_handle: GPUAllocationHandle,
+    pub pnu_vertex_ranges: Option<Vec<Range<u32>>>,
+    pub pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
+    pub index_ranges: Option<Vec<Range<u32>>>,
 }
 
 impl EntityManager {
@@ -45,8 +45,9 @@ impl EntityManager {
         &'frame self,
         entity: &EntityHandle,
         asset_manager: &AssetManagerNew,
-    ) -> Renderables {
+    ) -> Option<Renderables> {
         let mesh_collection = self.mesh_collections.get(entity.0 as usize).unwrap();
+        asset_manager.get_renderables_for(mesh_collection)
     }
 
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
@@ -283,7 +284,9 @@ mod entity_manager_tests {
     use crate::{
         asset_manager_new::{asset_manager_new::AssetManagerNew, gltf::GltfAsset},
         world::{
-            components::{MeshCollectionComponent, MeshCollectionDescriptor},
+            components::{
+                MeshAcessor, MeshCollectionComponent, MeshCollectionDescriptor, RigidAnimationMode,
+            },
             entity_manager::EntityManager,
         },
     };
@@ -307,7 +310,8 @@ mod entity_manager_tests {
             // MeshCollection
             resource_backing: box_asset,
             allocation_handle: None,
-            mesh_ids: &[0],
+            mesh_accessor: MeshAcessor::All,
+            rigid_animation_mode: RigidAnimationMode::Shared,
         });
         manager.add_mesh_collection_for_entity(entity, mesh);
 

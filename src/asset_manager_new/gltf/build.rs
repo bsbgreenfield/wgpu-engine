@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use crate::asset_manager::gltf_asset::GltfValidationError;
-use crate::asset_manager_new::{Asset, LoadedAsset};
-use crate::util::types::ModelVertex;
+use crate::asset_manager_new::{GltfValidationError, LoadedAsset, ModelBuilderError};
+use crate::util::types::{ModelVertex, VIndex};
 use crate::{
-    asset_manager::ModelBuilderError,
     asset_manager_new::{
         LoadableAsset,
         gltf::{
@@ -135,12 +133,34 @@ fn find_relative_index_range(
     }
 }
 
-fn build_add_models(
+fn set_index_data(index_ranges: &Vec<Range<usize>>, bin: &Vec<u8>) -> Option<Vec<VIndex>> {
+    if index_ranges.is_empty() {
+        return None;
+    } else {
+        let mut index_vec: Vec<VIndex> = Vec::new();
+        for range in index_ranges.iter() {
+            let indices_bytes: &[u8] = &bin[range.start..range.end];
+            let indices: &[VIndex] = bytemuck::cast_slice::<u8, VIndex>(indices_bytes);
+            index_vec.extend(indices.to_vec());
+        }
+        Some(index_vec)
+    }
+}
+
+fn build_all_models(
     bin_source: &BinarySource,
     index_ranges: &Vec<Range<usize>>,
     buffer_offsets: &Vec<usize>,
     primitive_data: &HashMap<usize, Vec<PrimitiveData>>,
-) -> Result<(Vec<PNUJWVertex>, Vec<PNUVertex>, Vec<Mesh>), ModelBuilderError> {
+) -> Result<
+    (
+        Vec<PNUJWVertex>,
+        Vec<PNUVertex>,
+        Option<Vec<VIndex>>,
+        Vec<Mesh>,
+    ),
+    ModelBuilderError,
+> {
     let binary_data = super::loader::load_binary_data_from_source(bin_source)
         .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
     let mut pnujw_vertices: Vec<PNUJWVertex> = Vec::new();
@@ -189,7 +209,8 @@ fn build_add_models(
             primitives,
         });
     }
-    Ok((pnujw_vertices, pnu_vertices, meshes))
+    let maybe_index_data = set_index_data(&index_ranges, &binary_data);
+    Ok((pnujw_vertices, pnu_vertices, maybe_index_data, meshes))
 }
 
 impl LoadableAsset for GltfAsset {
@@ -198,7 +219,7 @@ impl LoadableAsset for GltfAsset {
         let node_tree = build_node_trees(&self.gltf)?;
         let primitive_data = get_primitive_data_map(&self.gltf)?;
         let index_range_vec = get_index_range_vec(&primitive_data, &buffer_offsets)?;
-        let (pnujw, pnu, meshes) = build_add_models(
+        let (pnujw, pnu, indices, meshes) = build_all_models(
             &self.bin,
             &index_range_vec,
             &buffer_offsets,
@@ -209,6 +230,7 @@ impl LoadableAsset for GltfAsset {
             pnu_vertices: pnu,
             node_tree,
             meshes,
+            indices,
         }))
     }
 }

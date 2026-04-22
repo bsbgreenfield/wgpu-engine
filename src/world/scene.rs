@@ -2,7 +2,11 @@
 use crate::world::{WorldInitError, world::World};
 use crate::{
     asset_manager_new::AssetLoadResult,
-    world::{entity_manager::EntityHandle, instance_manager::Archetype},
+    world::{
+        components::{MeshAcessor, RigidAnimationMode},
+        entity_manager::EntityHandle,
+        instance_manager::Archetype,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -122,12 +126,14 @@ impl Scene {
             // MeshCollection
             resource_backing: box_asset,
             allocation_handle: None,
-            mesh_ids: &[0],
+            mesh_accessor: MeshAcessor::All,
+            rigid_animation_mode: RigidAnimationMode::Shared,
         });
         let fox_mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
             resource_backing: fox_asset,
             allocation_handle: None,
-            mesh_ids: &[0],
+            mesh_accessor: MeshAcessor::All,
+            rigid_animation_mode: RigidAnimationMode::Shared,
         });
         world
             .entity_manager
@@ -179,7 +185,8 @@ impl Scene {
             // MeshCollection
             resource_backing: box_asset,
             allocation_handle: None,
-            mesh_ids: &[0],
+            mesh_accessor: MeshAcessor::All,
+            rigid_animation_mode: RigidAnimationMode::Shared,
         });
         world
             .entity_manager
@@ -213,7 +220,8 @@ impl Scene {
             // MeshCollection
             resource_backing: fox_asset,
             allocation_handle: None,
-            mesh_ids: &[0],
+            mesh_accessor: MeshAcessor::All,
+            rigid_animation_mode: RigidAnimationMode::Shared,
         });
         world
             .entity_manager

@@ -3,7 +3,7 @@ use std::{any::TypeId, ops::Range};
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager::{ModelBuilderError, gltf_asset::GltfValidationError},
+    asset_manager_new::{GltfValidationError, ModelBuilderError},
     util::types::{ModelVertex, PrimitiveVerticesData},
 };
 

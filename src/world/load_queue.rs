@@ -214,7 +214,9 @@ mod load_queue_tests {
         app::renderer::GPUAllocationHandle,
         asset_manager_new::{asset_manager_new::AssetManagerNew, gltf::GltfAsset},
         world::{
-            components::{MeshCollectionComponent, MeshCollectionDescriptor},
+            components::{
+                MeshAcessor, MeshCollectionComponent, MeshCollectionDescriptor, RigidAnimationMode,
+            },
             entity_manager::EntityManager,
             load_queue::EntityLoadQueue,
             scene::{Scene, SceneLoadLevel},
@@ -235,7 +237,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
         let mut scene = Scene::new_with_id(id);
@@ -329,7 +332,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
 
@@ -429,7 +433,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
 
@@ -439,7 +444,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
 
@@ -495,7 +501,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
         let entity_b = entity_manager.new_entity().unwrap();
@@ -504,7 +511,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
 
@@ -559,7 +567,7 @@ mod load_queue_tests {
         assert_eq!(asset_did_load_count, 1);
 
         asset_manager
-            .register_asset_gpu_residency(&GPUAllocationHandle::mock(0, shared_asset))
+            .register_asset_gpu_residency(&shared_asset, GPUAllocationHandle::mock(0))
             .expect("should registered with the asset manager");
 
         queue
@@ -572,7 +580,7 @@ mod load_queue_tests {
     #[test]
     fn shared_asset_both_cpu_second_scene_resolves_from_cache() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManager::new();
+        let mut asset_manager = AssetManagerNew::new();
         let mut entity_manager = EntityManager::new();
 
         let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
@@ -583,7 +591,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
         let entity_b = entity_manager.new_entity().unwrap();
@@ -592,7 +601,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
 
@@ -634,7 +644,7 @@ mod load_queue_tests {
     #[test]
     fn shared_asset_gpu_cpu_second_scene_resolves_from_cache() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManager::new();
+        let mut asset_manager = AssetManagerNew::new();
         let mut entity_manager = EntityManager::new();
 
         let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
@@ -645,7 +655,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
         let entity_b = entity_manager.new_entity().unwrap();
@@ -654,7 +665,8 @@ mod load_queue_tests {
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
-                mesh_ids: &[0],
+                mesh_accessor: MeshAcessor::All,
+                rigid_animation_mode: RigidAnimationMode::Shared,
             }),
         );
 

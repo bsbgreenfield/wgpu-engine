@@ -9,10 +9,9 @@ use crate::{
             GPUAllocator, UploadMeshJob, VertexArenaError, vertex_arena::GPUArena,
         },
     },
-    asset_manager::{AssetHandle, LoadedAsset},
+    asset_manager_new::AssetHandle,
     util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
-        components::MeshCollectionComponent,
         entity_manager::{EntityHandle, Renderables},
         instance_manager::InstanceHandle,
         world::{DrawSet, RenderView},
@@ -26,7 +25,7 @@ mod vm;
 
 #[derive(Debug)]
 pub enum RenderUpdateDelta {
-    AssetGPULoaded(GPUAllocationHandle),
+    AssetGPULoaded(AssetHandle, GPUAllocationHandle),
     EntityGPULoaded(EntityHandle),
 }
 
@@ -37,7 +36,7 @@ pub struct GPUAllocationHandle {
 
 #[cfg(test)]
 impl GPUAllocationHandle {
-    pub fn mock(global_allocation_id: u32, _asset_handle: AssetHandle) -> Self {
+    pub fn mock(global_allocation_id: u32) -> Self {
         Self {
             global_allocation_id,
         }
@@ -71,7 +70,7 @@ pub enum Operations {
 pub enum VMValue<'frame> {
     Transform(Mat4F32),
     UploadJob(GPUUploadJob<'frame>),
-    Renderables(Renderables<'frame>),
+    Renderables(Renderables),
     InstanceHandle(InstanceHandle),
 }
 
