@@ -7,7 +7,9 @@ use crate::{
         LoadedAsset,
     },
     world::{
-        components::MeshCollectionComponent, entity_manager::Renderables, scene::SceneLoadLevel,
+        components::MeshCollectionComponent,
+        entity_manager::{InstanceRenderData, Renderables},
+        scene::SceneLoadLevel,
     },
 };
 
@@ -152,22 +154,24 @@ impl AssetManagerNew {
     pub fn get_renderables_for(
         &self,
         mesh_collection_component: &MeshCollectionComponent,
-    ) -> Option<Renderables> {
-        match self
+    ) -> Vec<InstanceRenderData> {
+        match &self
             .registered_assets
             .get(&mesh_collection_component.resource_backing)
             .unwrap()
             .residency_level
         {
-            AssetResidency::CPU(la_index) => {
-                let la = &self.loaded_assets[la_index];
-                la.get_renderables()
+            AssetResidency::GPU(aloc_handle, la_index) => {
+                let la = &self.loaded_assets[*la_index];
+                la.get_renderables(aloc_handle.clone())
             }
             AssetResidency::Registered => {
                 panic!("this mesh_collection_component is not yet loaded")
             }
-            AssetResidency::GPU(_, _) => {
-                panic!("this mesh_collection_component is already GPU loaded")
+            AssetResidency::CPU(_) => {
+                panic!(
+                    "this mesh_collection_component is not GPU resident, so its not ready to spawn!"
+                )
             }
         }
     }

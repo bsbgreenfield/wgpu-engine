@@ -12,7 +12,11 @@ use crate::{
         },
     },
     util::types::{ModelVertex, PNUJWVertex, PNUVertex, VIndex},
-    world::{entity_manager::Renderables, instance_manager::InstanceHandle, world::RenderView},
+    world::{
+        entity_manager::{InstanceRenderData, Renderables},
+        instance_manager::InstanceHandle,
+        world::{DrawSet, RenderGroup, RenderView},
+    },
 };
 
 impl<'frame> VMValue<'frame> {
@@ -119,14 +123,43 @@ impl<'frame> Renderer {
                     }
                     Operations::MoveEntity => todo!(),
                     Operations::SpawnEntityInstance => {
-                        let instance_idx = Self::get_constant_idx(&mut instr_peek);
-                        let instance_handle =
-                            constants[instance_idx as usize].unwrap_instance_handle();
+                        let const_idx = Self::get_constant_idx(&mut instr_peek);
 
-                        let renderables_idx = Self::get_constant_idx(&mut instr_peek);
-                        let renderables = constants[renderables_idx as usize].unwrap_renderables();
+                        match &constants[const_idx as usize] {
+                            VMValue::InstanceHandle(instance_handle) => {
+                                let group_idx = self
+                                    .entity_group_index
+                                    .get(&instance_handle.entity_handle)
+                                    .expect("group should exist");
 
-                        // ADD RENDER GROUP
+                                let group =
+                                    self.groups.get_mut(*group_idx).expect("group should exist");
+
+                                group.instance_handles.push(instance_handle.clone());
+                            }
+                            VMValue::Renderables(renderables) => {
+                                let mut views: Vec<RenderView> =
+                                    Vec::with_capacity(renderables.0.len());
+                                for instance_data in renderables.0.iter() {
+                                    match instance_data {
+                                        InstanceRenderData::MeshRenderable {
+                                            gpu_alloc_handle,
+                                            pnu_vertex_ranges,
+                                            pnujw_vertex_ranges,
+                                            index_ranges,
+                                        } => {
+                                            views.push(RenderView {
+                                                gpu_handle: gpu_alloc_handle.clone(),
+                                                pnu_draws: pnu_vertex_ranges.map(|pnu| todo!()),
+                                                pnujw_draws: pnujw_vertex_ranges
+                                                    .map(|pnujw| todo!()),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            _ => panic!("unexpected constant for spawn entity"),
+                        }
                     }
                 },
                 Instruction::Byte(_byte) => {}

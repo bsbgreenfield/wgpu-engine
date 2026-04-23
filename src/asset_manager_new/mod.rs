@@ -3,7 +3,10 @@ use std::fmt::{Debug, Display};
 use crate::{
     app::{GPUUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
-    world::{entity_manager::Renderables, scene::SceneLoadLevel},
+    world::{
+        entity_manager::{InstanceRenderData, Renderables},
+        scene::SceneLoadLevel,
+    },
 };
 
 pub mod asset_manager_new;
@@ -123,7 +126,7 @@ trait LoadedAsset {
         asset_handle: &'a AssetHandle,
     ) -> Result<GPUUploadJob<'a>, AssetLoadError>;
 
-    fn get_renderables(&self) -> Option<Renderables>;
+    fn get_renderables(&self, alloc_handle: GPUAllocationHandle) -> Vec<InstanceRenderData>;
 }
 #[derive(Debug)]
 pub enum ModelBuilderError {

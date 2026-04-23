@@ -54,14 +54,14 @@ pub struct RenderView {
 }
 
 pub struct RenderGroup {
-    pub instance_handle: InstanceHandle,
+    pub instance_handles: Vec<InstanceHandle>,
     pub views: Vec<RenderView>,
     pub indexed: bool,
 }
 impl RenderGroup {
     pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>, is_indexed: bool) -> Self {
         Self {
-            instance_handle,
+            instance_handles: vec![instance_handle],
             views,
             indexed: is_indexed,
         }
@@ -91,27 +91,21 @@ impl WorldUpdateDelta {
             }
 
             Self::EntityDidSpawn(instance_handle) => {
-                // let entity_handle = instance_handle.entity_handle.clone();
-                // let renderables = world
-                //     .entity_manager
-                //     .get_renderables(&entity_handle, &world.asset_manager);
-
-                // instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                // let assets = App::get_ordered_assets(&renderables);
-                // constants.push(VMValue::InstanceHandle(instance_handle.clone()));
-                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                // constants.push(VMValue::Renderables(renderables));
-                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                // // TODO: renderables can have a variable number of associated assets, this
-                // // affects the indices of the constants
-                // for asset_handle in assets {
-                //     constants.push(VMValue::LoadedAsset(
-                //         world
-                //             .get_loaded_asset_of(&asset_handle)
-                //             .expect("should be a registered asset"),
-                //     ));
-                //     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                // }
+                instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                if world
+                    .instance_manager
+                    .is_instanced(instance_handle.entity_handle.clone())
+                {
+                    constants.push(VMValue::InstanceHandle(instance_handle.clone()));
+                } else if let Some(renderables) = world
+                    .entity_manager
+                    .get_renderables(&instance_handle.entity_handle, &world.asset_manager)
+                {
+                    constants.push(VMValue::Renderables(renderables));
+                } else {
+                    todo!("what to do if there is no renderable data?")
+                }
             }
             WorldUpdateDelta::EntityDidLoad(_) => {
                 //TODO spawn based on user input

@@ -1,12 +1,13 @@
 use std::{any::TypeId, fmt::Display, path::PathBuf};
 
 use crate::{
-    app::GPUUploadJob,
+    app::{GPUUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, AssetResidency, LoadedAsset, ModelBuilderError,
         gltf::mesh::Mesh,
     },
     util::types::{Mat4F32, PNUJWVertex, PNUVertex, VIndex},
+    world::entity_manager::InstanceRenderData,
 };
 mod build;
 mod loader;
@@ -66,10 +67,13 @@ impl LoadedAsset for LoadedGltfAsset {
             self.indices.as_deref(),
         )
     }
-    fn get_renderables(&self) -> Option<crate::world::entity_manager::Renderables> {
+    fn get_renderables(&self, alloc_handle: GPUAllocationHandle) -> Vec<InstanceRenderData> {
         let mut pnu_ranges = Vec::new();
         let mut pnujw_ranges = Vec::new();
+        let mut index_ranges = Vec::new();
 
+        let mut render_data = Vec::new();
+        let has_indices = self.meshes[0].primitives[0].indices.is_some();
         for mesh in self.meshes.iter() {
             for primitive in mesh.primitives.iter() {
                 if primitive.vertex_type == TypeId::of::<PNUVertex>() {
@@ -79,12 +83,36 @@ impl LoadedAsset for LoadedGltfAsset {
                 } else {
                     panic!("vertex type not specified {:?}", primitive.vertex_type);
                 }
-
-                todo!("INDEX RANGES")
+                if has_indices {
+                    let i = primitive.indices.clone().unwrap();
+                    index_ranges.push(i)
+                }
             }
         }
 
-        todo!()
+        let pnu_vertex_ranges = if !pnu_ranges.is_empty() {
+            Some(pnu_ranges)
+        } else {
+            None
+        };
+        let pnujw_vertex_ranges = if !pnujw_ranges.is_empty() {
+            Some(pnujw_ranges)
+        } else {
+            None
+        };
+
+        let index_ranges = if !index_ranges.is_empty() {
+            Some(index_ranges)
+        } else {
+            None
+        };
+        render_data.push(InstanceRenderData::MeshRenderable {
+            gpu_alloc_handle: alloc_handle,
+            pnu_vertex_ranges,
+            pnujw_vertex_ranges,
+            index_ranges,
+        });
+        render_data
     }
 }
 

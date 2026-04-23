@@ -25,12 +25,17 @@ pub struct EntityManager {
 }
 
 #[derive(Debug)]
-pub struct Renderables {
-    pub allocation_handle: GPUAllocationHandle,
-    pub pnu_vertex_ranges: Option<Vec<Range<u32>>>,
-    pub pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
-    pub index_ranges: Option<Vec<Range<u32>>>,
+pub enum InstanceRenderData {
+    MeshRenderable {
+        gpu_alloc_handle: GPUAllocationHandle,
+        pnu_vertex_ranges: Option<Vec<Range<u32>>>,
+        pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
+        index_ranges: Option<Vec<Range<u32>>>,
+    },
 }
+
+#[derive(Debug)]
+pub struct Renderables(pub Vec<InstanceRenderData>);
 
 impl EntityManager {
     pub fn component_data_types_of(&self, entity: &EntityHandle) -> Vec<ComponentDataType> {
@@ -47,7 +52,12 @@ impl EntityManager {
         asset_manager: &AssetManagerNew,
     ) -> Option<Renderables> {
         let mesh_collection = self.mesh_collections.get(entity.0 as usize).unwrap();
-        asset_manager.get_renderables_for(mesh_collection)
+        let instance_render_data = asset_manager.get_renderables_for(mesh_collection);
+        // TODO: collect other instance render data
+        if instance_render_data.is_empty() {
+            return None;
+        }
+        Some(Renderables(instance_render_data))
     }
 
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {

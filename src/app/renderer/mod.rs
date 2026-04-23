@@ -221,6 +221,26 @@ pub struct BufferChunks {
     index: Option<usize>,
     vertex: usize,
 }
+
+struct DrawList {
+    chunks: BufferChunks,
+    items: Vec<DrawItem>,
+}
+
+pub struct AllocationCache {
+    chunks_index: usize,
+    vertex_range: Range<u32>,
+    index_range: Option<Range<u32>>,
+    lt_offset: u32,
+}
+
+pub struct DrawPacketNew {
+    pub pnu: Vec<DrawList>,
+    pub pnu_cache: HashMap<u32, AllocationCache>,
+    pub pnujw: Vec<DrawList>,
+    pub pnujw_cache: HashMap<u32, AllocationCache>,
+}
+
 pub struct DrawPacket {
     pnu: HashMap<BufferChunks, Vec<DrawItem>>,
     pnujw: HashMap<BufferChunks, Vec<DrawItem>>,

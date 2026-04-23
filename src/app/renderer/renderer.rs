@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZero};
+use std::{collections::HashMap, num::NonZero, ops::Range};
 
 use wgpu::RenderPass;
 
@@ -6,9 +6,10 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            BufferChunks, DrawItem, DrawListBuilder, DrawPacket, Instruction, RenderCategory,
-            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
-            VertexArenaError, VertexArenaSelector,
+            AllocationCache, BufferChunks, DrawItem, DrawList, DrawListBuilder, DrawPacket,
+            DrawPacketNew, GPUAllocationHandle, Instruction, RenderCategory, RenderError,
+            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaError,
+            VertexArenaSelector,
             gpu_allocator::{
                 GPUAllocator, LocalTransformUploadJob, UploadIndexJob,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
@@ -19,8 +20,9 @@ use crate::{
     util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
     world::{
         camera::Camera,
+        entity_manager::EntityHandle,
         instance_manager::{ArchetypeId, ArchetypeTable, InstanceHandle, InstanceManager},
-        world::{RenderGroup, RenderView},
+        world::{DrawSet, RenderGroup, RenderView},
     },
 };
 
@@ -122,7 +124,8 @@ pub struct Renderer {
     global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
     pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
-    groups: Vec<RenderGroup>,
+    pub(super) groups: Vec<RenderGroup>,
+    pub(super) entity_group_index: HashMap<EntityHandle, usize>,
     draw_packet: DrawPacket,
 }
 
@@ -135,6 +138,7 @@ impl Renderer {
             pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
             groups: Vec::new(),
+            entity_group_index: HashMap::new(),
             draw_packet: DrawPacket {
                 pnu: HashMap::new(),
                 pnujw: HashMap::new(),
@@ -180,6 +184,85 @@ impl Renderer {
         );
     }
 
+    fn cache_resolve_pnu(&self, view: &RenderView, draw_list: &mut Vec<DrawList>) -> AllocationCache
+    where
+        Self: VertexArenaSelector<PNUVertex>,
+    {
+        let arena: &GPUArena<PNUVertex> = self.get_arena();
+        let vertex_buffer_id = arena.chunk_id(&view.gpu_handle);
+        let index_buf_id = if PNUVertex::is_indexed(view) {
+            Some(self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle))
+        } else {
+            None
+        };
+        let buffer_chunks = BufferChunks {
+            vertex: vertex_buffer_id,
+            index: index_buf_id,
+        };
+
+        let draw_list_idx = draw_list
+            .iter()
+            .position(|l| l.chunks == buffer_chunks)
+            .unwrap_or_else(|| {
+                draw_list.push(DrawList {
+                    chunks: buffer_chunks,
+                    items: vec![],
+                });
+                draw_list.len() - 1
+            });
+
+        let (vertex_range, _, _) = arena.resolve(&view.gpu_handle);
+        let index_range = index_buf_id
+            .map(|_| self.vertex_arenas.index_arena.resolve(&view.gpu_handle))
+            .map(|i| i.0);
+
+        AllocationCache {
+            index_range,
+            vertex_range,
+            chunks_index: draw_list_idx,
+            lt_offset: 0,
+        }
+    }
+
+    pub fn gen_draw_calls<'frame>(
+        &'frame self,
+        instance_manager: &'frame InstanceManager,
+        packet: &mut DrawPacketNew,
+        queue: &wgpu::Queue,
+    ) {
+        for group in self.groups.iter() {
+            for view in group.views.iter() {
+                if let Some(pnu) = &view.pnu_draws {
+                    // if the alloc id is not chached, add a new cache, and a new DrawList value if necessary
+                    if !packet
+                        .pnu_cache
+                        .contains_key(&view.gpu_handle.global_allocation_id)
+                    {
+                        let alloc_cache = self.cache_resolve_pnu(view, &mut packet.pnu);
+                        packet
+                            .pnu_cache
+                            .insert(view.gpu_handle.global_allocation_id.clone(), alloc_cache);
+                    }
+                    // get the DrawList from the alloc cache and write to it
+                    let alloc_cache = &packet.pnu_cache[&view.gpu_handle.global_allocation_id];
+                    for (i, mesh_id) in pnu.mesh_ids.iter().enumerate() {
+                        packet.pnu[alloc_cache.chunks_index].items.push(DrawItem {
+                            lt_idx: 0,
+                            instances: 0..0,
+                            primitives: DrawSet::within(
+                                &pnu.primtitive_ranges[i],
+                                &alloc_cache.vertex_range,
+                            ),
+                            indices: alloc_cache.index_range.as_ref().map(|i| {
+                                DrawSet::within(&i, alloc_cache.index_range.as_ref().unwrap())
+                            }),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     pub fn gen_draw_calls_new<'frame>(
         &'frame self,
         instance_manager: &'frame InstanceManager,
@@ -212,18 +295,8 @@ impl Renderer {
             }
         }
         for group in self.groups.iter() {
-            let instance_idx = group.instance_handle.instance_id
-                + collector
-                    .offset_map
-                    .offset_of(group.instance_handle.archetype); // for each allocation view
-
             for view in group.views.iter() {
-                if PNUVertex::has_view_data(view) {
-                    self.write_draw_list::<PNUVertex>(view, &mut packet.pnu, instance_idx);
-                }
-                if PNUJWVertex::has_view_data(view) {
-                    self.write_draw_list::<PNUJWVertex>(view, &mut packet.pnujw, instance_idx);
-                }
+                self.write_draw_list::<PNUVertex>(view, &mut self.draw_packet.pnu, 0);
             }
         }
     }

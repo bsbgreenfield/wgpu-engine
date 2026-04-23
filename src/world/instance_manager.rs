@@ -150,6 +150,11 @@ impl InstanceManager {
         }
     }
 
+    #[inline]
+    pub(super) fn is_instanced(&self, entity_handle: EntityHandle) -> bool {
+        self.entity_to_instance.contains_key(&entity_handle)
+    }
+
     pub(super) fn spawn(
         &mut self,
         entity_handle: EntityHandle,
