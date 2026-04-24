@@ -145,7 +145,7 @@ mod integration_tests {
 
     fn gen_draw_calls(app: &mut App) {
         app.draw_packet.clear();
-        app.renderer.as_ref().unwrap().gen_draw_calls_new(
+        app.renderer.as_ref().unwrap().gen_draw_calls(
             &app.world.as_ref().unwrap().instance_manager,
             &mut app.draw_packet,
             &app.app_config.as_ref().unwrap().queue,

@@ -104,7 +104,7 @@ impl ArchetypeTable for APositionTable {
     where
         C: ComponentData,
     {
-        if let Some(index) = self.arena.resolve(handle) {
+        if let Some(index) = self.arena.resolve(&handle) {
             match C::get_data_type() {
                 ComponentDataType::PhysicalPosition => Some(&self.positions[index]),
                 _ => panic!(),
@@ -153,6 +153,12 @@ impl InstanceManager {
     #[inline]
     pub(super) fn is_instanced(&self, entity_handle: EntityHandle) -> bool {
         self.entity_to_instance.contains_key(&entity_handle)
+    }
+
+    pub fn resolve_idx(&self, handle: &InstanceHandle) -> Option<usize> {
+        match handle.archetype {
+            ArchetypeId::Position => self.pos.arena.resolve(handle),
+        }
     }
 
     pub(super) fn spawn(

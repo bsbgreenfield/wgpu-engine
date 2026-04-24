@@ -49,7 +49,7 @@ impl App<'_> {
             surface_ready: false,
             renderer: None,
             world: None,
-            draw_packet: DrawPacket::new(),
+            draw_packet: DrawPacket::default(),
             command_queue: Vec::new(),
         }
     }
@@ -71,9 +71,8 @@ impl App<'_> {
             instructions,
             &self.app_config.as_ref().unwrap().queue,
         )?;
-        self.draw_packet.clear();
 
-        self.renderer.as_ref().unwrap().gen_draw_calls_new(
+        self.renderer.as_ref().unwrap().gen_draw_calls(
             &self.world.as_ref().unwrap().instance_manager,
             &mut self.draw_packet,
             &self.app_config.as_ref().unwrap().queue,

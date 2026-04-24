@@ -328,3 +328,39 @@ for each (i, draw ) in draw_entry.1.iter().enumurate() {
 3. GPU upload job is passed to the renderer, vertices and indices are uploaded to the proper GPU buffers
 4. in post frame update, asset is marked as GPU loaded, next frame (or when all assets are GPU loaded), call World::spawn()
 5.
+
+
+
+
+
+1. make sure that instance handles instance idx are stable into the archetyp table
+2. use the instance handle to ge the index of the instance for the draw calls
+3. upload the local transform data using the instance handle, so that it can be resolved using the instance handle
+
+
+## generating draw calls
+
+The app hangs on to a DrawPacket into which the draws for each frame are written
+
+for each vertex type (pipeline currently), the draw packet contains
+- a list of Draw items, sorted by unique VertexBuffer / IndexBuffer combination
+- A cache which maps GPUAllocHandle id -> vertex / index buffer allocation ranges and the index of the sorted group of draws
+
+
+Every frame:
+- for each render group (entity)
+- for each render view within the render group (unique asset allocation per entity)
+- grab the alloc ranges and index of draw group per its unique vertex buffer index buffer combo
+- clear the draw data for each draw that belongs to that group
+- for each instance in the render group
+- use the instance handle to find the index of the instance within GPU buffers that have data for each instance
+- for each mesh, write a DrawItem that contains the vertex range, index range, and instance id
+
+
+
+
+
+### new system
+Draw calls need to be organized per pipeline first, and per vertex/ index buffer second
+
+Each mesh within an instance already knows its primitive offsets within the allocation, the only hard part is to resolve the correct allocation range within which these primitive offsets are valid. 

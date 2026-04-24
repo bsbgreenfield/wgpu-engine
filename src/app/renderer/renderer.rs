@@ -7,9 +7,8 @@ use crate::{
         app_config::AppConfig,
         renderer::{
             AllocationCache, BufferChunks, DrawItem, DrawList, DrawListBuilder, DrawPacket,
-            DrawPacketNew, GPUAllocationHandle, Instruction, RenderCategory, RenderError,
-            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaError,
-            VertexArenaSelector,
+            Instruction, RenderCategory, RenderError, RenderUpdateDelta, RenderUpdateError,
+            UploadMeshJob, VMValue, VertexArenaError, VertexArenaSelector,
             gpu_allocator::{
                 GPUAllocator, LocalTransformUploadJob, UploadIndexJob,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
@@ -227,54 +226,12 @@ impl Renderer {
     pub fn gen_draw_calls<'frame>(
         &'frame self,
         instance_manager: &'frame InstanceManager,
-        packet: &mut DrawPacketNew,
-        queue: &wgpu::Queue,
-    ) {
-        for group in self.groups.iter() {
-            for view in group.views.iter() {
-                if let Some(pnu) = &view.pnu_draws {
-                    // if the alloc id is not chached, add a new cache, and a new DrawList value if necessary
-                    if !packet
-                        .pnu_cache
-                        .contains_key(&view.gpu_handle.global_allocation_id)
-                    {
-                        let alloc_cache = self.cache_resolve_pnu(view, &mut packet.pnu);
-                        packet
-                            .pnu_cache
-                            .insert(view.gpu_handle.global_allocation_id.clone(), alloc_cache);
-                    }
-                    // get the DrawList from the alloc cache and write to it
-                    let alloc_cache = &packet.pnu_cache[&view.gpu_handle.global_allocation_id];
-                    for (i, mesh_id) in pnu.mesh_ids.iter().enumerate() {
-                        packet.pnu[alloc_cache.chunks_index].items.push(DrawItem {
-                            lt_idx: 0,
-                            instances: 0..0,
-                            primitives: DrawSet::within(
-                                &pnu.primtitive_ranges[i],
-                                &alloc_cache.vertex_range,
-                            ),
-                            indices: alloc_cache.index_range.as_ref().map(|i| {
-                                DrawSet::within(&i, alloc_cache.index_range.as_ref().unwrap())
-                            }),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn gen_draw_calls_new<'frame>(
-        &'frame self,
-        instance_manager: &'frame InstanceManager,
         packet: &mut DrawPacket,
         queue: &wgpu::Queue,
     ) {
         let mut collector = InstanceDataCollector::new();
 
         instance_manager.pos.collect(&mut collector, 0);
-        // instance_manager.next_table.collect(&mut collector, instance_manager.pos.len())
-        // ... and so on
-
         // COPY GLOBAL TRANSFORMS
         {
             let global_transforms = collector.global_transforms;
@@ -294,12 +251,113 @@ impl Renderer {
                 }
             }
         }
+
         for group in self.groups.iter() {
             for view in group.views.iter() {
-                self.write_draw_list::<PNUVertex>(view, &mut self.draw_packet.pnu, 0);
+                if let Some(pnu) = &view.pnu_draws {
+                    // create a new per-gpu alloc entry
+                    let entry = packet
+                        .pnu
+                        .entry(view.gpu_handle.clone())
+                        .or_insert_with(Vec::new);
+
+                    for instance_handle in group.instance_handles.iter() {
+                        // calculate the instance idx of each draw call
+                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
+                        let instance_idx = instance_manager
+                            .resolve_idx(instance_handle)
+                            .expect("should be valid")
+                            as u32
+                            + offset as u32;
+                        for (i, pr) in pnu.primtitive_ranges.iter().enumerate() {
+                            entry.push(DrawItem {
+                                lt_idx: 0,
+                                instances: instance_idx..instance_idx + 1,
+                                primitives: pr.clone(),
+                                indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
+                            });
+                        }
+                    }
+                }
             }
         }
     }
+    //    pub fn gen_draw_calls<'frame>(
+    //        &'frame self,
+    //        instance_manager: &'frame InstanceManager,
+    //        packet: &mut DrawPacket,
+    //        queue: &wgpu::Queue,
+    //    ) {
+    //        let mut collector = InstanceDataCollector::new();
+    //
+    //        instance_manager.pos.collect(&mut collector, 0);
+    //        // COPY GLOBAL TRANSFORMS
+    //        {
+    //            let global_transforms = collector.global_transforms;
+    //            if global_transforms.is_empty() {
+    //                return;
+    //            }
+    //            if let Some(mut buffer_view) = queue.write_buffer_with(
+    //                &self.global_transform_buffer,
+    //                0,
+    //                NonZero::new((collector.gt_len * size_of::<GlobalTransform>()) as u64).unwrap(),
+    //            ) {
+    //                let mut offset: usize = 0;
+    //                for pos_slice in &global_transforms {
+    //                    buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
+    //                        .copy_from_slice(bytemuck::cast_slice(pos_slice));
+    //                    offset += pos_slice.len() * size_of::<GlobalTransform>();
+    //                }
+    //            }
+    //        }
+    //
+    //        packet.clear();
+    //        for group in self.groups.iter() {
+    //            for view in group.views.iter() {
+    //                if let Some(pnu) = &view.pnu_draws {
+    //                    // if the alloc id is not chached, add a new cache, and a new DrawList value if necessary
+    //                    if !packet
+    //                        .pnu_cache
+    //                        .contains_key(&view.gpu_handle.global_allocation_id)
+    //                    {
+    //                        let alloc_cache = self.cache_resolve_pnu(view, &mut packet.pnu);
+    //                        packet
+    //                            .pnu_cache
+    //                            .insert(view.gpu_handle.global_allocation_id.clone(), alloc_cache);
+    //                    }
+    //                    // get the DrawList from the alloc cache and write to it
+    //                    let alloc_cache = &packet.pnu_cache[&view.gpu_handle.global_allocation_id];
+    //
+    //                    for instance_handle in group.instance_handles.iter() {
+    //                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
+    //                        let instance_idx = instance_manager
+    //                            .resolve_idx(&instance_handle)
+    //                            .expect("should be valid")
+    //                            as u32
+    //                            + offset as u32;
+    //
+    //                        for i in 0..pnu.mesh_ids.len() {
+    //                            packet.pnu_draw_len += 1;
+    //                            packet.pnu[alloc_cache.chunks_index].items.push(DrawItem {
+    //                                lt_idx: 0,
+    //                                instances: instance_idx..instance_idx + 1,
+    //                                primitives: DrawSet::within(
+    //                                    &pnu.primtitive_ranges[i],
+    //                                    &alloc_cache.vertex_range,
+    //                                ),
+    //                                indices: alloc_cache.index_range.as_ref().map(|idx_alloc_range| {
+    //                                    DrawSet::within(
+    //                                        &pnu.index_ranges.as_ref().unwrap()[i],
+    //                                        idx_alloc_range,
+    //                                    )
+    //                                }),
+    //                            });
+    //                        }
+    //                    }
+    //                }
+    //            }
+    //        }
+    //    }
 
     pub(super) fn add_render_group(
         &mut self,
@@ -417,34 +475,33 @@ impl Renderer {
                             let pipeline = &self.pipelines.opaque_static;
                             render_pass.set_pipeline(&pipeline.pipeline);
                             for draw_entry in draw_packet.pnu.iter() {
-                                render_pass.set_vertex_buffer(
-                                    0,
-                                    self.vertex_arenas
-                                        .static_arena
-                                        .buffer_from_chunk_id(draw_entry.0.vertex)
-                                        .slice(..),
-                                );
-                                if let Some(index_buf_id) = draw_entry.0.index {
-                                    render_pass.set_index_buffer(
-                                        self.vertex_arenas
-                                            .index_arena
-                                            .buffer_from_chunk_id(index_buf_id)
-                                            .slice(..),
-                                        wgpu::IndexFormat::Uint16,
-                                    );
-                                }
+                                let (vertex_alloc_range, v_buffer, _) =
+                                    self.vertex_arenas.static_arena.resolve(draw_entry.0);
+
+                                render_pass.set_vertex_buffer(0, v_buffer.slice(..));
+
                                 for draw in draw_entry.1.iter() {
                                     render_pass
                                         .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
                                     if let Some(indices) = &draw.indices {
+                                        let (index_alloc_range, i_buffer, _) =
+                                            self.vertex_arenas.index_arena.resolve(draw_entry.0);
+                                        render_pass.set_index_buffer(
+                                            i_buffer.slice(..),
+                                            wgpu::IndexFormat::Uint16,
+                                        );
                                         render_pass.draw_indexed(
-                                            indices.clone(),
-                                            draw.primitives.start as i32,
+                                            DrawSet::within(indices, &index_alloc_range),
+                                            DrawSet::within(&draw.primitives, &vertex_alloc_range)
+                                                .start
+                                                as i32,
                                             draw.instances.clone(),
                                         );
                                     } else {
-                                        render_pass
-                                            .draw(draw.primitives.clone(), draw.instances.clone());
+                                        render_pass.draw(
+                                            DrawSet::within(&draw.primitives, &vertex_alloc_range),
+                                            draw.instances.clone(),
+                                        );
                                     }
                                 }
                             }
@@ -452,38 +509,7 @@ impl Renderer {
                         RenderCategory::OpaqueSkinned => {
                             let pipeline = &self.pipelines.opaque_skinned;
                             render_pass.set_pipeline(&pipeline.pipeline);
-                            for draw_entry in draw_packet.pnujw.iter() {
-                                render_pass.set_vertex_buffer(
-                                    0,
-                                    self.vertex_arenas
-                                        .skinned_arena
-                                        .buffer_from_chunk_id(draw_entry.0.vertex)
-                                        .slice(..),
-                                );
-                                if let Some(index_buf_id) = draw_entry.0.index {
-                                    render_pass.set_index_buffer(
-                                        self.vertex_arenas
-                                            .index_arena
-                                            .buffer_from_chunk_id(index_buf_id)
-                                            .slice(..),
-                                        wgpu::IndexFormat::Uint16,
-                                    );
-                                }
-                                for draw in draw_entry.1.iter() {
-                                    render_pass
-                                        .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
-                                    if let Some(indices) = &draw.indices {
-                                        render_pass.draw_indexed(
-                                            indices.clone(),
-                                            draw.primitives.start as i32,
-                                            draw.instances.clone(),
-                                        );
-                                    } else {
-                                        render_pass
-                                            .draw(draw.primitives.clone(), draw.instances.clone());
-                                    }
-                                }
-                            }
+                            todo!()
                         }
                     }
                 }

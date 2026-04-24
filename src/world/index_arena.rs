@@ -86,7 +86,7 @@ impl<A: Archetype + ArchetypeIdent> InstanceArenaNew<A> {
         res
     }
 
-    pub fn resolve(&self, handle: InstanceHandle) -> Option<usize> {
+    pub fn resolve(&self, handle: &InstanceHandle) -> Option<usize> {
         let slot = &self.slots[handle.instance_id as usize];
 
         if slot.generation != handle.generation {

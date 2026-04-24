@@ -234,40 +234,69 @@ pub struct AllocationCache {
     lt_offset: u32,
 }
 
-pub struct DrawPacketNew {
-    pub pnu: Vec<DrawList>,
-    pub pnu_cache: HashMap<u32, AllocationCache>,
-    pub pnujw: Vec<DrawList>,
-    pub pnujw_cache: HashMap<u32, AllocationCache>,
+#[derive(Debug, Default)]
+pub struct DrawPacket {
+    pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
+    pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
 }
 
-pub struct DrawPacket {
-    pnu: HashMap<BufferChunks, Vec<DrawItem>>,
-    pnujw: HashMap<BufferChunks, Vec<DrawItem>>,
-}
+//#[derive(Default)]
+//pub struct DrawPacket {
+//    pnu_draw_len: u32,
+//    pnujw_draw_len: u32,
+//    pub pnu: Vec<DrawList>,
+//    pub pnu_cache: HashMap<u32, AllocationCache>,
+//    pub pnujw: Vec<DrawList>,
+//    pub pnujw_cache: HashMap<u32, AllocationCache>,
+//}
+
 impl DrawPacket {
-    pub fn new() -> Self {
-        Self {
-            pnu: HashMap::new(),
-            pnujw: HashMap::new(),
-        }
+    pub fn is_empty(&self) -> bool {
+        self.pnu.is_empty() && self.pnujw.is_empty()
     }
+
     pub fn clear(&mut self) {
         self.pnu.clear();
         self.pnujw.clear();
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.pnu.is_empty() && self.pnujw.is_empty()
-    }
-}
-#[cfg(test)]
-impl DrawPacket {
-    pub fn get_pnu(&self) -> &HashMap<BufferChunks, Vec<DrawItem>> {
+    #[cfg(test)]
+    pub fn get_pnu(&self) -> &HashMap<GPUAllocationHandle, Vec<DrawItem>> {
         &self.pnu
     }
 
-    pub fn get_pnujw(&self) -> &HashMap<BufferChunks, Vec<DrawItem>> {
+    pub fn get_pnujw(&self) -> &HashMap<GPUAllocationHandle, Vec<DrawItem>> {
         &self.pnujw
     }
 }
+
+//pub struct DrawPacket {
+//    pnu: HashMap<BufferChunks, Vec<DrawItem>>,
+//    pnujw: HashMap<BufferChunks, Vec<DrawItem>>,
+//}
+//impl DrawPacket {
+//    pub fn new() -> Self {
+//        Self {
+//            pnu: HashMap::new(),
+//            pnujw: HashMap::new(),
+//        }
+//    }
+//    pub fn clear(&mut self) {
+//        self.pnu.clear();
+//        self.pnujw.clear();
+//    }
+//
+//    pub fn is_empty(&self) -> bool {
+//        self.pnu.is_empty() && self.pnujw.is_empty()
+//    }
+//}
+//#[cfg(test)]
+//impl DrawPacketNew {
+//    pub fn get_pnu(&self) -> &HashMap<BufferChunks, Vec<DrawItem>> {
+//        &self.pnu
+//    }
+//
+//    pub fn get_pnujw(&self) -> &HashMap<BufferChunks, Vec<DrawItem>> {
+//        &self.pnujw
+//    }
+//}
