@@ -4,6 +4,7 @@ use crate::{
     app::{GPUUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
     world::{
+        InstanceUploadQuery,
         entity_manager::{InstanceRenderData, Renderables},
         scene::SceneLoadLevel,
     },
@@ -19,6 +20,7 @@ pub enum AssetLoadError {
     AssetNotFound,
     ComponentNotFound,
     NoVertexData,
+    InstanceUploadFailure(String),
 }
 #[derive(Debug)]
 pub enum AssetLoadResult {
@@ -40,6 +42,7 @@ impl Display for AssetLoadError {
                 f.write_str("The component associated with this asset does not exist")
             }
             Self::NoVertexData => f.write_str("This Asset has no vertices to upload"),
+            Self::InstanceUploadFailure(str) => f.write_str(str.as_str()),
         }
     }
 }
@@ -117,7 +120,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
         }
     }
 }
-trait LoadableAsset: Asset {
+pub trait LoadableAsset: Asset {
     fn load(&self) -> Result<Box<dyn LoadedAsset>, ModelBuilderError>;
 }
 trait LoadedAsset {
@@ -126,7 +129,11 @@ trait LoadedAsset {
         asset_handle: &'a AssetHandle,
     ) -> Result<GPUUploadJob<'a>, AssetLoadError>;
 
-    fn get_renderables(&self, alloc_handle: GPUAllocationHandle) -> Vec<InstanceRenderData>;
+    fn get_renderables(
+        &self,
+        alloc_handle: GPUAllocationHandle,
+        query: &InstanceUploadQuery,
+    ) -> Result<Vec<InstanceRenderData>, AssetLoadError>;
 }
 #[derive(Debug)]
 pub enum ModelBuilderError {

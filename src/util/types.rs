@@ -3,7 +3,12 @@ use std::{fmt::Debug, num::NonZero, ops::Deref};
 use crate::world::world::RenderView;
 
 pub type Mat4F32 = [[f32; 4]; 4];
-
+pub const MAT4_IDENTITY: Mat4F32 = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
 pub struct PrimitiveVerticesData {
     pub positions: Vec<u8>,
     pub normal: Option<Vec<u8>>,

@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     marker::PhantomData,
-    num::NonZero,
     ops::{Deref, Range},
 };
 
@@ -10,11 +9,11 @@ use crate::{
     app::renderer::{
         GPUAllocationHandle,
         gpu_allocator::{
-            CHUNK_SIZE, GPUAllocator, LocalTransformUploadJob, UploadIndexJob, UploadMeshJob,
-            VertexArenaError, free_list::FreeListAllocator,
+            CHUNK_SIZE, GPUAllocator, UploadIndexJob, UploadMeshJob, VertexArenaError,
+            free_list::FreeListAllocator,
         },
     },
-    util::types::{GlobalTransform, LocalTransform, ModelVertex, VIndex},
+    util::types::{GlobalTransform, ModelVertex, VIndex},
 };
 //****************************************************************
 //

@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use crate::{
     asset_manager_new::{AssetHandle, AssetLoadError},
-    world::entity_manager::{EntityHandle, EntityManagerError},
+    world::{
+        components::MeshAcessor,
+        entity_manager::{EntityHandle, EntityManagerError},
+    },
 };
 
 pub mod camera;
@@ -77,4 +80,10 @@ impl From<EntityManagerError> for WorldInitError {
     fn from(value: EntityManagerError) -> Self {
         Self::EntityFailure(value)
     }
+}
+
+#[derive(Default)]
+pub struct InstanceUploadQuery<'a> {
+    pub mesh_accesor: Option<&'a MeshAcessor>,
+    // TODO: other instance data
 }

@@ -48,10 +48,6 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
 
     fn new(device: &wgpu::Device) -> Self;
 }
-pub struct LocalTransformUploadJob<'frame> {
-    pub(super) local_transforms: &'frame [LocalTransform],
-    pub(super) global_alloc_id: u32,
-}
 #[derive(Debug)]
 pub enum FreeListAllocError {
     NoRoomLeft(u32, u32),

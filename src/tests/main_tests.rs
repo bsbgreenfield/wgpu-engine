@@ -96,9 +96,8 @@ mod integration_tests {
         let mut app = App::new();
         let config = AppConfig::new_headless().await;
         let renderer = Renderer::new(&config);
-        let asset_manager = AssetManagerNew::new();
         let entity_manager = EntityManager::new();
-        let mut world = World::new(1.0, asset_manager, entity_manager, &config.device).unwrap();
+        let mut world = World::new(1.0, entity_manager, &config.device).unwrap();
         let scene = match test_case {
             TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
             TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),

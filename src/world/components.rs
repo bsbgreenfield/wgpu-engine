@@ -1,6 +1,8 @@
 use crate::{
-    app::renderer::GPUAllocationHandle, asset_manager_new::AssetHandle,
-    util::types::GlobalTransform, world::instance_manager::InstanceManager,
+    app::renderer::GPUAllocationHandle,
+    asset_manager_new::{AssetHandle, LoadableAsset},
+    util::types::{GlobalTransform, LocalTransform},
+    world::{InstanceUploadQuery, entity_manager::Renderables, instance_manager::InstanceManager},
 };
 
 #[derive(Debug)]
@@ -33,8 +35,8 @@ pub enum RigidAnimationMode {
 #[derive(Debug)]
 pub struct MeshCollectionComponent {
     pub resource_backing: AssetHandle,
-    mesh_accessor: MeshAcessor,
-    rigid_animation_mode: RigidAnimationMode,
+    pub mesh_accessor: MeshAcessor,
+    pub rigid_animation_mode: RigidAnimationMode,
 }
 
 pub struct MeshCollectionDescriptor {
@@ -55,67 +57,11 @@ impl MeshCollectionComponent {
 }
 
 pub trait Component {
-    type ComponentData: ComponentData;
-}
-
-impl Component for PhysicalPositionComponent {
-    type ComponentData = GlobalTransform;
-}
-pub struct PhysicalPositionComponent;
-
-#[derive(Debug)]
-pub enum ComponentDataType {
-    PhysicalPosition,
-    Physics,
-    Void,
-}
-
-pub trait ComponentData: Sized {
-    fn get_data_type() -> ComponentDataType;
-
-    fn get_instance_buffers<'frame>(
-        instance_manager: &'frame InstanceManager,
-    ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
-        let map: Vec<u16> = Vec::with_capacity(instance_manager.next_id as usize);
-        let data: Vec<&'frame [Self]> = Vec::new();
-        Some((map, data))
-    }
-
-    // fn get_instance_data<'frame>(
-    //     _: &'frame InstanceManager,
-    // ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
-    //     None
-    // }
-}
-
-impl ComponentData for GlobalTransform {
-    fn get_data_type() -> ComponentDataType {
-        ComponentDataType::PhysicalPosition
-    }
-
-    // fn get_instance_data<'frame>(
-    //     instance_manager: &'frame InstanceManager,
-    // ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
-    //     let (mut map, mut data_slices) = Self::get_instance_buffers(instance_manager).unwrap();
-    //     data_slices.push(&instance_manager.pos.positions[..]);
-    //     for (i, handle) in instance_manager.pos.arena.handles.iter().enumerate() {
-    //         map.insert(handle.global_id as usize, i as u16);
-    //     }
-    //     return Some((map, data_slices));
-    // }
-}
-pub struct VoidComponentData {}
-impl ComponentData for VoidComponentData {
-    fn get_data_type() -> ComponentDataType {
-        ComponentDataType::Void
-    }
-    fn get_instance_buffers<'frame>(
-        _: &'frame InstanceManager,
-    ) -> Option<(Vec<u16>, Vec<&'frame [Self]>)> {
-        None
-    }
+    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>);
 }
 
 impl Component for MeshCollectionComponent {
-    type ComponentData = VoidComponentData;
+    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>) {
+        query.mesh_accesor = Some(&self.mesh_accessor)
+    }
 }

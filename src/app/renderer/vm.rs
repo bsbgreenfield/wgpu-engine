@@ -6,8 +6,7 @@ use crate::{
         GPUUploadJob,
         renderer::{
             GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
-            UploadMeshJob, VMValue, VertexArenaSelector,
-            gpu_allocator::{LocalTransformUploadJob, UploadIndexJob},
+            UploadMeshJob, VMValue, VertexArenaSelector, gpu_allocator::UploadIndexJob,
             renderer::Renderer,
         },
     },
@@ -147,6 +146,7 @@ impl<'frame> Renderer {
                                             pnu_vertex_ranges,
                                             pnujw_vertex_ranges,
                                             index_ranges,
+                                            local_transforms,
                                         } => {
                                             views.push(RenderView {
                                                 gpu_handle: gpu_alloc_handle.clone(),

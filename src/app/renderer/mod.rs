@@ -10,7 +10,7 @@ use crate::{
         },
     },
     asset_manager_new::AssetHandle,
-    util::types::{Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
     world::{
         entity_manager::{EntityHandle, Renderables},
         instance_manager::InstanceHandle,
@@ -41,6 +41,10 @@ impl GPUAllocationHandle {
             global_allocation_id,
         }
     }
+}
+pub struct LocalTransformUploadJob<'frame> {
+    pub(super) local_transforms: &'frame [LocalTransform],
+    pub(super) global_alloc_id: u32,
 }
 
 //#[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]

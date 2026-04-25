@@ -1,11 +1,19 @@
 use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
-    app::renderer::gpu_allocator::{
-        CHUNK_SIZE, GPUInstanceAllocator, LocalTransformUploadJob, VertexArenaError,
-        free_list::FreeListAllocator, vertex_arena::GPUChunk,
+    app::renderer::{
+        LocalTransformUploadJob,
+        gpu_allocator::{
+            CHUNK_SIZE, GPUInstanceAllocator, VertexArenaError, free_list::FreeListAllocator,
+            vertex_arena::GPUChunk,
+        },
     },
+    asset_manager_new::asset_manager_new::AssetManagerNew,
     util::types::LocalTransform,
+    world::{
+        components::{MeshAcessor, MeshCollectionComponent},
+        entity_manager::EntityManager,
+    },
 };
 
 struct InstanceChunk<T: bytemuck::Pod + Debug> {

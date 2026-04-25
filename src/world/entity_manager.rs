@@ -1,15 +1,20 @@
 use std::{collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit, ops::Range};
 
 use crate::{
-    app::renderer::GPUAllocationHandle,
+    app::renderer::{GPUAllocationHandle, LocalTransformUploadJob},
     asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
-    world::components::{ComponentDataType, MeshCollectionComponent, PhysicalPositionComponent},
+    util::types::LocalTransform,
+    world::{
+        InstanceUploadQuery,
+        components::{Component, MeshAcessor, MeshCollectionComponent},
+    },
 };
 
 #[derive(Debug)]
 pub enum EntityManagerError {
     MaxEntitiesExceeded,
-    InvalidInitialization(ComponentDataType),
+    InvalidInitialization,
+    UploadJobFail,
 }
 impl Display for EntityManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -21,7 +26,7 @@ impl Error for EntityManagerError {}
 pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent, 100>,
-    global_transforms: SparseSet<PhysicalPositionComponent, 100>,
+    pub(super) asset_manager: AssetManagerNew,
 }
 
 #[derive(Debug)]
@@ -31,6 +36,7 @@ pub enum InstanceRenderData {
         pnu_vertex_ranges: Option<Vec<Range<u32>>>,
         pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
         index_ranges: Option<Vec<Range<u32>>>,
+        local_transforms: Vec<LocalTransform>,
     },
 }
 
@@ -38,21 +44,18 @@ pub enum InstanceRenderData {
 pub struct Renderables(pub Vec<InstanceRenderData>);
 
 impl EntityManager {
-    pub fn component_data_types_of(&self, entity: &EntityHandle) -> Vec<ComponentDataType> {
-        let mut res = Vec::new();
-        if self.global_transforms.get(entity.0 as usize).is_some() {
-            res.push(ComponentDataType::PhysicalPosition);
+    pub fn get_renderables<'frame>(&'frame self, entity: &EntityHandle) -> Option<Renderables> {
+        let mut query = InstanceUploadQuery::default();
+        let mut instance_render_data: Vec<InstanceRenderData> = Vec::new();
+        let mesh_collection = self.mesh_collections.get(entity.0 as usize);
+        if let Some(mesh_collection) = mesh_collection {
+            mesh_collection.modify_query(&mut query);
+            instance_render_data.extend(
+                self.asset_manager
+                    .get_renderables_for(mesh_collection, &query)
+                    .unwrap_or(vec![]),
+            );
         }
-        res
-    }
-
-    pub fn get_renderables<'frame>(
-        &'frame self,
-        entity: &EntityHandle,
-        asset_manager: &AssetManagerNew,
-    ) -> Option<Renderables> {
-        let mesh_collection = self.mesh_collections.get(entity.0 as usize).unwrap();
-        let instance_render_data = asset_manager.get_renderables_for(mesh_collection);
         // TODO: collect other instance render data
         if instance_render_data.is_empty() {
             return None;
@@ -87,9 +90,9 @@ impl EntityManager {
 
     pub fn new() -> Self {
         Self {
+            asset_manager: AssetManagerNew::new(),
             available_ids: vec![0..10000],
             mesh_collections: SparseSet::new(),
-            global_transforms: SparseSet::new(),
         }
     }
 
@@ -100,11 +103,6 @@ impl EntityManager {
     ) {
         self.mesh_collections
             .insert(entity.0 as usize, mesh_collection);
-    }
-
-    pub fn add_physical_position_for_entity(&mut self, entity: EntityHandle) {
-        self.global_transforms
-            .insert(entity.0 as usize, PhysicalPositionComponent {});
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

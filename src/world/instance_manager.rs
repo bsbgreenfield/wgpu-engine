@@ -3,11 +3,7 @@ use std::collections::HashMap;
 use crate::{
     app::renderer::renderer::InstanceDataCollector,
     util::types::GlobalTransform,
-    world::{
-        components::{ComponentData, ComponentDataType},
-        entity_manager::EntityHandle,
-        index_arena::InstanceArenaNew,
-    },
+    world::{entity_manager::EntityHandle, index_arena::InstanceArenaNew},
 };
 
 pub trait ArchetypeIdent {
@@ -35,8 +31,6 @@ pub trait ArchetypeTable {
     fn insert(&mut self, data: Self::A, entity_handle: EntityHandle) -> InstanceHandle;
 
     fn remove(&mut self, handle: InstanceHandle);
-
-    fn resolve<C: ComponentData>(&self, handle: InstanceHandle) -> Option<&impl ComponentData>;
 
     fn collect<'a>(&'a self, collector: &mut InstanceDataCollector<'a>, offset: u16);
 }
@@ -97,20 +91,6 @@ impl ArchetypeTable for APositionTable {
             self.positions.swap(idx_of_goner, last);
         } else {
             self.positions.pop();
-        }
-    }
-
-    fn resolve<C>(&self, handle: InstanceHandle) -> Option<&impl ComponentData>
-    where
-        C: ComponentData,
-    {
-        if let Some(index) = self.arena.resolve(&handle) {
-            match C::get_data_type() {
-                ComponentDataType::PhysicalPosition => Some(&self.positions[index]),
-                _ => panic!(),
-            }
-        } else {
-            return None;
         }
     }
 }

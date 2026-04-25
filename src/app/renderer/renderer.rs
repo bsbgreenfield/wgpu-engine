@@ -10,7 +10,7 @@ use crate::{
             RenderCategory, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
             VMValue, VertexArenaError, VertexArenaSelector,
             gpu_allocator::{
-                GPUAllocator, LocalTransformUploadJob, UploadIndexJob,
+                GPUAllocator, UploadIndexJob,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
             },
             pipeline::PipelineCollection,

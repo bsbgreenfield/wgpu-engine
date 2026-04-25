@@ -6,7 +6,9 @@ use crate::{
         GPUUploadJob,
         renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
     },
-    asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
+    asset_manager_new::{
+        Asset, AssetHandle, AssetLoadError, LoadableAsset, asset_manager_new::AssetManagerNew,
+    },
     world::{
         WorldInitError, WorldUpdateError,
         camera::Camera,
@@ -96,7 +98,7 @@ impl WorldUpdateDelta {
                     constants.push(VMValue::InstanceHandle(instance_handle.clone()));
                 } else if let Some(renderables) = world
                     .entity_manager
-                    .get_renderables(&instance_handle.entity_handle, &world.asset_manager)
+                    .get_renderables(&instance_handle.entity_handle)
                 {
                     constants.push(VMValue::Renderables(renderables));
                 } else {
@@ -113,7 +115,6 @@ impl WorldUpdateDelta {
 pub struct World {
     pub camera: Camera,
     scene: Scene,
-    pub asset_manager: AssetManagerNew,
     pub entity_manager: EntityManager,
     load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
@@ -124,9 +125,17 @@ impl World {
         self.scene = scene;
     }
 
+    pub fn register_asset<A>(&mut self, str_dir: &str) -> Result<AssetHandle, AssetLoadError>
+    where
+        A: Asset + LoadableAsset + 'static,
+    {
+        self.entity_manager
+            .asset_manager
+            .register_asset::<A>(str_dir)
+    }
+
     pub fn new(
         aspect_ratio: f32,
-        asset_manager: AssetManagerNew,
         entity_manager: EntityManager,
         device: &wgpu::Device,
     ) -> Result<Self, WorldInitError> {
@@ -136,7 +145,6 @@ impl World {
         Ok(Self {
             camera,
             scene: Scene::new(),
-            asset_manager,
             entity_manager,
             load_queue: EntityLoadQueue::new(),
             instance_manager: InstanceManager::new(),
@@ -147,7 +155,8 @@ impl World {
         &'frame self,
         asset_handle: &'frame AssetHandle,
     ) -> GPUUploadJob<'frame> {
-        self.asset_manager
+        self.entity_manager
+            .asset_manager
             .get_upload_job_for(asset_handle)
             .expect("should be uploadable")
     }
@@ -174,8 +183,11 @@ impl World {
         &mut self,
         deltas: &mut Vec<WorldUpdateDelta>,
     ) -> Result<bool, WorldUpdateError> {
-        self.load_queue
-            .poll_scene_job(self.scene.scene_id, &mut self.asset_manager, deltas)?;
+        self.load_queue.poll_scene_job(
+            self.scene.scene_id,
+            &mut self.entity_manager.asset_manager,
+            deltas,
+        )?;
         if self
             .load_queue
             .completed_queue
@@ -258,7 +270,8 @@ impl World {
         for delta in render_deltas {
             match delta {
                 RenderUpdateDelta::AssetGPULoaded(asset_handle, allocation_handle) => {
-                    self.asset_manager
+                    self.entity_manager
+                        .asset_manager
                         .register_asset_gpu_residency(asset_handle, allocation_handle.clone())
                         .expect("Asset not found");
                 }

@@ -116,8 +116,8 @@ impl Scene {
             },
         };
 
-        let box_asset = world.asset_manager.register_asset::<GltfAsset>("box")?; // asset
-        let fox_asset = world.asset_manager.register_asset::<GltfAsset>("fox")?;
+        let box_asset = world.register_asset::<GltfAsset>("box")?; // asset
+        let fox_asset = world.register_asset::<GltfAsset>("fox")?;
 
         let box_entity = world.entity_manager.new_entity()?;
         let fox_entity = world.entity_manager.new_entity()?;
@@ -177,7 +177,7 @@ impl Scene {
             },
         };
 
-        let box_asset = world.asset_manager.register_asset::<GltfAsset>("box")?; // asset
+        let box_asset = world.register_asset::<GltfAsset>("box")?; // asset
 
         let box_entity = world.entity_manager.new_entity()?;
 
@@ -212,7 +212,7 @@ impl Scene {
             },
         };
 
-        let fox_asset = world.asset_manager.register_asset::<GltfAsset>("fox")?; // asset
+        let fox_asset = world.register_asset::<GltfAsset>("fox")?; // asset
 
         let fox_entity = world.entity_manager.new_entity()?;
 

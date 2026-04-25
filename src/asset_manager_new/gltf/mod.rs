@@ -6,8 +6,8 @@ use crate::{
         Asset, AssetHandle, AssetLoadError, AssetResidency, LoadedAsset, ModelBuilderError,
         gltf::mesh::Mesh,
     },
-    util::types::{Mat4F32, PNUJWVertex, PNUVertex, VIndex},
-    world::entity_manager::InstanceRenderData,
+    util::types::{LocalTransform, MAT4_IDENTITY, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
+    world::{InstanceUploadQuery, components::MeshAcessor, entity_manager::InstanceRenderData},
 };
 mod build;
 mod loader;
@@ -55,6 +55,32 @@ pub(super) struct LoadedGltfAsset {
     indices: Option<Vec<VIndex>>,
 }
 
+fn get_root_node(nodes: &[GltfNode], node_id: usize) -> Option<&GltfNode> {
+    for node in nodes {
+        if node.node_id == node_id {
+            return Some(node);
+        }
+        if let Some(found) = get_root_node(&node.children, node_id) {
+            return Some(found);
+        }
+    }
+    None
+}
+fn collect_mesh_instances(node: &GltfNode, parent_transform: Mat4F32) -> Vec<(u32, Mat4F32)> {
+    use cgmath::Matrix4;
+    let accumulated: Mat4F32 =
+        (Matrix4::from(parent_transform) * Matrix4::from(node.transform)).into();
+
+    let mut result = Vec::new();
+    if let Some(mesh_id) = node.mesh_id {
+        result.push((mesh_id as u32, accumulated));
+    }
+    for child in &node.children {
+        result.extend(collect_mesh_instances(child, accumulated));
+    }
+    result
+}
+
 impl LoadedAsset for LoadedGltfAsset {
     fn upload_job<'a>(
         &'a self,
@@ -67,52 +93,70 @@ impl LoadedAsset for LoadedGltfAsset {
             self.indices.as_deref(),
         )
     }
-    fn get_renderables(&self, alloc_handle: GPUAllocationHandle) -> Vec<InstanceRenderData> {
-        let mut pnu_ranges = Vec::new();
-        let mut pnujw_ranges = Vec::new();
-        let mut index_ranges = Vec::new();
-
-        let mut render_data = Vec::new();
-        let has_indices = self.meshes[0].primitives[0].indices.is_some();
-        for mesh in self.meshes.iter() {
-            for primitive in mesh.primitives.iter() {
-                if primitive.vertex_type == TypeId::of::<PNUVertex>() {
-                    pnu_ranges.push(primitive.vertices.clone());
-                } else if primitive.vertex_type == TypeId::of::<PNUVertex>() {
-                    pnujw_ranges.push(primitive.vertices.clone());
-                } else {
-                    panic!("vertex type not specified {:?}", primitive.vertex_type);
+    fn get_renderables(
+        &self,
+        alloc_handle: GPUAllocationHandle,
+        query: &InstanceUploadQuery,
+    ) -> Result<Vec<InstanceRenderData>, AssetLoadError> {
+        let mut render_data_vec: Vec<InstanceRenderData> = Vec::new();
+        if let Some(mesh_accessor) = query.mesh_accesor {
+            let mesh_instances: Vec<(u32, Mat4F32)> = match mesh_accessor {
+                MeshAcessor::All => self
+                    .node_tree
+                    .iter()
+                    .flat_map(|node| collect_mesh_instances(node, MAT4_IDENTITY))
+                    .collect(),
+                MeshAcessor::GltfRootNode(root) => {
+                    match get_root_node(&self.node_tree, *root as usize) {
+                        Some(root_node) => collect_mesh_instances(root_node, MAT4_IDENTITY),
+                        None => {
+                            return Err(AssetLoadError::InstanceUploadFailure(String::from(
+                                "The root node defined for this entity is not valid for the asset",
+                            )));
+                        }
+                    }
                 }
-                if has_indices {
-                    let i = primitive.indices.clone().unwrap();
-                    index_ranges.push(i)
+            };
+
+            let mut pnu_ranges = Vec::new();
+            let mut pnujw_ranges = Vec::new();
+            let mut index_ranges = Vec::new();
+            let mut local_transforms = Vec::new();
+
+            let has_indices = self.meshes[0].primitives[0].indices.is_some();
+            for (mesh_id, local_transform) in mesh_instances.iter() {
+                let mesh = self.meshes.iter().find(|m| m.id == *mesh_id).ok_or(
+                    AssetLoadError::InstanceUploadFailure(
+                        "could not find mesh instance".to_string(),
+                    ),
+                )?;
+                for primitive in mesh.primitives.iter() {
+                    if primitive.vertex_type == TypeId::of::<PNUVertex>() {
+                        pnu_ranges.push(primitive.vertices.clone());
+                    } else if primitive.vertex_type == TypeId::of::<PNUJWVertex>() {
+                        pnujw_ranges.push(primitive.vertices.clone());
+                    } else {
+                        panic!("vertex type not specified {:?}", primitive.vertex_type);
+                    }
+                    if has_indices {
+                        let i = primitive.indices.clone().unwrap();
+                        index_ranges.push(i)
+                    }
+
+                    local_transforms.push(LocalTransform::from(*local_transform));
                 }
             }
+
+            render_data_vec.push(InstanceRenderData::MeshRenderable {
+                gpu_alloc_handle: alloc_handle,
+                pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),
+                pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
+                index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
+                local_transforms,
+            });
         }
 
-        let pnu_vertex_ranges = if !pnu_ranges.is_empty() {
-            Some(pnu_ranges)
-        } else {
-            None
-        };
-        let pnujw_vertex_ranges = if !pnujw_ranges.is_empty() {
-            Some(pnujw_ranges)
-        } else {
-            None
-        };
-
-        let index_ranges = if !index_ranges.is_empty() {
-            Some(index_ranges)
-        } else {
-            None
-        };
-        render_data.push(InstanceRenderData::MeshRenderable {
-            gpu_alloc_handle: alloc_handle,
-            pnu_vertex_ranges,
-            pnujw_vertex_ranges,
-            index_ranges,
-        });
-        render_data
+        Ok(render_data_vec)
     }
 }
 

@@ -126,13 +126,11 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             let aspect_ratio: f32 = self.app_config.as_ref().unwrap().get_aspect_ratio();
 
             if self.world.is_none() {
-                let asset_manager = AssetManagerNew::new();
                 let entity_manager = EntityManager::new();
 
                 self.world = Some(
                     World::new(
                         aspect_ratio,
-                        asset_manager,
                         entity_manager,
                         &self.app_config.as_ref().unwrap().device,
                     )
