@@ -2,13 +2,16 @@ use std::{fmt::Display, ops::Range};
 
 use bytemuck::Pod;
 use std::error::Error;
+use wgpu::wgc::device;
 
 use crate::{
     app::renderer::GPUAllocationHandle,
     util::types::{LocalTransform, ModelVertex, VIndex},
+    world::instance_manager::InstanceHandle,
 };
 
 mod free_list;
+pub(super) mod instance_arena;
 pub(super) mod vertex_arena;
 
 static CHUNK_SIZE: u32 = 4_194_304;
@@ -22,14 +25,26 @@ pub(super) trait GPUAllocator<T: Pod> {
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError>;
 
-    fn resolve(
-        &self,
-        handle: &GPUAllocationHandle,
-    ) -> (Range<u32>, &wgpu::Buffer, Option<&wgpu::BindGroup>);
+    fn resolve(&self, handle: &GPUAllocationHandle) -> (Range<u32>, &wgpu::Buffer);
 
     fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize;
 
     fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer;
+
+    fn new(device: &wgpu::Device) -> Self;
+}
+
+pub(super) trait GPUInstanceAllocator<T: Pod> {
+    type UploadJob<'a>;
+    type AllocationError: Error;
+
+    fn upload<'a>(
+        self,
+        job: Self::UploadJob<'a>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), Self::AllocationError>;
+
+    fn resolve(&self, handle: &InstanceHandle) -> (u32, &wgpu::BindGroup);
 
     fn new(device: &wgpu::Device) -> Self;
 }

@@ -6,9 +6,9 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            AllocationCache, BufferChunks, DrawItem, DrawList, DrawListBuilder, DrawPacket,
-            Instruction, RenderCategory, RenderError, RenderUpdateDelta, RenderUpdateError,
-            UploadMeshJob, VMValue, VertexArenaError, VertexArenaSelector,
+            AllocationCache, BufferChunks, DrawItem, DrawList, DrawPacket, Instruction,
+            RenderCategory, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
+            VMValue, VertexArenaError, VertexArenaSelector,
             gpu_allocator::{
                 GPUAllocator, LocalTransformUploadJob, UploadIndexJob,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
@@ -74,7 +74,6 @@ struct VertexArenaCollection {
     index_arena: GPUArena<VIndex>,
     static_arena: GPUArena<PNUVertex>,
     skinned_arena: GPUArena<PNUJWVertex>,
-    local_transform_arena: GPUArena<LocalTransform>,
 }
 
 impl VertexArenaCollection {
@@ -83,7 +82,6 @@ impl VertexArenaCollection {
             index_arena: GPUArena::<VIndex>::new(device),
             static_arena: GPUArena::<PNUVertex>::new(device),
             skinned_arena: GPUArena::<PNUJWVertex>::new(device),
-            local_transform_arena: GPUArena::<LocalTransform>::new(device),
         }
     }
 }
@@ -147,81 +145,6 @@ impl Renderer {
     pub fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
         self.passes.push(EngineRenderPass { label, categories });
     }
-    fn write_draw_list<V: ModelVertex>(
-        &self,
-        view: &RenderView,
-        draw_map: &mut HashMap<BufferChunks, Vec<DrawItem>>,
-        instance_idx: u16,
-    ) where
-        Self: VertexArenaSelector<V>,
-        DrawPacket: DrawListBuilder<V>,
-    {
-        let arena: &GPUArena<V> = self.get_arena();
-        let vertex_buf_id = arena.chunk_id(&view.gpu_handle);
-        let index_buf_id = if PNUVertex::is_indexed(view) {
-            Some(self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle))
-        } else {
-            None
-        };
-        let draw_list = draw_map
-            .entry(BufferChunks {
-                vertex: vertex_buf_id,
-                index: index_buf_id,
-            })
-            .or_insert_with(|| vec![]);
-        let (local_transform_range, _, _) = self
-            .vertex_arenas
-            .local_transform_arena
-            .resolve(&view.gpu_handle);
-
-        DrawPacket::write_list(
-            view,
-            arena,
-            draw_list,
-            instance_idx as u32,
-            local_transform_range.start,
-        );
-    }
-
-    fn cache_resolve_pnu(&self, view: &RenderView, draw_list: &mut Vec<DrawList>) -> AllocationCache
-    where
-        Self: VertexArenaSelector<PNUVertex>,
-    {
-        let arena: &GPUArena<PNUVertex> = self.get_arena();
-        let vertex_buffer_id = arena.chunk_id(&view.gpu_handle);
-        let index_buf_id = if PNUVertex::is_indexed(view) {
-            Some(self.vertex_arenas.index_arena.chunk_id(&view.gpu_handle))
-        } else {
-            None
-        };
-        let buffer_chunks = BufferChunks {
-            vertex: vertex_buffer_id,
-            index: index_buf_id,
-        };
-
-        let draw_list_idx = draw_list
-            .iter()
-            .position(|l| l.chunks == buffer_chunks)
-            .unwrap_or_else(|| {
-                draw_list.push(DrawList {
-                    chunks: buffer_chunks,
-                    items: vec![],
-                });
-                draw_list.len() - 1
-            });
-
-        let (vertex_range, _, _) = arena.resolve(&view.gpu_handle);
-        let index_range = index_buf_id
-            .map(|_| self.vertex_arenas.index_arena.resolve(&view.gpu_handle))
-            .map(|i| i.0);
-
-        AllocationCache {
-            index_range,
-            vertex_range,
-            chunks_index: draw_list_idx,
-            lt_offset: 0,
-        }
-    }
 
     pub fn gen_draw_calls<'frame>(
         &'frame self,
@@ -275,6 +198,31 @@ impl Renderer {
                                 instances: instance_idx..instance_idx + 1,
                                 primitives: pr.clone(),
                                 indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
+                            });
+                        }
+                    }
+                }
+                if let Some(pnujw) = &view.pnujw_draws {
+                    // create a new per-gpu alloc entry
+                    let entry = packet
+                        .pnujw
+                        .entry(view.gpu_handle.clone())
+                        .or_insert_with(Vec::new);
+
+                    for instance_handle in group.instance_handles.iter() {
+                        // calculate the instance idx of each draw call
+                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
+                        let instance_idx = instance_manager
+                            .resolve_idx(instance_handle)
+                            .expect("should be valid")
+                            as u32
+                            + offset as u32;
+                        for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
+                            entry.push(DrawItem {
+                                lt_idx: 0,
+                                instances: instance_idx..instance_idx + 1,
+                                primitives: pr.clone(),
+                                indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
                             });
                         }
                     }
@@ -383,19 +331,6 @@ impl Renderer {
         self.interpret(constants, ops, queue)
     }
 
-    pub(super) fn upload_local_transform_data<'frame>(
-        &mut self,
-        job: Option<LocalTransformUploadJob>,
-        queue: &wgpu::Queue,
-    ) -> Result<(), VertexArenaError> {
-        if let Some(job) = job {
-            self.vertex_arenas
-                .local_transform_arena
-                .upload(job, queue)?;
-        }
-        Ok(())
-    }
-
     pub(super) fn upload_indices<'frame>(
         &mut self,
         job: UploadIndexJob,
@@ -463,11 +398,8 @@ impl Renderer {
                 let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
 
                 render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
-                render_pass.set_bind_group(
-                    1,
-                    self.vertex_arenas.local_transform_arena.get_bind_group(),
-                    &[],
-                );
+                todo!("SET LOCAL TRANSFORM BUFFER");
+
                 render_pass.set_vertex_buffer(1, self.global_transform_buffer.slice(..));
                 for render_category in pass.categories.iter() {
                     match render_category {
@@ -475,7 +407,7 @@ impl Renderer {
                             let pipeline = &self.pipelines.opaque_static;
                             render_pass.set_pipeline(&pipeline.pipeline);
                             for draw_entry in draw_packet.pnu.iter() {
-                                let (vertex_alloc_range, v_buffer, _) =
+                                let (vertex_alloc_range, v_buffer) =
                                     self.vertex_arenas.static_arena.resolve(draw_entry.0);
 
                                 render_pass.set_vertex_buffer(0, v_buffer.slice(..));
@@ -484,7 +416,7 @@ impl Renderer {
                                     render_pass
                                         .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
                                     if let Some(indices) = &draw.indices {
-                                        let (index_alloc_range, i_buffer, _) =
+                                        let (index_alloc_range, i_buffer) =
                                             self.vertex_arenas.index_arena.resolve(draw_entry.0);
                                         render_pass.set_index_buffer(
                                             i_buffer.slice(..),
@@ -509,7 +441,37 @@ impl Renderer {
                         RenderCategory::OpaqueSkinned => {
                             let pipeline = &self.pipelines.opaque_skinned;
                             render_pass.set_pipeline(&pipeline.pipeline);
-                            todo!()
+                            for draw_entry in draw_packet.pnujw.iter() {
+                                let (vertex_alloc_range, v_buffer) =
+                                    self.vertex_arenas.skinned_arena.resolve(draw_entry.0);
+
+                                render_pass.set_vertex_buffer(0, v_buffer.slice(..));
+
+                                for draw in draw_entry.1.iter() {
+                                    render_pass
+                                        .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
+                                    if let Some(indices) = &draw.indices {
+                                        let (index_alloc_range, i_buffer) =
+                                            self.vertex_arenas.index_arena.resolve(draw_entry.0);
+                                        render_pass.set_index_buffer(
+                                            i_buffer.slice(..),
+                                            wgpu::IndexFormat::Uint16,
+                                        );
+                                        render_pass.draw_indexed(
+                                            DrawSet::within(indices, &index_alloc_range),
+                                            DrawSet::within(&draw.primitives, &vertex_alloc_range)
+                                                .start
+                                                as i32,
+                                            draw.instances.clone(),
+                                        );
+                                    } else {
+                                        render_pass.draw(
+                                            DrawSet::within(&draw.primitives, &vertex_alloc_range),
+                                            draw.instances.clone(),
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 }

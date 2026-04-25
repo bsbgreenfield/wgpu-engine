@@ -150,9 +150,18 @@ impl<'frame> Renderer {
                                         } => {
                                             views.push(RenderView {
                                                 gpu_handle: gpu_alloc_handle.clone(),
-                                                pnu_draws: pnu_vertex_ranges.map(|pnu| todo!()),
-                                                pnujw_draws: pnujw_vertex_ranges
-                                                    .map(|pnujw| todo!()),
+                                                pnu_draws: pnu_vertex_ranges.as_ref().map(|pnu| {
+                                                    DrawSet {
+                                                        primtitive_ranges: pnu.clone(),
+                                                        index_ranges: index_ranges.clone(),
+                                                    }
+                                                }),
+                                                pnujw_draws: pnujw_vertex_ranges.as_ref().map(
+                                                    |pnujw| DrawSet {
+                                                        primtitive_ranges: pnujw.clone(),
+                                                        index_ranges: index_ranges.clone(),
+                                                    },
+                                                ),
                                             });
                                         }
                                     }

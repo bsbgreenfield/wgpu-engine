@@ -153,69 +153,6 @@ impl DrawItem {
     }
 }
 
-trait DrawListBuilder<V: ModelVertex> {
-    fn write_list(
-        view: &RenderView,
-        arena: &GPUArena<V>,
-        draw_list: &mut Vec<DrawItem>,
-        instance_idx: u32,
-        lt_offset: u32,
-    );
-}
-
-impl DrawListBuilder<PNUVertex> for DrawPacket {
-    fn write_list(
-        view: &RenderView,
-        arena: &GPUArena<PNUVertex>,
-        draw_list: &mut Vec<DrawItem>,
-        instance_idx: u32,
-        lt_offset: u32,
-    ) {
-        let pnu_draws = view.pnu_draws.as_ref().unwrap();
-        let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
-        for (i, mesh_id) in pnu_draws.mesh_ids.iter().enumerate() {
-            let prim_range = DrawSet::within(&pnu_draws.primtitive_ranges[i], &alloc_range);
-
-            let indices = pnu_draws
-                .index_ranges
-                .as_ref()
-                .map(|index_ranges| DrawSet::within(&index_ranges[i], &alloc_range));
-            draw_list.push(DrawItem {
-                lt_idx: lt_offset + mesh_id,
-                instances: instance_idx..instance_idx + 1,
-                primitives: prim_range,
-                indices: indices,
-            });
-        }
-    }
-}
-
-impl DrawListBuilder<PNUJWVertex> for DrawPacket {
-    fn write_list(
-        view: &RenderView,
-        arena: &GPUArena<PNUJWVertex>,
-        draw_list: &mut Vec<DrawItem>,
-        instance_idx: u32,
-        lt_offset: u32,
-    ) {
-        let pnujw_draws = view.pnujw_draws.as_ref().unwrap();
-        let (alloc_range, _, _) = arena.resolve(&view.gpu_handle);
-        for (i, mesh_id) in pnujw_draws.mesh_ids.iter().enumerate() {
-            let prim_range = DrawSet::within(&pnujw_draws.primtitive_ranges[i], &alloc_range);
-            let indices = pnujw_draws
-                .index_ranges
-                .as_ref()
-                .map(|index_ranges| DrawSet::within(&index_ranges[i], &alloc_range));
-            draw_list.push(DrawItem {
-                lt_idx: lt_offset + mesh_id,
-                instances: instance_idx..instance_idx + 1,
-                primitives: prim_range,
-                indices,
-            });
-        }
-    }
-}
-
 #[derive(Hash, PartialEq, PartialOrd, Eq)]
 pub struct BufferChunks {
     index: Option<usize>,

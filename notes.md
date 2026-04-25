@@ -364,3 +364,8 @@ Every frame:
 Draw calls need to be organized per pipeline first, and per vertex/ index buffer second
 
 Each mesh within an instance already knows its primitive offsets within the allocation, the only hard part is to resolve the correct allocation range within which these primitive offsets are valid. 
+
+
+Proposal: each DrawItems are grouped by global alloction ID directly, the sorting for this happens in the gen draw calls function, and now the draw items only contain their relative primitive offsets. in the render function the renderer uses the global allocation ID of the group of draw items to query the proper vertex/ index arena to set an "offset" variable/ variables to add to the primitive offset ranges specified by each draw item.
+
+The vertex arenas keep their own cache of alloc handle -> alloc range. If this has not changed, it immediately can return the range when the renderer asks for it, but if it has been invalidated, then it will create a new cahce entry and return after that
