@@ -1,12 +1,14 @@
+use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::{fmt::Display, ops::Range};
 
 use bytemuck::Pod;
 use std::error::Error;
-use wgpu::wgc::device;
 
+use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::{
     app::renderer::GPUAllocationHandle,
-    util::types::{LocalTransform, ModelVertex, VIndex},
+    util::types::{ModelVertex, VIndex},
     world::instance_manager::InstanceHandle,
 };
 
@@ -14,7 +16,78 @@ mod free_list;
 pub(super) mod instance_arena;
 pub(super) mod vertex_arena;
 
+static MIMIMUM_INDEX_ALLOCATION_SIZE: usize = 1024;
+static MIMIMUM_VERTEX_ALLOCATION_SIZE: usize = 2048;
+
 static CHUNK_SIZE: u32 = 4_194_304;
+
+#[derive(Debug)]
+struct AllocMetaData {
+    chunk_id: usize,
+    node_id: usize,
+}
+impl AllocMetaData {
+    fn new(chunk_id: usize, node_id: usize) -> Self {
+        Self { chunk_id, node_id }
+    }
+}
+struct GPUChunk<T: bytemuck::Pod + Debug> {
+    remaining_space: u32,
+    buffer: wgpu::Buffer,
+    allocator: FreeListAllocator,
+    _t: PhantomData<T>,
+}
+struct InstanceChunk<T: bytemuck::Pod + Debug> {
+    remaining_space: u32,
+    bind_group: wgpu::BindGroup,
+    buffer: wgpu::Buffer,
+    allocator: FreeListAllocator,
+    _t: PhantomData<T>,
+}
+
+impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
+    pub(super) fn gpu_alloc(
+        &mut self,
+        data: &[T],
+        queue: &wgpu::Queue,
+        label: &str,
+    ) -> Result<(usize, Range<u32>), VertexArenaError> {
+        let size = (data.len() * size_of::<T>()) as u32;
+        let node_idx: usize = if self.remaining_space >= size {
+            self.allocator.alloc_first(size)?
+        } else {
+            return Err(VertexArenaError::DataTooLarge(size, label.to_string()));
+        };
+        // for datum in data.iter().take(10) {
+        //     println!("{:?}", datum);
+        // }
+        let offset = self.allocator.offset_of(node_idx) as u32;
+        queue.write_buffer(&self.buffer, offset.into(), bytemuck::cast_slice(data));
+        Ok((node_idx, offset..offset + (data.len() as u32)))
+    }
+}
+impl<T: bytemuck::Pod + Debug> InstanceChunk<T> {
+    pub(super) fn gpu_alloc(
+        &mut self,
+        data: &[T],
+        queue: &wgpu::Queue,
+        label: &str,
+    ) -> Result<(usize, Range<u32>), VertexArenaError> {
+        let size = (data.len() * size_of::<T>()) as u32;
+        let node_idx: usize = if self.remaining_space >= size {
+            self.allocator.alloc_first(size)?
+        } else {
+            return Err(VertexArenaError::DataTooLarge(size, label.to_string()));
+        };
+        // for datum in data.iter().take(10) {
+        //     println!("{:?}", datum);
+        // }
+        let offset = self.allocator.offset_of(node_idx) as u32;
+        queue.write_buffer(&self.buffer, offset.into(), bytemuck::cast_slice(data));
+        Ok((node_idx, offset..offset + (data.len() as u32)))
+    }
+}
+
 pub(super) trait GPUAllocator<T: Pod> {
     type UploadJob<'a>;
     type AllocationError: Error;
@@ -27,10 +100,6 @@ pub(super) trait GPUAllocator<T: Pod> {
 
     fn resolve(&self, handle: &GPUAllocationHandle) -> (Range<u32>, &wgpu::Buffer);
 
-    fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize;
-
-    fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer;
-
     fn new(device: &wgpu::Device) -> Self;
 }
 
@@ -39,12 +108,14 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
     type AllocationError: Error;
 
     fn upload<'a>(
-        self,
+        &mut self,
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError>;
 
-    fn resolve(&self, handle: &InstanceHandle) -> (u32, &wgpu::BindGroup);
+    fn resolve(&self, handle: &InstanceHandle) -> u32;
+
+    fn bind_group(&self) -> &wgpu::BindGroup;
 
     fn new(device: &wgpu::Device) -> Self;
 }
@@ -91,7 +162,7 @@ impl Display for VertexArenaError {
                 )
                 .as_str(),
             ),
-            Self::FreeListError(err) => err.fmt(f),
+            Self::FreeListError(err) => Display::fmt(&err, f),
             Self::MaxAllocationReached => f.write_str(
                 "All Chunks are allocated, and there is no room in any of them for this upload",
             ),

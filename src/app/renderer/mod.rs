@@ -1,20 +1,15 @@
 use std::{collections::HashMap, error::Error, fmt::Display, ops::Range};
 
-#[cfg(test)]
-use crate::world::scene::SceneLoadLevel;
 use crate::{
     app::{
         GPUUploadJob,
-        renderer::gpu_allocator::{
-            GPUAllocator, UploadMeshJob, VertexArenaError, vertex_arena::GPUArena,
-        },
+        renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
     },
     asset_manager_new::AssetHandle,
-    util::types::{LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{Mat4F32, ModelVertex},
     world::{
-        entity_manager::{EntityHandle, Renderables},
+        entity_manager::{EntityHandle, LocalTransformData, Renderables},
         instance_manager::InstanceHandle,
-        world::{DrawSet, RenderView},
     },
 };
 
@@ -43,8 +38,8 @@ impl GPUAllocationHandle {
     }
 }
 pub struct LocalTransformUploadJob<'frame> {
-    pub(super) local_transforms: &'frame [LocalTransform],
-    pub(super) global_alloc_id: u32,
+    pub(super) local_transforms: &'frame LocalTransformData,
+    pub(super) instance_handle: &'frame InstanceHandle,
 }
 
 //#[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]
@@ -74,7 +69,7 @@ pub enum Operations {
 pub enum VMValue<'frame> {
     Transform(Mat4F32),
     UploadJob(GPUUploadJob<'frame>),
-    Renderables(Renderables),
+    Renderables(Renderables<'frame>),
     InstanceHandle(InstanceHandle),
 }
 
@@ -127,8 +122,6 @@ trait VertexArenaSelector<V: ModelVertex> {
         mesh_job: UploadMeshJob<V>,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError>;
-
-    fn get_arena(&self) -> &GPUArena<V>;
 }
 pub enum RenderCategory {
     OpaqueStatic,
@@ -163,33 +156,11 @@ pub struct BufferChunks {
     vertex: usize,
 }
 
-struct DrawList {
-    chunks: BufferChunks,
-    items: Vec<DrawItem>,
-}
-
-pub struct AllocationCache {
-    chunks_index: usize,
-    vertex_range: Range<u32>,
-    index_range: Option<Range<u32>>,
-    lt_offset: u32,
-}
-
 #[derive(Debug, Default)]
 pub struct DrawPacket {
     pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
     pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
 }
-
-//#[derive(Default)]
-//pub struct DrawPacket {
-//    pnu_draw_len: u32,
-//    pnujw_draw_len: u32,
-//    pub pnu: Vec<DrawList>,
-//    pub pnu_cache: HashMap<u32, AllocationCache>,
-//    pub pnujw: Vec<DrawList>,
-//    pub pnujw_cache: HashMap<u32, AllocationCache>,
-//}
 
 impl DrawPacket {
     pub fn is_empty(&self) -> bool {
@@ -210,34 +181,3 @@ impl DrawPacket {
         &self.pnujw
     }
 }
-
-//pub struct DrawPacket {
-//    pnu: HashMap<BufferChunks, Vec<DrawItem>>,
-//    pnujw: HashMap<BufferChunks, Vec<DrawItem>>,
-//}
-//impl DrawPacket {
-//    pub fn new() -> Self {
-//        Self {
-//            pnu: HashMap::new(),
-//            pnujw: HashMap::new(),
-//        }
-//    }
-//    pub fn clear(&mut self) {
-//        self.pnu.clear();
-//        self.pnujw.clear();
-//    }
-//
-//    pub fn is_empty(&self) -> bool {
-//        self.pnu.is_empty() && self.pnujw.is_empty()
-//    }
-//}
-//#[cfg(test)]
-//impl DrawPacketNew {
-//    pub fn get_pnu(&self) -> &HashMap<BufferChunks, Vec<DrawItem>> {
-//        &self.pnu
-//    }
-//
-//    pub fn get_pnujw(&self) -> &HashMap<BufferChunks, Vec<DrawItem>> {
-//        &self.pnujw
-//    }
-//}

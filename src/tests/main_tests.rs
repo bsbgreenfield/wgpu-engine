@@ -217,6 +217,77 @@ mod integration_tests {
         });
     }
 
+    /// The fox is the only spawned instance, so it gets the first slot in the instance arena.
+    /// All of its pnujw draw items must have lt_idx == 0.
+    #[test]
+    fn instance_arena_fox_lt_idx_is_zero() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::Fox).await;
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+
+            gen_draw_calls(&mut app);
+
+            let pnujw_items: Vec<&DrawItem> =
+                app.draw_packet.get_pnujw().values().flatten().collect();
+            assert!(!pnujw_items.is_empty(), "fox should have pnujw draw items");
+            for item in &pnujw_items {
+                assert_eq!(
+                    item.get_lt_idx(),
+                    0,
+                    "first instance allocated in the arena must start at lt_idx 0"
+                );
+            }
+        });
+    }
+
+    /// In the fox+box scene the box is spawned first (EntityHandle(0)), so it occupies the
+    /// initial local-transform slots in the arena.  The fox (EntityHandle(1)) is allocated
+    /// after the box, so its lt_idx must be > 0.
+    #[test]
+    fn instance_arena_fox_box_fox_lt_idx_nonzero() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::BoxFox).await;
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad, WorldDeltaKind::AssetDidLoad],
+                &[
+                    RenderDeltaKind::AssetGPULoaded,
+                    RenderDeltaKind::AssetGPULoaded,
+                ],
+            );
+            run_frame(
+                &mut app,
+                &[
+                    WorldDeltaKind::EntityDidSpawn,
+                    WorldDeltaKind::EntityDidSpawn,
+                ],
+                &[],
+            );
+
+            gen_draw_calls(&mut app);
+
+            let pnujw_items: Vec<&DrawItem> =
+                app.draw_packet.get_pnujw().values().flatten().collect();
+            assert!(
+                !pnujw_items.is_empty(),
+                "fox should have pnujw draw items in the fox+box scene"
+            );
+            for item in &pnujw_items {
+                assert!(
+                    item.get_lt_idx() > 0,
+                    "fox is the second instance allocated; box occupies the start of the arena so fox lt_idx must be > 0"
+                );
+            }
+        });
+    }
+
     #[test]
     fn render_fox_box() {
         pollster::block_on(async {

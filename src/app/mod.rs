@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     app::renderer::{RenderError, RenderUpdateError},
     asset_manager_new::{AssetHandle, AssetLoadError},
-    util::types::{LocalTransform, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{PNUJWVertex, PNUVertex, VIndex},
     world::WorldUpdateError,
 };
 

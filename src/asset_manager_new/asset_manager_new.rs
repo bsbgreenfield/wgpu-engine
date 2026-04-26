@@ -7,10 +7,8 @@ use crate::{
         LoadedAsset,
     },
     world::{
-        InstanceUploadQuery,
-        components::MeshCollectionComponent,
-        entity_manager::{InstanceRenderData, Renderables},
-        scene::SceneLoadLevel,
+        InstanceUploadQuery, components::MeshCollectionComponent,
+        entity_manager::InstanceRenderData, scene::SceneLoadLevel,
     },
 };
 
@@ -67,7 +65,7 @@ impl AssetManagerNew {
     pub fn get_upload_job_for<'a>(
         &'a self,
         asset_handle: &'a AssetHandle,
-    ) -> Result<GPUUploadJob, AssetLoadError> {
+    ) -> Result<GPUUploadJob<'a>, AssetLoadError> {
         match self
             .registered_assets
             .get(asset_handle)

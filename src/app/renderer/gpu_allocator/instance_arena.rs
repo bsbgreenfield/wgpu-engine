@@ -1,33 +1,25 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData, num::NonZero};
+
+use wgpu::ShaderStages;
 
 use crate::{
     app::renderer::{
         LocalTransformUploadJob,
         gpu_allocator::{
-            CHUNK_SIZE, GPUInstanceAllocator, VertexArenaError, free_list::FreeListAllocator,
-            vertex_arena::GPUChunk,
+            AllocMetaData, CHUNK_SIZE, GPUInstanceAllocator, InstanceChunk, VertexArenaError,
+            free_list::FreeListAllocator,
         },
     },
-    asset_manager_new::asset_manager_new::AssetManagerNew,
     util::types::LocalTransform,
-    world::{
-        components::{MeshAcessor, MeshCollectionComponent},
-        entity_manager::EntityManager,
-    },
+    world::{components::RigidAnimationMode, instance_manager::InstanceHandle},
 };
 
-struct InstanceChunk<T: bytemuck::Pod + Debug> {
-    remaining_space: u32,
-    bind_group: wgpu::BindGroup,
-    buffer: wgpu::Buffer,
-    allocator: FreeListAllocator,
-    _t: PhantomData<T>,
-}
-
+#[allow(unused)]
 pub struct InstanceArena<T: bytemuck::Pod + Debug> {
     max_chunks: usize,
-    chunks: Vec<GPUChunk<T>>,
-    allocator: FreeListAllocator,
+    chunks: Vec<InstanceChunk<T>>,
+    alloc_table: HashMap<InstanceHandle, AllocMetaData>,
+    label: Option<String>,
 }
 
 impl InstanceChunk<LocalTransform> {
@@ -50,7 +42,7 @@ impl InstanceChunk<LocalTransform> {
             remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
             bind_group: new_bg,
             buffer: buf,
-            allocator: FreeListAllocator::new(),
+            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
             _t: PhantomData,
         }
     }
@@ -62,21 +54,79 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
     type AllocationError = VertexArenaError;
 
     fn upload<'a>(
-        self,
+        &mut self,
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
     ) -> Result<(), Self::AllocationError> {
-        todo!()
+        if let Some(alloc_entry) = self.alloc_table.get(job.instance_handle)
+            && job.local_transforms.mode == RigidAnimationMode::Shared
+        {
+            self.alloc_table.insert(
+                job.instance_handle.clone(),
+                AllocMetaData {
+                    node_id: alloc_entry.node_id,
+                    chunk_id: alloc_entry.chunk_id,
+                },
+            );
+        } else {
+            'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
+                match chunk.gpu_alloc(
+                    &job.local_transforms.lt,
+                    queue,
+                    self.label.as_ref().unwrap(),
+                ) {
+                    Ok((node_idx, _)) => {
+                        self.alloc_table.insert(
+                            job.instance_handle.clone(),
+                            AllocMetaData::new(chunk_idx, node_idx),
+                        );
+                        return Ok(());
+                    }
+
+                    Err(e) => match e {
+                        VertexArenaError::DataTooLarge(_, _) => {
+                            return Err(e);
+                        }
+                        _ => continue 'outer,
+                    },
+                }
+            }
+        }
+        Ok(())
     }
 
-    fn resolve(
-        &self,
-        handle: &crate::world::instance_manager::InstanceHandle,
-    ) -> (u32, &wgpu::BindGroup) {
-        todo!()
+    fn resolve(&self, handle: &crate::world::instance_manager::InstanceHandle) -> u32 {
+        let meta = self.alloc_table.get(&handle).unwrap();
+        let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
+        range.start / size_of::<LocalTransform>() as u32
+    }
+
+    #[inline]
+    fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.chunks[0].bind_group
     }
 
     fn new(device: &wgpu::Device) -> Self {
-        todo!()
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("local transform bind group LAYOUT"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(
+                        NonZero::new(size_of::<LocalTransform>() as u64).unwrap(),
+                    ),
+                },
+                count: None,
+            }],
+        });
+        Self {
+            max_chunks: 1,
+            chunks: vec![InstanceChunk::new(device, &bgl)],
+            alloc_table: HashMap::new(),
+            label: Some("Local Transform arena".to_string()),
+        }
     }
 }

@@ -1,8 +1,5 @@
 use crate::{
-    app::renderer::GPUAllocationHandle,
-    asset_manager_new::{AssetHandle, LoadableAsset},
-    util::types::{GlobalTransform, LocalTransform},
-    world::{InstanceUploadQuery, entity_manager::Renderables, instance_manager::InstanceManager},
+    app::renderer::GPUAllocationHandle, asset_manager_new::AssetHandle, world::InstanceUploadQuery,
 };
 
 #[derive(Debug)]
@@ -26,7 +23,7 @@ pub enum MeshAcessor {
     All,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RigidAnimationMode {
     Shared,
     Independent,
@@ -62,6 +59,7 @@ pub trait Component {
 
 impl Component for MeshCollectionComponent {
     fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>) {
-        query.mesh_accesor = Some(&self.mesh_accessor)
+        query.mesh_accesor = Some(&self.mesh_accessor);
+        query.rigid_animation_mode = Some(&self.rigid_animation_mode);
     }
 }

@@ -1,12 +1,13 @@
 use std::{collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit, ops::Range};
 
 use crate::{
-    app::renderer::{GPUAllocationHandle, LocalTransformUploadJob},
+    app::renderer::GPUAllocationHandle,
     asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
     util::types::LocalTransform,
     world::{
         InstanceUploadQuery,
-        components::{Component, MeshAcessor, MeshCollectionComponent},
+        components::{Component, MeshCollectionComponent, RigidAnimationMode},
+        instance_manager::InstanceHandle,
     },
 };
 
@@ -30,24 +31,36 @@ pub struct EntityManager {
 }
 
 #[derive(Debug)]
+pub struct LocalTransformData {
+    pub lt: Vec<LocalTransform>,
+    pub mode: RigidAnimationMode,
+}
+
+#[derive(Debug)]
 pub enum InstanceRenderData {
     MeshRenderable {
         gpu_alloc_handle: GPUAllocationHandle,
         pnu_vertex_ranges: Option<Vec<Range<u32>>>,
         pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
         index_ranges: Option<Vec<Range<u32>>>,
-        local_transforms: Vec<LocalTransform>,
+        local_transforms: LocalTransformData,
     },
 }
 
 #[derive(Debug)]
-pub struct Renderables(pub Vec<InstanceRenderData>);
+pub struct Renderables<'a> {
+    pub instance_handle: &'a InstanceHandle,
+    pub instance_data: Vec<InstanceRenderData>,
+}
 
 impl EntityManager {
-    pub fn get_renderables<'frame>(&'frame self, entity: &EntityHandle) -> Option<Renderables> {
+    pub fn get_renderables<'frame>(
+        &'frame self,
+        instance: &'frame InstanceHandle,
+    ) -> Option<Renderables<'frame>> {
         let mut query = InstanceUploadQuery::default();
         let mut instance_render_data: Vec<InstanceRenderData> = Vec::new();
-        let mesh_collection = self.mesh_collections.get(entity.0 as usize);
+        let mesh_collection = self.mesh_collections.get(instance.entity_handle.0 as usize);
         if let Some(mesh_collection) = mesh_collection {
             mesh_collection.modify_query(&mut query);
             instance_render_data.extend(
@@ -60,7 +73,10 @@ impl EntityManager {
         if instance_render_data.is_empty() {
             return None;
         }
-        Some(Renderables(instance_render_data))
+        Some(Renderables {
+            instance_handle: instance,
+            instance_data: instance_render_data,
+        })
     }
 
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {

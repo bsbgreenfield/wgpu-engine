@@ -3,11 +3,7 @@ use std::fmt::{Debug, Display};
 use crate::{
     app::{GPUUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
-    world::{
-        InstanceUploadQuery,
-        entity_manager::{InstanceRenderData, Renderables},
-        scene::SceneLoadLevel,
-    },
+    world::{InstanceUploadQuery, entity_manager::InstanceRenderData, scene::SceneLoadLevel},
 };
 
 pub mod asset_manager_new;
@@ -123,7 +119,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
 pub trait LoadableAsset: Asset {
     fn load(&self) -> Result<Box<dyn LoadedAsset>, ModelBuilderError>;
 }
-trait LoadedAsset {
+pub trait LoadedAsset {
     fn upload_job<'a>(
         &'a self,
         asset_handle: &'a AssetHandle,

@@ -18,7 +18,7 @@ pub trait Archetype {
     ) -> InstanceHandle;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArchetypeId {
     Position = 0,
 }
@@ -95,7 +95,7 @@ impl ArchetypeTable for APositionTable {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct InstanceHandle {
     pub archetype: ArchetypeId,
     pub entity_handle: EntityHandle,

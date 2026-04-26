@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZero, ops::Range};
+use std::{collections::HashMap, num::NonZero};
 
 use wgpu::RenderPass;
 
@@ -6,17 +6,18 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            AllocationCache, BufferChunks, DrawItem, DrawList, DrawPacket, Instruction,
-            RenderCategory, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
-            VMValue, VertexArenaError, VertexArenaSelector,
+            DrawItem, DrawPacket, Instruction, LocalTransformUploadJob, RenderCategory,
+            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
+            VertexArenaError, VertexArenaSelector,
             gpu_allocator::{
-                GPUAllocator, UploadIndexJob,
+                GPUAllocator, GPUInstanceAllocator, UploadIndexJob,
+                instance_arena::InstanceArena,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
             },
             pipeline::PipelineCollection,
         },
     },
-    util::types::{GlobalTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{GlobalTransform, LocalTransform, PNUJWVertex, PNUVertex, VIndex},
     world::{
         camera::Camera,
         entity_manager::EntityHandle,
@@ -60,13 +61,6 @@ impl EngineRenderPass {
             multiview_mask: None,
         });
         Ok(render_pass)
-    }
-
-    fn new(label: &str, categories: Vec<RenderCategory>) -> Self {
-        Self {
-            label: label.to_owned(),
-            categories,
-        }
     }
 }
 
@@ -118,12 +112,12 @@ impl<'a> InstanceDataCollector<'a> {
 pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
+    instance_arena: InstanceArena<LocalTransform>,
     global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
     pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
     pub(super) groups: Vec<RenderGroup>,
     pub(super) entity_group_index: HashMap<EntityHandle, usize>,
-    draw_packet: DrawPacket,
 }
 
 impl Renderer {
@@ -131,15 +125,12 @@ impl Renderer {
         Self {
             allocations: Vec::new(),
             vertex_arenas: VertexArenaCollection::new(&config.device),
+            instance_arena: InstanceArena::<LocalTransform>::new(&config.device),
             global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(&config.device),
             pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
             groups: Vec::new(),
             entity_group_index: HashMap::new(),
-            draw_packet: DrawPacket {
-                pnu: HashMap::new(),
-                pnujw: HashMap::new(),
-            },
         }
     }
     pub fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
@@ -217,9 +208,10 @@ impl Renderer {
                             .expect("should be valid")
                             as u32
                             + offset as u32;
+                        let lt_offset = self.instance_arena.resolve(instance_handle);
                         for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
                             entry.push(DrawItem {
-                                lt_idx: 0,
+                                lt_idx: lt_offset,
                                 instances: instance_idx..instance_idx + 1,
                                 primitives: pr.clone(),
                                 indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
@@ -230,91 +222,13 @@ impl Renderer {
             }
         }
     }
-    //    pub fn gen_draw_calls<'frame>(
-    //        &'frame self,
-    //        instance_manager: &'frame InstanceManager,
-    //        packet: &mut DrawPacket,
-    //        queue: &wgpu::Queue,
-    //    ) {
-    //        let mut collector = InstanceDataCollector::new();
-    //
-    //        instance_manager.pos.collect(&mut collector, 0);
-    //        // COPY GLOBAL TRANSFORMS
-    //        {
-    //            let global_transforms = collector.global_transforms;
-    //            if global_transforms.is_empty() {
-    //                return;
-    //            }
-    //            if let Some(mut buffer_view) = queue.write_buffer_with(
-    //                &self.global_transform_buffer,
-    //                0,
-    //                NonZero::new((collector.gt_len * size_of::<GlobalTransform>()) as u64).unwrap(),
-    //            ) {
-    //                let mut offset: usize = 0;
-    //                for pos_slice in &global_transforms {
-    //                    buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
-    //                        .copy_from_slice(bytemuck::cast_slice(pos_slice));
-    //                    offset += pos_slice.len() * size_of::<GlobalTransform>();
-    //                }
-    //            }
-    //        }
-    //
-    //        packet.clear();
-    //        for group in self.groups.iter() {
-    //            for view in group.views.iter() {
-    //                if let Some(pnu) = &view.pnu_draws {
-    //                    // if the alloc id is not chached, add a new cache, and a new DrawList value if necessary
-    //                    if !packet
-    //                        .pnu_cache
-    //                        .contains_key(&view.gpu_handle.global_allocation_id)
-    //                    {
-    //                        let alloc_cache = self.cache_resolve_pnu(view, &mut packet.pnu);
-    //                        packet
-    //                            .pnu_cache
-    //                            .insert(view.gpu_handle.global_allocation_id.clone(), alloc_cache);
-    //                    }
-    //                    // get the DrawList from the alloc cache and write to it
-    //                    let alloc_cache = &packet.pnu_cache[&view.gpu_handle.global_allocation_id];
-    //
-    //                    for instance_handle in group.instance_handles.iter() {
-    //                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
-    //                        let instance_idx = instance_manager
-    //                            .resolve_idx(&instance_handle)
-    //                            .expect("should be valid")
-    //                            as u32
-    //                            + offset as u32;
-    //
-    //                        for i in 0..pnu.mesh_ids.len() {
-    //                            packet.pnu_draw_len += 1;
-    //                            packet.pnu[alloc_cache.chunks_index].items.push(DrawItem {
-    //                                lt_idx: 0,
-    //                                instances: instance_idx..instance_idx + 1,
-    //                                primitives: DrawSet::within(
-    //                                    &pnu.primtitive_ranges[i],
-    //                                    &alloc_cache.vertex_range,
-    //                                ),
-    //                                indices: alloc_cache.index_range.as_ref().map(|idx_alloc_range| {
-    //                                    DrawSet::within(
-    //                                        &pnu.index_ranges.as_ref().unwrap()[i],
-    //                                        idx_alloc_range,
-    //                                    )
-    //                                }),
-    //                            });
-    //                        }
-    //                    }
-    //                }
-    //            }
-    //        }
-    //    }
 
     pub(super) fn add_render_group(
         &mut self,
         views: Vec<RenderView>,
         instance_handle: InstanceHandle,
-        is_indexed: bool,
     ) {
-        self.groups
-            .push(RenderGroup::new(instance_handle, views, is_indexed));
+        self.groups.push(RenderGroup::new(instance_handle, views));
     }
 
     pub(super) fn get_global_alloc_id(&mut self) -> u32 {
@@ -338,6 +252,14 @@ impl Renderer {
     ) -> Result<(), VertexArenaError> {
         self.vertex_arenas.index_arena.upload(job, queue)?;
         Ok(())
+    }
+
+    pub(super) fn upload_local_transforms<'frame>(
+        &mut self,
+        job: LocalTransformUploadJob<'frame>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), VertexArenaError> {
+        self.instance_arena.upload(job, queue)
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -398,8 +320,7 @@ impl Renderer {
                 let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
 
                 render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
-                todo!("SET LOCAL TRANSFORM BUFFER");
-
+                render_pass.set_bind_group(1, self.instance_arena.bind_group(), &[]);
                 render_pass.set_vertex_buffer(1, self.global_transform_buffer.slice(..));
                 for render_category in pass.categories.iter() {
                     match render_category {
@@ -491,10 +412,6 @@ impl VertexArenaSelector<PNUJWVertex> for Renderer {
         let _handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
         Ok(())
     }
-
-    fn get_arena(&self) -> &GPUArena<PNUJWVertex> {
-        &self.vertex_arenas.skinned_arena
-    }
 }
 
 impl VertexArenaSelector<PNUVertex> for Renderer {
@@ -506,9 +423,5 @@ impl VertexArenaSelector<PNUVertex> for Renderer {
         let _handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
         // TODO handle?
         Ok(())
-    }
-
-    fn get_arena(&self) -> &GPUArena<PNUVertex> {
-        &self.vertex_arenas.static_arena
     }
 }

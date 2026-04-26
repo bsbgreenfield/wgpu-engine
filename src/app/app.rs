@@ -7,11 +7,9 @@ use crate::{
         app_state::AppState,
         renderer::{DrawPacket, Instruction, RenderCategory, VMValue, renderer::Renderer},
     },
-    asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
     world::{
         WorldUpdateError,
-        entity_manager::{EntityHandle, EntityManager, Renderables},
-        instance_manager::Archetype,
+        entity_manager::EntityManager,
         scene::Scene,
         world::{World, WorldUpdateDelta},
     },
@@ -25,10 +23,6 @@ use winit::{
     window::Window,
 };
 
-enum AppCommands {
-    Spawn((EntityHandle, Box<dyn Archetype>)),
-}
-
 pub struct App<'a> {
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
@@ -37,7 +31,6 @@ pub struct App<'a> {
     pub app_state: AppState,
     pub surface_ready: bool,
     pub draw_packet: DrawPacket,
-    command_queue: Vec<AppCommands>,
 }
 
 impl App<'_> {
@@ -50,7 +43,6 @@ impl App<'_> {
             renderer: None,
             world: None,
             draw_packet: DrawPacket::default(),
-            command_queue: Vec::new(),
         }
     }
 

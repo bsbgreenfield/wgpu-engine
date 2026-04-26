@@ -9,7 +9,8 @@ use crate::{
     app::renderer::{
         GPUAllocationHandle,
         gpu_allocator::{
-            CHUNK_SIZE, GPUAllocator, UploadIndexJob, UploadMeshJob, VertexArenaError,
+            AllocMetaData, CHUNK_SIZE, GPUAllocator, GPUChunk, MIMIMUM_INDEX_ALLOCATION_SIZE,
+            MIMIMUM_VERTEX_ALLOCATION_SIZE, UploadIndexJob, UploadMeshJob, VertexArenaError,
             free_list::FreeListAllocator,
         },
     },
@@ -26,35 +27,6 @@ pub struct GPUArena<T: bytemuck::Pod + Debug> {
     bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
-pub(super) struct GPUChunk<T: bytemuck::Pod + Debug> {
-    remaining_space: u32,
-    buffer: wgpu::Buffer,
-    allocator: FreeListAllocator,
-    _t: PhantomData<T>,
-}
-
-impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
-    fn gpu_alloc(
-        &mut self,
-        data: &[T],
-        queue: &wgpu::Queue,
-        label: &str,
-    ) -> Result<(usize, Range<u32>), VertexArenaError> {
-        let size = (data.len() * size_of::<T>()) as u32;
-        let node_idx: usize = if self.remaining_space >= size {
-            self.allocator.alloc_first(size)?
-        } else {
-            return Err(VertexArenaError::DataTooLarge(size, label.to_string()));
-        };
-        // for datum in data.iter().take(10) {
-        //     println!("{:?}", datum);
-        // }
-        let offset = self.allocator.offset_of(node_idx) as u32;
-        queue.write_buffer(&self.buffer, offset.into(), bytemuck::cast_slice(data));
-        Ok((node_idx, offset..offset + (data.len() as u32)))
-    }
-}
-
 impl GPUChunk<VIndex> {
     fn new(device: &wgpu::Device) -> Self {
         Self {
@@ -65,7 +37,7 @@ impl GPUChunk<VIndex> {
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
-            allocator: FreeListAllocator::new(),
+            allocator: FreeListAllocator::new(MIMIMUM_INDEX_ALLOCATION_SIZE),
             _t: PhantomData,
         }
     }
@@ -81,20 +53,9 @@ impl<T: ModelVertex> GPUChunk<T> {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
-            allocator: FreeListAllocator::new(),
+            allocator: FreeListAllocator::new(MIMIMUM_VERTEX_ALLOCATION_SIZE),
             _t: PhantomData,
         }
-    }
-}
-
-#[derive(Debug)]
-struct AllocMetaData {
-    chunk_id: usize,
-    node_id: usize,
-}
-impl AllocMetaData {
-    fn new(chunk_id: usize, node_id: usize) -> Self {
-        Self { chunk_id, node_id }
     }
 }
 
@@ -216,12 +177,12 @@ impl GPUAllocator<VIndex> for GPUArena<VIndex> {
         Err(VertexArenaError::MaxAllocationReached)
     }
 
-    fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer {
-        &self.chunks[chunk_id].buffer
-    }
-    fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
-        self.alloc_table[&handle.global_allocation_id].chunk_id
-    }
+    // fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer {
+    //     &self.chunks[chunk_id].buffer
+    // }
+    // fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
+    //     self.alloc_table[&handle.global_allocation_id].chunk_id
+    // }
     fn resolve(&self, handle: &GPUAllocationHandle) -> (Range<u32>, &wgpu::Buffer) {
         let meta = self.alloc_table.get(&handle.global_allocation_id).unwrap();
         let mut range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
@@ -277,14 +238,14 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
         (range, &self.chunks[meta.chunk_id].buffer)
     }
 
-    #[inline]
-    fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
-        self.alloc_table[&handle.global_allocation_id].chunk_id
-    }
+    //  #[inline]
+    //  fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
+    //      self.alloc_table[&handle.global_allocation_id].chunk_id
+    //  }
 
-    fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer {
-        &self.chunks[chunk_id].buffer
-    }
+    //  fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer {
+    //      &self.chunks[chunk_id].buffer
+    //  }
 }
 
 pub struct StaticGPUBuffer<T: bytemuck::Pod> {

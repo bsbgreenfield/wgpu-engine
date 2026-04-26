@@ -3,11 +3,14 @@ use std::{any::TypeId, fmt::Display, path::PathBuf};
 use crate::{
     app::{GPUUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
-        Asset, AssetHandle, AssetLoadError, AssetResidency, LoadedAsset, ModelBuilderError,
-        gltf::mesh::Mesh,
+        Asset, AssetHandle, AssetLoadError, LoadedAsset, ModelBuilderError, gltf::mesh::Mesh,
     },
     util::types::{LocalTransform, MAT4_IDENTITY, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
-    world::{InstanceUploadQuery, components::MeshAcessor, entity_manager::InstanceRenderData},
+    world::{
+        InstanceUploadQuery,
+        components::MeshAcessor,
+        entity_manager::{InstanceRenderData, LocalTransformData},
+    },
 };
 mod build;
 mod loader;
@@ -24,7 +27,6 @@ pub(in crate::asset_manager_new) enum BinarySource {
 pub struct GltfAsset {
     gltf: gltf::Gltf,
     bin: BinarySource,
-    res_level: AssetResidency,
 }
 
 impl Asset for GltfAsset {
@@ -36,7 +38,6 @@ impl Asset for GltfAsset {
         Ok(Self {
             gltf: res.0,
             bin: res.1,
-            res_level: AssetResidency::Registered,
         })
     }
 }
@@ -147,12 +148,17 @@ impl LoadedAsset for LoadedGltfAsset {
                 }
             }
 
+            let rigid_animation_mode = query.rigid_animation_mode.unwrap();
+
             render_data_vec.push(InstanceRenderData::MeshRenderable {
                 gpu_alloc_handle: alloc_handle,
                 pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),
                 pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
                 index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
-                local_transforms,
+                local_transforms: LocalTransformData {
+                    lt: local_transforms,
+                    mode: rigid_animation_mode.clone(),
+                },
             });
         }
 
@@ -161,12 +167,12 @@ impl LoadedAsset for LoadedGltfAsset {
 }
 
 #[derive(Debug)]
-pub(super) enum GltfValidationError {
+pub enum GltfValidationError {
     NoView,
     UnsupportedScheme,
 }
 #[derive(Debug)]
-pub(super) enum GltfLoadError {
+pub enum GltfLoadError {
     IOErr(std::io::ErrorKind),
     InvalidFileError,
     MultipleFileTypes,

@@ -5,16 +5,15 @@ use crate::{
     app::{
         GPUUploadJob,
         renderer::{
-            GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, RenderUpdateError,
-            UploadMeshJob, VMValue, VertexArenaSelector, gpu_allocator::UploadIndexJob,
-            renderer::Renderer,
+            GPUAllocationHandle, Instruction, LocalTransformUploadJob, Operations,
+            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaSelector,
+            gpu_allocator::UploadIndexJob, renderer::Renderer,
         },
     },
-    util::types::{ModelVertex, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{PNUJWVertex, PNUVertex},
     world::{
-        entity_manager::{InstanceRenderData, Renderables},
-        instance_manager::InstanceHandle,
-        world::{DrawSet, RenderGroup, RenderView},
+        entity_manager::InstanceRenderData,
+        world::{DrawSet, RenderView},
     },
 };
 
@@ -23,20 +22,6 @@ impl<'frame> VMValue<'frame> {
         match self {
             VMValue::UploadJob(gpu_job) => gpu_job,
             _ => panic!("value is not a gpu upload job, it is {:?}", self),
-        }
-    }
-
-    fn unwrap_renderables(&'frame self) -> &'frame Renderables {
-        match self {
-            VMValue::Renderables(renderables) => renderables,
-            _ => panic!("value is not renderables. it is {:?}", self),
-        }
-    }
-
-    fn unwrap_instance_handle(&'frame self) -> &'frame InstanceHandle {
-        match self {
-            VMValue::InstanceHandle(handle) => handle,
-            _ => panic!("value is not an instance handle. it is {:?}", self),
         }
     }
 }
@@ -89,16 +74,6 @@ impl<'frame> Renderer {
                                 global_alloc_id: global_allocation_id,
                             });
 
-                        // let lt_job: Option<LocalTransformUploadJob> = gpu_upload_job
-                        //     .local_transforms
-                        //     .map(|x| LocalTransformUploadJob {
-                        //         local_transforms: x,
-                        //         global_alloc_id: global_allocation_id,
-                        //     });
-                        // self.upload_local_transform_data(lt_job, queue)?;
-                        // if let Some(static_job) = maybe_static_job {
-                        //     self.upload_mesh(static_job, queue)?;
-                        // }
                         if let Some(static_job) = maybe_static_job {
                             self.upload_mesh(static_job, queue)?;
                         }
@@ -138,8 +113,8 @@ impl<'frame> Renderer {
                             }
                             VMValue::Renderables(renderables) => {
                                 let mut views: Vec<RenderView> =
-                                    Vec::with_capacity(renderables.0.len());
-                                for instance_data in renderables.0.iter() {
+                                    Vec::with_capacity(renderables.instance_data.len());
+                                for instance_data in renderables.instance_data.iter() {
                                     match instance_data {
                                         InstanceRenderData::MeshRenderable {
                                             gpu_alloc_handle,
@@ -148,6 +123,11 @@ impl<'frame> Renderer {
                                             index_ranges,
                                             local_transforms,
                                         } => {
+                                            let lt_job = LocalTransformUploadJob {
+                                                local_transforms: &local_transforms,
+                                                instance_handle: renderables.instance_handle,
+                                            };
+                                            self.upload_local_transforms(lt_job, queue)?;
                                             views.push(RenderView {
                                                 gpu_handle: gpu_alloc_handle.clone(),
                                                 pnu_draws: pnu_vertex_ranges.as_ref().map(|pnu| {
@@ -166,6 +146,8 @@ impl<'frame> Renderer {
                                         }
                                     }
                                 }
+
+                                self.add_render_group(views, renderables.instance_handle.clone());
                             }
                             _ => panic!("unexpected constant for spawn entity"),
                         }

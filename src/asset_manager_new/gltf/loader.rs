@@ -1,11 +1,13 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    fs::{DirEntry, ReadDir, read_dir},
+    path::PathBuf,
+};
 
 use base64::Engine;
+use gltf::Gltf;
 
-use crate::asset_manager_new::{
-    AssetLoadError,
-    gltf::{BinarySource, GltfLoadError},
-};
+use crate::asset_manager_new::gltf::{BinarySource, GltfLoadError};
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use base64::prelude::BASE64_STANDARD;
@@ -34,10 +36,61 @@ fn decode_gltf_data_uri(uri: &str) -> Result<Vec<u8>, Box<dyn Error>> {
 
     Ok(decoded)
 }
+fn load_from_separate_data_files(
+    gltf_file: &PathBuf,
+    bin_file: PathBuf,
+) -> Result<(gltf::Gltf, BinarySource), GltfLoadError> {
+    let gtlf_res: gltf::Gltf =
+        Gltf::open(gltf_file).map_err(|e| GltfLoadError::GltfPackageError(e))?;
+
+    Ok((gtlf_res, BinarySource::BinFile(bin_file)))
+}
+
+fn load_from_single_gltf_file(
+    gltf_file: PathBuf,
+) -> Result<(gltf::Gltf, BinarySource), GltfLoadError> {
+    let gltf_res: gltf::Gltf =
+        Gltf::open(&gltf_file).map_err(|e| GltfLoadError::GltfPackageError(e))?;
+
+    Ok((gltf_res, BinarySource::GLTFBuffers(gltf_file)))
+}
 pub(super) fn load_gltf_from_resource(
     dir_name: &str,
-) -> Result<(gltf::Gltf, BinarySource), AssetLoadError> {
-    todo!()
+) -> Result<(gltf::Gltf, BinarySource), GltfLoadError> {
+    let dir_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("res")
+        .join(dir_name);
+    if !dir_path.is_dir() {
+        return Err(GltfLoadError::IOErr(std::io::ErrorKind::NotFound));
+    }
+
+    let mut dot_gltf: Option<PathBuf> = None;
+    let mut dot_glb: Option<PathBuf> = None;
+    let mut dot_bin: Option<PathBuf> = None;
+    let entries: ReadDir = read_dir(&dir_path).map_err(|e| GltfLoadError::IOErr(e.kind()))?;
+
+    for maybe_entry in entries {
+        let entry: DirEntry = maybe_entry.map_err(|_| GltfLoadError::InvalidFileError)?;
+        match entry.path().extension().unwrap().to_str().unwrap() {
+            "gltf" => dot_gltf = Some(entry.path()),
+            "bin" => dot_bin = Some(entry.path()),
+            "glb" => dot_glb = Some(entry.path()),
+            _ => {}
+        }
+    }
+
+    if dot_glb.is_some() && dot_gltf.is_some() {
+        return Err(GltfLoadError::MultipleFileTypes);
+    }
+    if dot_gltf.is_some() && dot_bin.is_some() {
+        let result = load_from_separate_data_files(&dot_gltf.unwrap(), dot_bin.unwrap())?;
+        return Ok(result);
+    } else if dot_gltf.is_some() && dot_bin.is_none() {
+        let result = load_from_single_gltf_file(dot_gltf.unwrap())?;
+        return Ok(result);
+    } else {
+        return Err(GltfLoadError::Unimplemented);
+    }
 }
 pub(super) fn load_binary_data_from_source(
     source: &BinarySource,

@@ -6,9 +6,7 @@ use crate::{
         GPUUploadJob,
         renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
     },
-    asset_manager_new::{
-        Asset, AssetHandle, AssetLoadError, LoadableAsset, asset_manager_new::AssetManagerNew,
-    },
+    asset_manager_new::{Asset, AssetHandle, AssetLoadError, LoadableAsset},
     world::{
         WorldInitError, WorldUpdateError,
         camera::Camera,
@@ -34,7 +32,7 @@ impl DrawSet {
     pub fn from_ids_and_prims(
         data: Option<(Vec<u32>, Vec<Range<u32>>, Option<Vec<Range<u32>>>)>,
     ) -> Option<Self> {
-        if let Some((ids, prims, indices)) = data {
+        if let Some((_ids, prims, indices)) = data {
             Some(Self {
                 primtitive_ranges: prims,
                 index_ranges: indices,
@@ -54,14 +52,12 @@ pub struct RenderView {
 pub struct RenderGroup {
     pub instance_handles: Vec<InstanceHandle>,
     pub views: Vec<RenderView>,
-    pub indexed: bool,
 }
 impl RenderGroup {
-    pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>, is_indexed: bool) -> Self {
+    pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>) -> Self {
         Self {
             instance_handles: vec![instance_handle],
             views,
-            indexed: is_indexed,
         }
     }
 }
@@ -90,20 +86,12 @@ impl WorldUpdateDelta {
 
             Self::EntityDidSpawn(instance_handle) => {
                 instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                if world
-                    .instance_manager
-                    .is_instanced(instance_handle.entity_handle.clone())
-                {
-                    constants.push(VMValue::InstanceHandle(instance_handle.clone()));
-                } else if let Some(renderables) = world
-                    .entity_manager
-                    .get_renderables(&instance_handle.entity_handle)
-                {
+                if let Some(renderables) = world.entity_manager.get_renderables(&instance_handle) {
                     constants.push(VMValue::Renderables(renderables));
                 } else {
                     todo!("what to do if there is no renderable data?")
                 }
+                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
             WorldUpdateDelta::EntityDidLoad(_) => {
                 //TODO spawn based on user input
@@ -165,6 +153,7 @@ impl World {
         entity_handle: EntityHandle,
         archetype: Box<dyn Archetype>,
     ) -> Result<&Vec<InstanceHandle>, WorldUpdateError> {
+        println!("SPAWNING {:?}", entity_handle);
         Ok(instance_manager.spawn(entity_handle, archetype))
     }
 
