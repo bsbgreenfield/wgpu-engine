@@ -73,6 +73,7 @@ impl EntityManager {
         if instance_render_data.is_empty() {
             return None;
         }
+        println!("EMITTING renderables for instance: {:?}", instance);
         Some(Renderables {
             instance_handle: instance,
             instance_data: instance_render_data,

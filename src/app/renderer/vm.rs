@@ -101,6 +101,7 @@ impl<'frame> Renderer {
 
                         match &constants[const_idx as usize] {
                             VMValue::InstanceHandle(instance_handle) => {
+                                panic!("should never happen right now");
                                 let group_idx = self
                                     .entity_group_index
                                     .get(&instance_handle.entity_handle)
@@ -146,8 +147,21 @@ impl<'frame> Renderer {
                                         }
                                     }
                                 }
-
-                                self.add_render_group(views, renderables.instance_handle.clone());
+                                if let Some(existing_group_idx) = self
+                                    .entity_group_index
+                                    .get(&renderables.instance_handle.entity_handle)
+                                {
+                                    let group = &mut self.groups[*existing_group_idx];
+                                    group
+                                        .instance_handles
+                                        .push(renderables.instance_handle.clone());
+                                } else {
+                                    println!("ENTITY HANDLE NOT FOUND IN GROUP MAP");
+                                    self.add_render_group(
+                                        views,
+                                        renderables.instance_handle.clone(),
+                                    );
+                                }
                             }
                             _ => panic!("unexpected constant for spawn entity"),
                         }

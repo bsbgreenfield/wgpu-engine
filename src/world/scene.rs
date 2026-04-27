@@ -39,7 +39,7 @@ pub struct Scene {
     pub scene_id: SceneId,
     pub entitites: Vec<EntityHandle>,
     dirty: bool,
-    spawn_count: usize,
+    pub spawn_count: usize,
     pub load_level: SceneLoadLevel,
     event_queue: Vec<SceneEvent>,
 }

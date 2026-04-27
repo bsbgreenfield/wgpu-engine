@@ -228,6 +228,8 @@ impl Renderer {
         views: Vec<RenderView>,
         instance_handle: InstanceHandle,
     ) {
+        self.entity_group_index
+            .insert(instance_handle.entity_handle.clone(), self.groups.len());
         self.groups.push(RenderGroup::new(instance_handle, views));
     }
 
@@ -296,6 +298,11 @@ impl Renderer {
         config.queue.submit(Some(encoder.finish()));
         output.present();
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn get_groups(&self) -> &Vec<RenderGroup> {
+        &self.groups
     }
 
     pub fn render(

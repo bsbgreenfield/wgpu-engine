@@ -148,6 +148,9 @@ impl DrawItem {
     pub fn get_primitives(&self) -> Range<u32> {
         self.primitives.clone()
     }
+    pub fn get_indices(&self) -> Option<Range<u32>> {
+        self.indices.clone()
+    }
 }
 
 #[derive(Hash, PartialEq, PartialOrd, Eq)]

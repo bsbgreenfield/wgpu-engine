@@ -102,7 +102,7 @@ impl WorldUpdateDelta {
 
 pub struct World {
     pub camera: Camera,
-    scene: Scene,
+    pub scene: Scene,
     pub entity_manager: EntityManager,
     load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
@@ -152,8 +152,7 @@ impl World {
         instance_manager: &mut InstanceManager,
         entity_handle: EntityHandle,
         archetype: Box<dyn Archetype>,
-    ) -> Result<&Vec<InstanceHandle>, WorldUpdateError> {
-        println!("SPAWNING {:?}", entity_handle);
+    ) -> Result<Vec<&InstanceHandle>, WorldUpdateError> {
         Ok(instance_manager.spawn(entity_handle, archetype))
     }
 
@@ -184,6 +183,7 @@ impl World {
             .is_some()
         {
             self.scene.pop_event();
+            self.load_queue.dequeue_spawned_scene(self.scene.scene_id);
             return Ok(true);
         }
 
@@ -225,11 +225,6 @@ impl World {
                         SceneEvent::Spawn(mut instance_data) => {
                             // TODO: ive required the instance spawn code to contain the entity
                             // handles that it wants to spawn. This may or may not be the right decision
-                            let _completed_scene_load = self
-                                .load_queue
-                                .completed_queue
-                                .get(&self.scene.scene_id)
-                                .expect("should be completed");
                             for (entity_handle, archetype) in instance_data.drain(..) {
                                 let instance_handles = World::spawn(
                                     &mut self.instance_manager,
@@ -242,7 +237,6 @@ impl World {
                                                                  // supported
                                 ));
                             }
-                            self.load_queue.dequeue_spawned_scene(self.scene.scene_id);
                         }
                         _ => unreachable!(),
                     },

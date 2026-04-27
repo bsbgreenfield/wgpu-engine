@@ -15,8 +15,9 @@ mod integration_tests {
         },
         asset_manager_new::asset_manager_new::AssetManagerNew,
         world::{
+            self,
             entity_manager::{EntityHandle, EntityManager},
-            instance_manager::APosition,
+            instance_manager::{self, APosition, ArchetypeId, InstanceHandle},
             scene::{Scene, SceneLoadLevel},
             world::{World, WorldUpdateDelta},
         },
@@ -136,6 +137,26 @@ mod integration_tests {
 
         assert_render_deltas(&render_deltas, expected_render_deltas);
 
+        app.world
+            .as_mut()
+            .unwrap()
+            .post_frame_update(&render_deltas);
+    }
+
+    fn run_frame_unchecked(app: &mut App<'_>) {
+        let deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
+        let (constants, instructions) = get_bytecode(app.world.as_ref().unwrap(), &deltas);
+
+        let render_deltas = app
+            .renderer
+            .as_mut()
+            .unwrap()
+            .update(
+                constants,
+                instructions,
+                &app.app_config.as_ref().unwrap().queue,
+            )
+            .unwrap_or_else(|e| panic!("{}", e));
         app.world
             .as_mut()
             .unwrap()
@@ -331,5 +352,78 @@ mod integration_tests {
                 assert_eq!(item.get_instances().count(), 1);
             }
         });
+    }
+
+    #[test]
+    fn render_box_box() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::Box).await;
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+
+            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+
+            assert_eq!(instance_manager.get_all_instances().len(), 1);
+            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
+
+            let groups = app.renderer.as_ref().unwrap().get_groups();
+
+            assert_eq!(groups.len(), 1);
+
+            assert_eq!(groups[0].views.len(), 1);
+
+            app.world.as_mut().unwrap().scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
+                        x: 10.0,
+                        y: 10.0,
+                        z: 0.0,
+                    })
+                    .into(),
+                }),
+            )]);
+
+            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+
+            gen_draw_calls(&mut app);
+            let groups = app.renderer.as_ref().unwrap().get_groups();
+
+            assert_eq!(groups.len(), 1);
+            assert_eq!(groups[0].instance_handles.len(), 2);
+            assert_eq!(groups[0].views.len(), 1);
+            assert_eq!(
+                groups[0].instance_handles[0],
+                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0)
+            );
+            assert_eq!(
+                groups[0].instance_handles[1],
+                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 1, 0)
+            );
+
+            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> =
+                app.draw_packet.get_pnujw().values().flatten().collect();
+            assert!(pnujw_items.is_empty());
+
+            assert_eq!(pnu_items.len(), 2);
+            assert_eq!(pnu_items[0].get_instances(), 0..1);
+            assert_eq!(pnu_items[1].get_instances(), 1..2);
+            assert_eq!(pnu_items[0].get_lt_idx(), 0);
+            assert_eq!(pnu_items[1].get_lt_idx(), 0);
+            assert_eq!(pnu_items[0].get_primitives(), pnu_items[1].get_primitives());
+            assert_eq!(pnu_items[0].get_indices(), pnu_items[1].get_indices());
+
+            let world = app.world.as_ref().unwrap();
+            assert_eq!(world.scene.spawn_count, 2);
+
+            assert_eq!(world.instance_manager.get_all_instances().len(), 2);
+            assert_eq!(
+                world.instance_manager.get_pos_table().get_positions().len(),
+                2
+            );
+        })
     }
 }

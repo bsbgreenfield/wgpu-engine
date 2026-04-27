@@ -82,7 +82,9 @@ impl ArchetypeTable for APositionTable {
 
     fn insert(&mut self, data: APosition, entity_handle: EntityHandle) -> InstanceHandle {
         self.positions.push(data.position);
-        self.arena.insert(entity_handle)
+        let a = self.arena.insert(entity_handle);
+        println!("{:?}", a);
+        a
     }
 
     fn remove(&mut self, handle: InstanceHandle) {
@@ -101,6 +103,23 @@ pub struct InstanceHandle {
     pub entity_handle: EntityHandle,
     pub instance_id: u16,
     pub generation: u16,
+}
+
+#[cfg(test)]
+impl InstanceHandle {
+    pub fn mock(
+        archetype: ArchetypeId,
+        entity_handle: EntityHandle,
+        instance_id: u16,
+        generation: u16,
+    ) -> Self {
+        Self {
+            archetype,
+            entity_handle,
+            instance_id,
+            generation,
+        }
+    }
 }
 
 pub struct InstanceManager {
@@ -145,7 +164,7 @@ impl InstanceManager {
         &mut self,
         entity_handle: EntityHandle,
         data: Box<dyn Archetype>,
-    ) -> &Vec<InstanceHandle> {
+    ) -> Vec<&InstanceHandle> {
         let instance_handle = data.insert_self(self, entity_handle);
 
         if self.entity_to_instance.contains_key(&entity_handle) {
@@ -157,7 +176,14 @@ impl InstanceManager {
                 .insert(entity_handle, vec![instance_handle]);
         }
 
-        self.entity_to_instance.get(&entity_handle).unwrap()
+        // TODO: we will want to return a slice of instances if GPU instancing is enabled
+        vec![
+            self.entity_to_instance
+                .get(&entity_handle)
+                .unwrap()
+                .last()
+                .unwrap(),
+        ]
     }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {
