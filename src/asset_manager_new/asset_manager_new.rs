@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::{GPUUploadJob, renderer::GPUAllocationHandle},
+    app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, LoadableAsset,
         LoadedAsset,
@@ -65,7 +65,7 @@ impl AssetManagerNew {
     pub fn get_upload_job_for<'a>(
         &'a self,
         asset_handle: &'a AssetHandle,
-    ) -> Result<GPUUploadJob<'a>, AssetLoadError> {
+    ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError> {
         match self
             .registered_assets
             .get(asset_handle)

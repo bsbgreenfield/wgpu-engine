@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZero};
+use std::num::NonZero;
 
 use wgpu::RenderPass;
 
@@ -6,9 +6,9 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            DrawItem, DrawPacket, Instruction, LocalTransformUploadJob, RenderCategory,
-            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
-            VertexArenaError, VertexArenaSelector,
+            DrawItem, DrawPacket, InstanceUploadJob, Instruction, RenderCategory, RenderError,
+            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaError,
+            VertexArenaSelector,
             gpu_allocator::{
                 GPUAllocator, GPUInstanceAllocator, UploadIndexJob,
                 instance_arena::InstanceArena,
@@ -20,7 +20,6 @@ use crate::{
     util::types::{GlobalTransform, LocalTransform, PNUJWVertex, PNUVertex, VIndex},
     world::{
         camera::Camera,
-        entity_manager::EntityHandle,
         instance_manager::{ArchetypeId, ArchetypeTable, InstanceHandle, InstanceManager},
         world::{DrawSet, RenderGroup, RenderView},
     },
@@ -116,8 +115,6 @@ pub struct Renderer {
     global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
     pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
-    pub(super) groups: Vec<RenderGroup>,
-    pub(super) entity_group_index: HashMap<EntityHandle, usize>,
 }
 
 impl Renderer {
@@ -129,8 +126,6 @@ impl Renderer {
             global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(&config.device),
             pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
-            groups: Vec::new(),
-            entity_group_index: HashMap::new(),
         }
     }
     pub fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
@@ -259,7 +254,7 @@ impl Renderer {
 
     pub(super) fn upload_local_transforms<'frame>(
         &mut self,
-        job: LocalTransformUploadJob<'frame>,
+        job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
         self.instance_arena.upload(job, queue)
@@ -299,11 +294,6 @@ impl Renderer {
         config.queue.submit(Some(encoder.finish()));
         output.present();
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub fn get_groups(&self) -> &Vec<RenderGroup> {
-        &self.groups
     }
 
     pub fn render(

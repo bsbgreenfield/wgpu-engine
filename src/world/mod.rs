@@ -30,6 +30,7 @@ pub enum WorldUpdateError {
     EntityLoadNotComplete(EntityHandle),
     EntityLoadFailed(EntityHandle),
     EntityLoadAlreadyEnqeued(EntityHandle),
+    InstanceSpawnFailure,
 }
 
 impl Display for WorldUpdateError {
@@ -59,6 +60,7 @@ impl Display for WorldUpdateError {
                 "Entity with handle {:?} was already enqueued for loading!",
                 handle
             ),
+            Self::InstanceSpawnFailure => f.write_str("failed to upload instance"),
         }
     }
 }

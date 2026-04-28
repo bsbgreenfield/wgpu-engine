@@ -1,7 +1,7 @@
 use std::{any::TypeId, fmt::Display, path::PathBuf};
 
 use crate::{
-    app::{GPUUploadJob, renderer::GPUAllocationHandle},
+    app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, LoadedAsset, ModelBuilderError, gltf::mesh::Mesh,
     },
@@ -86,8 +86,8 @@ impl LoadedAsset for LoadedGltfAsset {
     fn upload_job<'a>(
         &'a self,
         asset_handle: &'a AssetHandle,
-    ) -> Result<GPUUploadJob<'a>, AssetLoadError> {
-        GPUUploadJob::new(
+    ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError> {
+        GPUAssetUploadJob::new(
             asset_handle,
             Some(&self.pnu_vertices[..]),
             Some(&self.pnujw_vertices[..]),

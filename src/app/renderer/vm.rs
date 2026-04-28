@@ -3,25 +3,27 @@ use std::{iter::Peekable, slice::Iter};
 
 use crate::{
     app::{
-        GPUUploadJob,
+        GPUAssetUploadJob,
         renderer::{
-            GPUAllocationHandle, Instruction, LocalTransformUploadJob, Operations,
-            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaSelector,
+            GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderUpdateDelta,
+            RenderUpdateError, UploadMeshJob, VMValue, VertexArenaSelector,
             gpu_allocator::UploadIndexJob, renderer::Renderer,
         },
     },
     util::types::{PNUJWVertex, PNUVertex},
-    world::{
-        entity_manager::InstanceRenderData,
-        instance_manager::InstanceGPUBindings,
-        world::{DrawSet, RenderView},
-    },
+    world::{instance_manager::InstanceGPUBindings, world::InstanceUploadData},
 };
 
 impl<'frame> VMValue<'frame> {
-    fn unwrap_gpu_upload_job(&'frame self) -> &'frame GPUUploadJob<'frame> {
+    fn unwrap_gpu_upload_job(&'frame self) -> &'frame GPUAssetUploadJob<'frame> {
         match self {
             VMValue::UploadJob(gpu_job) => gpu_job,
+            _ => panic!("value is not a gpu upload job, it is {:?}", self),
+        }
+    }
+    fn unwrap_instance_upload_jobs(&'frame self) -> &'frame InstanceUploadData {
+        match self {
+            VMValue::InstanceDataUpload(data) => data,
             _ => panic!("value is not a gpu upload job, it is {:?}", self),
         }
     }
@@ -52,7 +54,7 @@ impl<'frame> Renderer {
                 Instruction::Op(op) => match op {
                     Operations::AddAsset => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        let gpu_upload_job: &GPUUploadJob =
+                        let gpu_upload_job: &GPUAssetUploadJob =
                             constants[const_idx as usize].unwrap_gpu_upload_job();
 
                         let global_allocation_id = self.get_global_alloc_id();
@@ -99,76 +101,21 @@ impl<'frame> Renderer {
                     Operations::MoveEntity => todo!(),
                     Operations::SpawnEntityInstance => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
+                        let instance_upload_jobs =
+                            constants[const_idx as usize].unwrap_instance_upload_jobs();
 
-                        match &constants[const_idx as usize] {
-                            VMValue::InstanceHandle(instance_handle) => {
-                                panic!("should never happen right now");
-                                let group_idx = self
-                                    .entity_group_index
-                                    .get(&instance_handle.entity_handle)
-                                    .expect("group should exist");
-
-                                let group =
-                                    self.groups.get_mut(*group_idx).expect("group should exist");
-
-                                group.instance_handles.push(instance_handle.clone());
-                            }
-                            VMValue::Renderables(renderables) => {
-                                let mut views: Vec<RenderView> =
-                                    Vec::with_capacity(renderables.instance_data.len());
-                                for instance_data in renderables.instance_data.iter() {
-                                    match instance_data {
-                                        InstanceRenderData::MeshRenderable {
-                                            gpu_alloc_handle,
-                                            pnu_vertex_ranges,
-                                            pnujw_vertex_ranges,
-                                            index_ranges,
-                                            local_transforms,
-                                        } => {
-                                            let lt_job = LocalTransformUploadJob {
-                                                local_transforms: &local_transforms,
-                                                instance_handle: renderables.instance_handle,
-                                            };
-                                            let lt_offset =
-                                                self.upload_local_transforms(lt_job, queue)?;
-                                            res.push(RenderUpdateDelta::EntitySpawned((
-                                                renderables.instance_handle.clone(),
-                                                InstanceGPUBindings { lt_offset },
-                                            )));
-                                            views.push(RenderView {
-                                                gpu_handle: gpu_alloc_handle.clone(),
-                                                pnu_draws: pnu_vertex_ranges.as_ref().map(|pnu| {
-                                                    DrawSet {
-                                                        primtitive_ranges: pnu.clone(),
-                                                        index_ranges: index_ranges.clone(),
-                                                    }
-                                                }),
-                                                pnujw_draws: pnujw_vertex_ranges.as_ref().map(
-                                                    |pnujw| DrawSet {
-                                                        primtitive_ranges: pnujw.clone(),
-                                                        index_ranges: index_ranges.clone(),
-                                                    },
-                                                ),
-                                            });
-                                        }
-                                    }
-                                }
-                                if let Some(existing_group_idx) = self
-                                    .entity_group_index
-                                    .get(&renderables.instance_handle.entity_handle)
-                                {
-                                    let group = &mut self.groups[*existing_group_idx];
-                                    group
-                                        .instance_handles
-                                        .push(renderables.instance_handle.clone());
-                                } else {
-                                    self.add_render_group(
-                                        views,
-                                        renderables.instance_handle.clone(),
-                                    );
-                                }
-                            }
-                            _ => panic!("unexpected constant for spawn entity"),
+                        if let Some(ref local_transform_data) =
+                            instance_upload_jobs.local_transforms
+                        {
+                            let lt_upload_job = InstanceUploadJob::new(
+                                local_transform_data,
+                                instance_upload_jobs.instance_handle.clone(),
+                            );
+                            let lt_offset = self.upload_local_transforms(lt_upload_job, queue)?;
+                            res.push(RenderUpdateDelta::EntitySpawned((
+                                instance_upload_jobs.instance_handle.clone(),
+                                InstanceGPUBindings { lt_offset },
+                            )));
                         }
                     }
                 },

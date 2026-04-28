@@ -3,14 +3,18 @@ use std::{ops::Range, vec::Drain};
 use super::scene::Scene;
 use crate::{
     app::{
-        GPUUploadJob,
-        renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
+        GPUAssetUploadJob,
+        renderer::{
+            GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderUpdateDelta,
+            VMValue,
+        },
     },
     asset_manager_new::{Asset, AssetHandle, AssetLoadError, LoadableAsset},
+    util::types::LocalTransform,
     world::{
         WorldInitError, WorldUpdateError,
         camera::Camera,
-        entity_manager::{EntityHandle, EntityManager},
+        entity_manager::{EntityHandle, EntityManager, Renderables},
         instance_manager::{Archetype, InstanceHandle, InstanceManager},
         load_queue::EntityLoadQueue,
         scene::SceneEvent,
@@ -63,8 +67,15 @@ impl RenderGroup {
 }
 
 #[derive(Debug)]
+pub struct InstanceUploadData {
+    pub instance_handle: InstanceHandle,
+    pub local_transforms: Option<Vec<LocalTransform>>,
+    // others
+}
+
+#[derive(Debug)]
 pub enum WorldUpdateDelta {
-    EntityDidSpawn(InstanceHandle),
+    EntityDidSpawn(InstanceUploadData),
     EntityDidLoad(EntityHandle),
     AssetDidLoad(AssetHandle),
 }
@@ -84,13 +95,9 @@ impl WorldUpdateDelta {
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
 
-            Self::EntityDidSpawn(instance_handle) => {
+            Self::EntityDidSpawn(upload_data) => {
                 instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                if let Some(renderables) = world.entity_manager.get_renderables(&instance_handle) {
-                    constants.push(VMValue::Renderables(renderables));
-                } else {
-                    todo!("what to do if there is no renderable data?")
-                }
+                constants.push(VMValue::InstanceDataUpload(upload_data));
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
             WorldUpdateDelta::EntityDidLoad(_) => {
@@ -142,18 +149,21 @@ impl World {
     fn get_upload_job_for<'frame>(
         &'frame self,
         asset_handle: &'frame AssetHandle,
-    ) -> GPUUploadJob<'frame> {
+    ) -> GPUAssetUploadJob<'frame> {
         self.entity_manager
             .asset_manager
             .get_upload_job_for(asset_handle)
             .expect("should be uploadable")
     }
     pub fn spawn(
-        instance_manager: &mut InstanceManager,
+        &mut self,
         entity_handle: EntityHandle,
         archetype: Box<dyn Archetype>,
-    ) -> Result<Vec<&InstanceHandle>, WorldUpdateError> {
-        Ok(instance_manager.spawn(entity_handle, archetype))
+    ) -> Result<InstanceUploadData, WorldUpdateError> {
+        if let Some(renderables) = self.entity_manager.get_renderables(&entity_handle) {
+            return Ok(self.instance_manager.spawn(renderables, archetype));
+        }
+        Err(WorldUpdateError::InstanceSpawnFailure)
     }
 
     pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
@@ -224,16 +234,8 @@ impl World {
                     SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
                         SceneEvent::Spawn(mut instance_data) => {
                             for (entity_handle, archetype) in instance_data.drain(..) {
-                                let instance_handles = World::spawn(
-                                    &mut self.instance_manager,
-                                    entity_handle,
-                                    archetype,
-                                )?;
-                                deltas.push(WorldUpdateDelta::EntityDidSpawn(
-                                    instance_handles[0].clone(), // this is [0] because spawning
-                                                                 // multiple instances is not yet
-                                                                 // supported
-                                ));
+                                let instance_upload_jobs = self.spawn(entity_handle, archetype)?;
+                                deltas.push(WorldUpdateDelta::EntityDidSpawn(instance_upload_jobs));
                             }
                         }
                         _ => unreachable!(),

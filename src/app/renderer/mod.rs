@@ -1,8 +1,10 @@
 use std::{collections::HashMap, error::Error, fmt::Display, ops::Range};
 
+use bytemuck::Pod;
+
 use crate::{
     app::{
-        GPUUploadJob,
+        GPUAssetUploadJob,
         renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
     },
     asset_manager_new::AssetHandle,
@@ -10,6 +12,7 @@ use crate::{
     world::{
         entity_manager::{EntityHandle, LocalTransformData, Renderables},
         instance_manager::{InstanceGPUBindings, InstanceHandle},
+        world::InstanceUploadData,
     },
 };
 
@@ -38,9 +41,20 @@ impl GPUAllocationHandle {
         }
     }
 }
-pub struct LocalTransformUploadJob<'frame> {
-    pub(super) local_transforms: &'frame LocalTransformData,
-    pub(super) instance_handle: &'frame InstanceHandle,
+
+#[derive(Debug)]
+pub struct InstanceUploadJob<'a, T: Pod> {
+    pub data: &'a [T],
+    pub instance_handle: InstanceHandle,
+}
+
+impl<'a, T: Pod> InstanceUploadJob<'a, T> {
+    pub fn new(data: &'a [T], instance_handle: InstanceHandle) -> Self {
+        Self {
+            data,
+            instance_handle,
+        }
+    }
 }
 
 //#[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]
@@ -68,8 +82,9 @@ pub enum Operations {
 
 #[derive(Debug)]
 pub enum VMValue<'frame> {
+    InstanceDataUpload(&'frame InstanceUploadData),
     Transform(Mat4F32),
-    UploadJob(GPUUploadJob<'frame>),
+    UploadJob(GPUAssetUploadJob<'frame>),
     Renderables(Renderables<'frame>),
     InstanceHandle(InstanceHandle),
 }

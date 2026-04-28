@@ -13,14 +13,14 @@ pub mod app_state;
 pub mod renderer;
 
 #[derive(Debug)]
-pub struct GPUUploadJob<'a> {
+pub struct GPUAssetUploadJob<'a> {
     asset_handle: &'a AssetHandle,
     pnu_vertices: Option<&'a [PNUVertex]>,
     pnujw_vertices: Option<&'a [PNUJWVertex]>,
     indices: Option<&'a [VIndex]>,
 }
 
-impl<'a> GPUUploadJob<'a> {
+impl<'a> GPUAssetUploadJob<'a> {
     pub fn new(
         asset_handle: &'a AssetHandle,
         pnu_vertices: Option<&'a [PNUVertex]>,

@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    app::{GPUUploadJob, renderer::GPUAllocationHandle},
+    app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
     world::{InstanceUploadQuery, entity_manager::InstanceRenderData, scene::SceneLoadLevel},
 };
@@ -123,7 +123,7 @@ pub trait LoadedAsset {
     fn upload_job<'a>(
         &'a self,
         asset_handle: &'a AssetHandle,
-    ) -> Result<GPUUploadJob<'a>, AssetLoadError>;
+    ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError>;
 
     fn get_renderables(
         &self,

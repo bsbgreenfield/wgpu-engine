@@ -4,7 +4,7 @@ use wgpu::ShaderStages;
 
 use crate::{
     app::renderer::{
-        LocalTransformUploadJob,
+        InstanceUploadJob,
         gpu_allocator::{
             AllocMetaData, CHUNK_SIZE, GPUInstanceAllocator, InstanceChunk, VertexArenaError,
             free_list::FreeListAllocator,
@@ -49,58 +49,52 @@ impl InstanceChunk<LocalTransform> {
 }
 
 impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
-    type UploadJob<'a> = LocalTransformUploadJob<'a>;
-
     type AllocationError = VertexArenaError;
 
     fn upload<'a>(
         &mut self,
-        job: Self::UploadJob<'a>,
+        job: InstanceUploadJob<'a, LocalTransform>,
         queue: &wgpu::Queue,
     ) -> Result<u32, Self::AllocationError> {
-        if let Some(alloc_entry) = self.alloc_table.get(job.instance_handle)
-            && job.local_transforms.mode == RigidAnimationMode::Shared
-        {
-            if let Some(alloc) = self.alloc_table.insert(
-                job.instance_handle.clone(),
-                AllocMetaData {
-                    node_id: alloc_entry.node_id,
-                    chunk_id: alloc_entry.chunk_id,
-                },
-            ) {
-                return Ok(self.chunks[alloc.chunk_id]
-                    .allocator
-                    .resolve(alloc.node_id)
-                    .start
-                    / size_of::<LocalTransform>() as u32);
-            } else {
-                panic!("there was a fatal error with inserting into the lt alloc table")
-            }
-        } else {
-            'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
-                match chunk.gpu_alloc(
-                    &job.local_transforms.lt,
-                    queue,
-                    self.label.as_ref().unwrap(),
-                ) {
-                    Ok((node_id, _)) => {
-                        self.alloc_table.insert(
-                            job.instance_handle.clone(),
-                            AllocMetaData::new(chunk_id, node_id),
-                        );
-                        return Ok(self.chunks[chunk_id].allocator.resolve(node_id).start
-                            / size_of::<LocalTransform>() as u32);
-                    }
-
-                    Err(e) => match e {
-                        VertexArenaError::DataTooLarge(_, _) => {
-                            return Err(e);
-                        }
-                        _ => continue 'outer,
-                    },
+        'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
+            match chunk.gpu_alloc(&job.data, queue, self.label.as_ref().unwrap()) {
+                Ok((node_id, _)) => {
+                    self.alloc_table.insert(
+                        job.instance_handle.clone(),
+                        AllocMetaData::new(chunk_id, node_id),
+                    );
+                    return Ok(self.chunks[chunk_id].allocator.resolve(node_id).start
+                        / size_of::<LocalTransform>() as u32);
                 }
+
+                Err(e) => match e {
+                    VertexArenaError::DataTooLarge(_, _) => {
+                        return Err(e);
+                    }
+                    _ => continue 'outer,
+                },
             }
         }
+        // if let Some(alloc_entry) = self.alloc_table.get(job.instance_handle)
+        //     && job.data.mode == RigidAnimationMode::Shared
+        // {
+        //     if let Some(alloc) = self.alloc_table.insert(
+        //         job.instance_handle.clone(),
+        //         AllocMetaData {
+        //             node_id: alloc_entry.node_id,
+        //             chunk_id: alloc_entry.chunk_id,
+        //         },
+        //     ) {
+        //         return Ok(self.chunks[alloc.chunk_id]
+        //             .allocator
+        //             .resolve(alloc.node_id)
+        //             .start
+        //             / size_of::<LocalTransform>() as u32);
+        //     } else {
+        //         panic!("there was a fatal error with inserting into the lt alloc table")
+        //     }
+        // } else {
+        // }
         Err(VertexArenaError::MaxAllocationReached)
     }
 

@@ -5,6 +5,7 @@ use std::{fmt::Display, ops::Range};
 use bytemuck::Pod;
 use std::error::Error;
 
+use crate::app::renderer::InstanceUploadJob;
 use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::{
     app::renderer::GPUAllocationHandle,
@@ -104,12 +105,11 @@ pub(super) trait GPUAllocator<T: Pod> {
 }
 
 pub(super) trait GPUInstanceAllocator<T: Pod> {
-    type UploadJob<'a>;
     type AllocationError: Error;
 
     fn upload<'a>(
         &mut self,
-        job: Self::UploadJob<'a>,
+        job: InstanceUploadJob<'a, T>,
         queue: &wgpu::Queue,
     ) -> Result<u32, Self::AllocationError>;
 

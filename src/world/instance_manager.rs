@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::renderer::renderer::InstanceDataCollector,
-    util::types::GlobalTransform,
-    world::{entity_manager::EntityHandle, index_arena::InstanceArenaNew},
+    app::renderer::{InstanceUploadJob, renderer::InstanceDataCollector},
+    util::types::{GlobalTransform, LocalTransform},
+    world::{
+        entity_manager::{EntityHandle, InstanceRenderData, Renderables},
+        index_arena::InstanceArenaNew,
+        world::{DrawSet, InstanceUploadData, RenderGroup, RenderView},
+    },
 };
 
 pub trait ArchetypeIdent {
@@ -14,7 +18,7 @@ pub trait Archetype {
     fn insert_self(
         self: Box<Self>,
         manager: &mut InstanceManager,
-        entity_handle: EntityHandle,
+        entity_handle: &EntityHandle,
     ) -> InstanceHandle;
 }
 
@@ -45,9 +49,9 @@ impl Archetype for APosition {
     fn insert_self(
         self: Box<Self>,
         manager: &mut InstanceManager,
-        entity_handle: EntityHandle,
+        entity_handle: &EntityHandle,
     ) -> InstanceHandle {
-        manager.pos.insert(*self, entity_handle)
+        manager.pos.insert(*self, *entity_handle)
     }
 }
 
@@ -130,6 +134,8 @@ pub struct InstanceManager {
     pub(super) next_id: u16,
     gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
     pub pos: APositionTable,
+    render_groups: Vec<RenderGroup>,
+    pub(super) entity_group_index: HashMap<EntityHandle, usize>,
 }
 
 impl InstanceManager {
@@ -151,6 +157,8 @@ impl InstanceManager {
             next_id: 0,
             pos: APositionTable::new(),
             gpu_bindings: HashMap::new(),
+            render_groups: Vec::new(),
+            entity_group_index: HashMap::new(),
         }
     }
 
@@ -160,14 +168,48 @@ impl InstanceManager {
         }
     }
 
-    pub(super) fn spawn(
+    pub(super) fn spawn<'a>(
         &mut self,
-        entity_handle: EntityHandle,
+        renderables: Renderables<'a>,
         data: Box<dyn Archetype>,
-    ) -> Vec<&InstanceHandle> {
-        let instance_handle = data.insert_self(self, entity_handle);
+    ) -> InstanceUploadData {
+        let instance_handle = data.insert_self(self, renderables.entity_handle);
+        let mut res = InstanceUploadData {
+            instance_handle,
+            local_transforms: None,
+        };
 
-        todo!()
+        let mut views: Vec<RenderView> = Vec::with_capacity(renderables.instance_data.len());
+        for instance_data in renderables.instance_data {
+            match instance_data {
+                InstanceRenderData::MeshRenderable {
+                    gpu_alloc_handle,
+                    pnu_vertex_ranges,
+                    pnujw_vertex_ranges,
+                    index_ranges,
+                    local_transforms,
+                } => {
+                    // BYTECODE TO UPLOAD LOCAL TRANSFORMS
+                    let view = RenderView {
+                        gpu_handle: gpu_alloc_handle,
+
+                        pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
+                            primtitive_ranges: pnu,
+                            index_ranges: index_ranges.clone(),
+                        }),
+                        pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
+                            primtitive_ranges: pnujw,
+                            index_ranges: index_ranges,
+                        }),
+                    };
+                    views.push(view);
+
+                    res.local_transforms = Some(local_transforms.lt);
+                }
+                _ => todo!("other instance data types"),
+            }
+        }
+        res
     }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {

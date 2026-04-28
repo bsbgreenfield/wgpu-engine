@@ -49,18 +49,18 @@ pub enum InstanceRenderData {
 
 #[derive(Debug)]
 pub struct Renderables<'a> {
-    pub instance_handle: &'a InstanceHandle,
+    pub entity_handle: &'a EntityHandle,
     pub instance_data: Vec<InstanceRenderData>,
 }
 
 impl EntityManager {
     pub fn get_renderables<'frame>(
         &'frame self,
-        instance: &'frame InstanceHandle,
+        entity_handle: &'frame EntityHandle,
     ) -> Option<Renderables<'frame>> {
         let mut query = InstanceUploadQuery::default();
         let mut instance_render_data: Vec<InstanceRenderData> = Vec::new();
-        let mesh_collection = self.mesh_collections.get(instance.entity_handle.0 as usize);
+        let mesh_collection = self.mesh_collections.get(entity_handle.0 as usize);
         if let Some(mesh_collection) = mesh_collection {
             mesh_collection.modify_query(&mut query);
             instance_render_data.extend(
@@ -73,9 +73,8 @@ impl EntityManager {
         if instance_render_data.is_empty() {
             return None;
         }
-        println!("EMITTING renderables for instance: {:?}", instance);
         Some(Renderables {
-            instance_handle: instance,
+            entity_handle,
             instance_data: instance_render_data,
         })
     }
