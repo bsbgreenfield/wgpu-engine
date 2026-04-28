@@ -369,3 +369,16 @@ Each mesh within an instance already knows its primitive offsets within the allo
 Proposal: each DrawItems are grouped by global alloction ID directly, the sorting for this happens in the gen draw calls function, and now the draw items only contain their relative primitive offsets. in the render function the renderer uses the global allocation ID of the group of draw items to query the proper vertex/ index arena to set an "offset" variable/ variables to add to the primitive offset ranges specified by each draw item.
 
 The vertex arenas keep their own cache of alloc handle -> alloc range. If this has not changed, it immediately can return the range when the renderer asks for it, but if it has been invalidated, then it will create a new cahce entry and return after that
+
+
+## possible new scene load setup
+
+1. add scene to world
+2. call scene.spawn(archetype data)
+3. world update, sees that the scene is dirty, add scene load job to queue
+    - this loads all the assets needed for a scene, polling every frame until complete
+4. world.spawn() adds an instance of the entity to the instance manager
+    - this populates the archetype table for that entity instance
+5. instance manager creates  and stores a RenderGroup and RenderViews that holds the relative primitive ranges for every instance for this entity
+6. instance manager generates bytecode for the renderer to update its gpu buffers
+7. using the render groups and the archetype table data, instance manager populates the DrawPacket with draw calls

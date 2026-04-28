@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{ops::Range, vec::Drain};
 
 use super::scene::Scene;
 use crate::{
@@ -223,8 +223,6 @@ impl World {
                     }
                     SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
                         SceneEvent::Spawn(mut instance_data) => {
-                            // TODO: ive required the instance spawn code to contain the entity
-                            // handles that it wants to spawn. This may or may not be the right decision
                             for (entity_handle, archetype) in instance_data.drain(..) {
                                 let instance_handles = World::spawn(
                                     &mut self.instance_manager,
@@ -249,17 +247,20 @@ impl World {
         Ok(())
     }
 
-    pub fn post_frame_update(&mut self, render_deltas: &[RenderUpdateDelta]) {
+    pub fn post_frame_update(&mut self, render_deltas: Vec<RenderUpdateDelta>) {
         for delta in render_deltas {
             match delta {
                 RenderUpdateDelta::AssetGPULoaded(asset_handle, allocation_handle) => {
                     self.entity_manager
                         .asset_manager
-                        .register_asset_gpu_residency(asset_handle, allocation_handle.clone())
+                        .register_asset_gpu_residency(&asset_handle, allocation_handle.clone())
                         .expect("Asset not found");
                 }
                 RenderUpdateDelta::EntityGPULoaded(_) => {
                     // TODO wait to dequeue until GPU reports it has successfully loaded entity?
+                }
+                RenderUpdateDelta::EntitySpawned(gpu_bindings) => {
+                    self.instance_manager.update_gpu_bindings(gpu_bindings);
                 }
             }
         }

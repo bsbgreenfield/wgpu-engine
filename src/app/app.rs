@@ -91,7 +91,7 @@ impl App<'_> {
         self.world
             .as_mut()
             .unwrap()
-            .post_frame_update(&render_deltas);
+            .post_frame_update(render_deltas);
 
         Ok(())
     }

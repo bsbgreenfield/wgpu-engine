@@ -111,7 +111,7 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
         &mut self,
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
-    ) -> Result<(), Self::AllocationError>;
+    ) -> Result<u32, Self::AllocationError>;
 
     fn resolve(&self, handle: &InstanceHandle) -> u32;
 

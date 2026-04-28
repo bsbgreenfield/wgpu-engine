@@ -83,7 +83,6 @@ impl ArchetypeTable for APositionTable {
     fn insert(&mut self, data: APosition, entity_handle: EntityHandle) -> InstanceHandle {
         self.positions.push(data.position);
         let a = self.arena.insert(entity_handle);
-        println!("{:?}", a);
         a
     }
 
@@ -122,36 +121,37 @@ impl InstanceHandle {
     }
 }
 
+#[derive(Debug)]
+pub struct InstanceGPUBindings {
+    pub lt_offset: u32,
+}
+
 pub struct InstanceManager {
     pub(super) next_id: u16,
-    entity_to_instance: HashMap<EntityHandle, Vec<InstanceHandle>>,
+    gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
     pub pos: APositionTable,
 }
 
 impl InstanceManager {
     #[cfg(test)]
+    pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
+        self.gpu_bindings.keys().cloned().collect()
+    }
+
+    #[cfg(test)]
     pub fn get_pos_table(&self) -> &APositionTable {
         &self.pos
     }
 
-    #[cfg(test)]
-    pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
-        self.entity_to_instance
-            .iter()
-            .flat_map(|entry| entry.1.clone())
-            .collect()
+    pub fn update_gpu_bindings(&mut self, data: (InstanceHandle, InstanceGPUBindings)) {
+        self.gpu_bindings.insert(data.0, data.1);
     }
     pub(super) fn new() -> Self {
         Self {
             next_id: 0,
-            entity_to_instance: HashMap::new(),
             pos: APositionTable::new(),
+            gpu_bindings: HashMap::new(),
         }
-    }
-
-    #[inline]
-    pub(super) fn is_instanced(&self, entity_handle: EntityHandle) -> bool {
-        self.entity_to_instance.contains_key(&entity_handle)
     }
 
     pub fn resolve_idx(&self, handle: &InstanceHandle) -> Option<usize> {
@@ -167,23 +167,7 @@ impl InstanceManager {
     ) -> Vec<&InstanceHandle> {
         let instance_handle = data.insert_self(self, entity_handle);
 
-        if self.entity_to_instance.contains_key(&entity_handle) {
-            self.entity_to_instance
-                .entry(entity_handle)
-                .and_modify(|instances| instances.push(instance_handle));
-        } else {
-            self.entity_to_instance
-                .insert(entity_handle, vec![instance_handle]);
-        }
-
-        // TODO: we will want to return a slice of instances if GPU instancing is enabled
-        vec![
-            self.entity_to_instance
-                .get(&entity_handle)
-                .unwrap()
-                .last()
-                .unwrap(),
-        ]
+        todo!()
     }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {

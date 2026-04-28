@@ -183,9 +183,10 @@ impl Renderer {
                             .expect("should be valid")
                             as u32
                             + offset as u32;
+                        let lt_offset = self.instance_arena.resolve(instance_handle);
                         for (i, pr) in pnu.primtitive_ranges.iter().enumerate() {
                             entry.push(DrawItem {
-                                lt_idx: 0,
+                                lt_idx: lt_offset,
                                 instances: instance_idx..instance_idx + 1,
                                 primitives: pr.clone(),
                                 indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
@@ -260,7 +261,7 @@ impl Renderer {
         &mut self,
         job: LocalTransformUploadJob<'frame>,
         queue: &wgpu::Queue,
-    ) -> Result<(), VertexArenaError> {
+    ) -> Result<u32, VertexArenaError> {
         self.instance_arena.upload(job, queue)
     }
 

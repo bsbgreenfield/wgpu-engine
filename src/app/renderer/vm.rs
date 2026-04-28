@@ -13,6 +13,7 @@ use crate::{
     util::types::{PNUJWVertex, PNUVertex},
     world::{
         entity_manager::InstanceRenderData,
+        instance_manager::InstanceGPUBindings,
         world::{DrawSet, RenderView},
     },
 };
@@ -128,7 +129,12 @@ impl<'frame> Renderer {
                                                 local_transforms: &local_transforms,
                                                 instance_handle: renderables.instance_handle,
                                             };
-                                            self.upload_local_transforms(lt_job, queue)?;
+                                            let lt_offset =
+                                                self.upload_local_transforms(lt_job, queue)?;
+                                            res.push(RenderUpdateDelta::EntitySpawned((
+                                                renderables.instance_handle.clone(),
+                                                InstanceGPUBindings { lt_offset },
+                                            )));
                                             views.push(RenderView {
                                                 gpu_handle: gpu_alloc_handle.clone(),
                                                 pnu_draws: pnu_vertex_ranges.as_ref().map(|pnu| {
@@ -156,7 +162,6 @@ impl<'frame> Renderer {
                                         .instance_handles
                                         .push(renderables.instance_handle.clone());
                                 } else {
-                                    println!("ENTITY HANDLE NOT FOUND IN GROUP MAP");
                                     self.add_render_group(
                                         views,
                                         renderables.instance_handle.clone(),

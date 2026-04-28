@@ -9,7 +9,7 @@ use crate::{
     util::types::{Mat4F32, ModelVertex},
     world::{
         entity_manager::{EntityHandle, LocalTransformData, Renderables},
-        instance_manager::InstanceHandle,
+        instance_manager::{InstanceGPUBindings, InstanceHandle},
     },
 };
 
@@ -22,6 +22,7 @@ mod vm;
 pub enum RenderUpdateDelta {
     AssetGPULoaded(AssetHandle, GPUAllocationHandle),
     EntityGPULoaded(EntityHandle),
+    EntitySpawned((InstanceHandle, InstanceGPUBindings)),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

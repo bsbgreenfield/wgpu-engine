@@ -137,10 +137,7 @@ mod integration_tests {
 
         assert_render_deltas(&render_deltas, expected_render_deltas);
 
-        app.world
-            .as_mut()
-            .unwrap()
-            .post_frame_update(&render_deltas);
+        app.world.as_mut().unwrap().post_frame_update(render_deltas);
     }
 
     fn run_frame_unchecked(app: &mut App<'_>) {
@@ -157,10 +154,7 @@ mod integration_tests {
                 &app.app_config.as_ref().unwrap().queue,
             )
             .unwrap_or_else(|e| panic!("{}", e));
-        app.world
-            .as_mut()
-            .unwrap()
-            .post_frame_update(&render_deltas);
+        app.world.as_mut().unwrap().post_frame_update(render_deltas);
     }
 
     fn gen_draw_calls(app: &mut App) {
