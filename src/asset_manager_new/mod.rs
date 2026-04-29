@@ -3,7 +3,10 @@ use std::fmt::{Debug, Display};
 use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
-    world::{InstanceUploadQuery, entity_manager::InstanceRenderData, scene::SceneLoadLevel},
+    world::{
+        InstanceUploadQuery, components::MeshAcessor, entity_manager::InstanceRenderData,
+        scene::SceneLoadLevel, world::InstanceUploadData,
+    },
 };
 
 pub mod asset_manager_new;
@@ -130,6 +133,8 @@ pub trait LoadedAsset {
         alloc_handle: GPUAllocationHandle,
         query: &InstanceUploadQuery,
     ) -> Result<Vec<InstanceRenderData>, AssetLoadError>;
+
+    fn get_instance_upload_data<'a>(&'a self, mesh_accessor: &MeshAcessor) -> InstanceUploadData;
 }
 #[derive(Debug)]
 pub enum ModelBuilderError {

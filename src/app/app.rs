@@ -63,12 +63,17 @@ impl App<'_> {
             instructions,
             &self.app_config.as_ref().unwrap().queue,
         )?;
+        self.world
+            .as_mut()
+            .unwrap()
+            .post_frame_update(render_deltas);
 
-        self.renderer.as_ref().unwrap().gen_draw_calls(
-            &self.world.as_ref().unwrap().instance_manager,
-            &mut self.draw_packet,
-            &self.app_config.as_ref().unwrap().queue,
-        );
+        self.world
+            .as_ref()
+            .unwrap()
+            .instance_manager
+            .gen_draw_calls(&mut self.draw_packet);
+
         if !self.draw_packet.is_empty() {
             let _ = self
                 .renderer
@@ -88,10 +93,6 @@ impl App<'_> {
                 .render_blank(self.app_config.as_ref().unwrap())
                 .map_err(|e| FrameError::RenderError(e));
         }
-        self.world
-            .as_mut()
-            .unwrap()
-            .post_frame_update(render_deltas);
 
         Ok(())
     }

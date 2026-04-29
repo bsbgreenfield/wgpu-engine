@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::renderer::{InstanceUploadJob, renderer::InstanceDataCollector},
+    app::renderer::{DrawItem, DrawPacket, InstanceUploadJob},
     util::types::{GlobalTransform, LocalTransform},
     world::{
-        entity_manager::{EntityHandle, InstanceRenderData, Renderables},
+        entity_manager::{EntityHandle, EntityManager, InstanceRenderData, Renderables},
         index_arena::InstanceArenaNew,
         world::{DrawSet, InstanceUploadData, RenderGroup, RenderView},
     },
@@ -130,6 +130,33 @@ pub struct InstanceGPUBindings {
     pub lt_offset: u32,
 }
 
+#[derive(Default)]
+struct OffsetMap {
+    a_postion_offset: u16,
+    // other tables
+}
+impl OffsetMap {
+    fn offset_of(&self, a_id: ArchetypeId) -> u16 {
+        match a_id {
+            ArchetypeId::Position => self.a_postion_offset,
+        }
+    }
+}
+
+struct InstanceDataCollector<'a> {
+    offset_map: OffsetMap,
+    global_transforms: Vec<&'a [GlobalTransform]>,
+    gt_len: usize,
+}
+impl<'a> InstanceDataCollector<'a> {
+    fn new() -> Self {
+        Self {
+            gt_len: 0,
+            offset_map: OffsetMap::default(),
+            global_transforms: Vec::new(),
+        }
+    }
+}
 pub struct InstanceManager {
     pub(super) next_id: u16,
     gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
@@ -147,6 +174,11 @@ impl InstanceManager {
     #[cfg(test)]
     pub fn get_pos_table(&self) -> &APositionTable {
         &self.pos
+    }
+
+    #[cfg(test)]
+    pub fn get_groups(&self) -> &Vec<RenderGroup> {
+        &self.render_groups
     }
 
     pub fn update_gpu_bindings(&mut self, data: (InstanceHandle, InstanceGPUBindings)) {
@@ -172,44 +204,53 @@ impl InstanceManager {
         &mut self,
         renderables: Renderables<'a>,
         data: Box<dyn Archetype>,
-    ) -> InstanceUploadData {
+    ) -> InstanceHandle {
         let instance_handle = data.insert_self(self, renderables.entity_handle);
-        let mut res = InstanceUploadData {
-            instance_handle,
-            local_transforms: None,
-        };
 
-        let mut views: Vec<RenderView> = Vec::with_capacity(renderables.instance_data.len());
-        for instance_data in renderables.instance_data {
-            match instance_data {
-                InstanceRenderData::MeshRenderable {
-                    gpu_alloc_handle,
-                    pnu_vertex_ranges,
-                    pnujw_vertex_ranges,
-                    index_ranges,
-                    local_transforms,
-                } => {
-                    // BYTECODE TO UPLOAD LOCAL TRANSFORMS
-                    let view = RenderView {
-                        gpu_handle: gpu_alloc_handle,
+        if let Some(group_id) = self.entity_group_index.get(&instance_handle.entity_handle) {
+            let group = self
+                .render_groups
+                .get_mut(*group_id)
+                .expect("group should exist, maybe you deleted from the value, but not the entry?");
+            group.instance_handles.push(instance_handle.clone());
+        } else {
+            let mut views: Vec<RenderView> = Vec::with_capacity(renderables.instance_data.len());
+            for instance_data in renderables.instance_data {
+                match instance_data {
+                    InstanceRenderData::MeshRenderable {
+                        gpu_alloc_handle,
+                        pnu_vertex_ranges,
+                        pnujw_vertex_ranges,
+                        index_ranges,
+                    } => {
+                        let view = RenderView {
+                            gpu_handle: gpu_alloc_handle,
 
-                        pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
-                            primtitive_ranges: pnu,
-                            index_ranges: index_ranges.clone(),
-                        }),
-                        pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
-                            primtitive_ranges: pnujw,
-                            index_ranges: index_ranges,
-                        }),
-                    };
-                    views.push(view);
-
-                    res.local_transforms = Some(local_transforms.lt);
+                            pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
+                                primtitive_ranges: pnu,
+                                index_ranges: index_ranges.clone(),
+                            }),
+                            pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
+                                primtitive_ranges: pnujw,
+                                index_ranges: index_ranges,
+                            }),
+                        };
+                        views.push(view);
+                    }
                 }
-                _ => todo!("other instance data types"),
             }
+
+            self.render_groups.push(RenderGroup {
+                instance_handles: vec![instance_handle.clone()],
+                views,
+            });
+
+            self.entity_group_index.insert(
+                instance_handle.entity_handle.clone(),
+                self.render_groups.len() - 1,
+            );
         }
-        res
+        instance_handle
     }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {
@@ -217,5 +258,61 @@ impl InstanceManager {
             ArchetypeId::Position => self.pos.remove(handle),
         }
         // TODO: other tables
+    }
+
+    pub fn gen_draw_calls<'frame>(&'frame self, packet: &mut DrawPacket) {
+        let mut collector = InstanceDataCollector::new();
+        self.pos.collect(&mut collector, 0);
+
+        for group in self.render_groups.iter() {
+            for view in group.views.iter() {
+                if let Some(pnu) = &view.pnu_draws {
+                    let entry = packet
+                        .pnu
+                        .entry(view.gpu_handle.clone())
+                        .or_insert_with(Vec::new);
+                    for instance_handle in group.instance_handles.iter() {
+                        // calculate the instance idx of each draw call
+                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
+                        let instance_idx =
+                            self.resolve_idx(instance_handle).expect("should be valid") as u32
+                                + offset as u32;
+                        if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
+                            for (i, pr) in pnu.primtitive_ranges.iter().enumerate() {
+                                entry.push(DrawItem::new(
+                                    bindings.lt_offset,
+                                    instance_idx..instance_idx + 1,
+                                    pr.clone(),
+                                    pnu.index_ranges.as_ref().map(|x| x[i].clone()),
+                                ))
+                            }
+                        }
+                    }
+                }
+                if let Some(pnujw) = &view.pnujw_draws {
+                    let entry = packet
+                        .pnujw
+                        .entry(view.gpu_handle.clone())
+                        .or_insert_with(Vec::new);
+                    for instance_handle in group.instance_handles.iter() {
+                        // calculate the instance idx of each draw call
+                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
+                        let instance_idx =
+                            self.resolve_idx(instance_handle).expect("should be valid") as u32
+                                + offset as u32;
+                        if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
+                            for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
+                                entry.push(DrawItem::new(
+                                    bindings.lt_offset,
+                                    instance_idx..instance_idx + 1,
+                                    pr.clone(),
+                                    pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -45,8 +45,7 @@ fn get_index_result(
     {
         IndexResult::FullyCover
     } else {
-        println!("{:?}, {:?}", primitive_indices_range, current_range);
-        panic!()
+        panic!("{:?}, {:?}", primitive_indices_range, current_range)
     }
 }
 

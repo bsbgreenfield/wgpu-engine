@@ -8,7 +8,7 @@ use crate::{
         renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
     },
     asset_manager_new::AssetHandle,
-    util::types::{Mat4F32, ModelVertex},
+    util::types::{LocalTransform, Mat4F32, ModelVertex},
     world::{
         entity_manager::{EntityHandle, LocalTransformData, Renderables},
         instance_manager::{InstanceGPUBindings, InstanceHandle},
@@ -78,14 +78,16 @@ pub enum Operations {
     AddEntity,
     MoveEntity,
     SpawnEntityInstance,
+    LocalTransformUpload,
+    Pop,
 }
 
 #[derive(Debug)]
 pub enum VMValue<'frame> {
-    InstanceDataUpload(&'frame InstanceUploadData),
+    TransformSet(Vec<Mat4F32>),
+    LocalTransformSet(Vec<LocalTransform>),
     Transform(Mat4F32),
     UploadJob(GPUAssetUploadJob<'frame>),
-    Renderables(Renderables<'frame>),
     InstanceHandle(InstanceHandle),
 }
 
@@ -152,6 +154,22 @@ pub struct DrawItem {
     indices: Option<Range<u32>>,
 }
 
+impl DrawItem {
+    pub fn new(
+        lt_idx: u32,
+        instances: Range<u32>,
+        primitives: Range<u32>,
+        indices: Option<Range<u32>>,
+    ) -> Self {
+        Self {
+            lt_idx,
+            instances,
+            primitives,
+            indices,
+        }
+    }
+}
+
 #[cfg(test)]
 impl DrawItem {
     pub fn get_lt_idx(&self) -> u32 {
@@ -177,8 +195,8 @@ pub struct BufferChunks {
 
 #[derive(Debug, Default)]
 pub struct DrawPacket {
-    pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
-    pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
+    pub pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
+    pub pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
 }
 
 impl DrawPacket {

@@ -7,8 +7,11 @@ use crate::{
         LoadedAsset,
     },
     world::{
-        InstanceUploadQuery, components::MeshCollectionComponent,
-        entity_manager::InstanceRenderData, scene::SceneLoadLevel,
+        InstanceUploadQuery,
+        components::{MeshAcessor, MeshCollectionComponent},
+        entity_manager::InstanceRenderData,
+        scene::SceneLoadLevel,
+        world::InstanceUploadData,
     },
 };
 
@@ -174,5 +177,26 @@ impl AssetManagerNew {
                 )
             }
         }
+    }
+
+    fn unwrap_la(&self, asset_handle: &AssetHandle) -> &Box<dyn LoadedAsset> {
+        match self
+            .registered_assets
+            .get(asset_handle)
+            .unwrap()
+            .residency_level
+        {
+            AssetResidency::GPU(_, la_index) => &self.loaded_assets[la_index],
+            _ => panic!("asset is not gpu resident"),
+        }
+    }
+
+    pub fn get_instanced_upload_data_for(
+        &self,
+        asset_handle: &AssetHandle,
+        mesh_accessor: &MeshAcessor,
+    ) -> InstanceUploadData {
+        let la = self.unwrap_la(asset_handle);
+        la.get_instance_upload_data(mesh_accessor)
     }
 }

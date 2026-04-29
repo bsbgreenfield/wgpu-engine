@@ -12,7 +12,7 @@ pub mod app_config;
 pub mod app_state;
 pub mod renderer;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GPUAssetUploadJob<'a> {
     asset_handle: &'a AssetHandle,
     pnu_vertices: Option<&'a [PNUVertex]>,

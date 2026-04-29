@@ -1,20 +1,17 @@
-use std::{ops::Range, vec::Drain};
+use std::ops::Range;
 
 use super::scene::Scene;
 use crate::{
     app::{
         GPUAssetUploadJob,
-        renderer::{
-            GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderUpdateDelta,
-            VMValue,
-        },
+        renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
     },
     asset_manager_new::{Asset, AssetHandle, AssetLoadError, LoadableAsset},
     util::types::LocalTransform,
     world::{
         WorldInitError, WorldUpdateError,
         camera::Camera,
-        entity_manager::{EntityHandle, EntityManager, Renderables},
+        entity_manager::{EntityHandle, EntityManager},
         instance_manager::{Archetype, InstanceHandle, InstanceManager},
         load_queue::EntityLoadQueue,
         scene::SceneEvent,
@@ -68,14 +65,13 @@ impl RenderGroup {
 
 #[derive(Debug)]
 pub struct InstanceUploadData {
-    pub instance_handle: InstanceHandle,
     pub local_transforms: Option<Vec<LocalTransform>>,
     // others
 }
 
 #[derive(Debug)]
 pub enum WorldUpdateDelta {
-    EntityDidSpawn(InstanceUploadData),
+    EntityDidSpawn(InstanceHandle),
     EntityDidLoad(EntityHandle),
     AssetDidLoad(AssetHandle),
 }
@@ -95,10 +91,19 @@ impl WorldUpdateDelta {
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
 
-            Self::EntityDidSpawn(upload_data) => {
+            Self::EntityDidSpawn(instance_handle) => {
+                //put instance handle on stack
                 instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                constants.push(VMValue::InstanceDataUpload(upload_data));
+                constants.push(VMValue::InstanceHandle(instance_handle.clone()));
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                let upload_data = world.entity_manager.get_instance_gpu_data(instance_handle);
+                if let Some(local_transforms) = upload_data.local_transforms {
+                    //
+                    instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                    constants.push(VMValue::LocalTransformSet(local_transforms));
+                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                }
+                instructions.push(Instruction::Op(Operations::Pop));
             }
             WorldUpdateDelta::EntityDidLoad(_) => {
                 //TODO spawn based on user input
@@ -159,7 +164,7 @@ impl World {
         &mut self,
         entity_handle: EntityHandle,
         archetype: Box<dyn Archetype>,
-    ) -> Result<InstanceUploadData, WorldUpdateError> {
+    ) -> Result<InstanceHandle, WorldUpdateError> {
         if let Some(renderables) = self.entity_manager.get_renderables(&entity_handle) {
             return Ok(self.instance_manager.spawn(renderables, archetype));
         }
@@ -204,7 +209,7 @@ impl World {
         &mut self,
         deltas: &mut Vec<WorldUpdateDelta>,
     ) -> Result<(), WorldUpdateError> {
-        loop {
+        'outer: loop {
             let scene_event = self.scene.current_event();
             if scene_event.is_some() {
                 match scene_event.unwrap() {
@@ -225,7 +230,7 @@ impl World {
                             self.load_queue
                                 .new_scene_job(&self.scene, &self.entity_manager)?;
                             if !self.try_handle_scene_load(deltas)? {
-                                break;
+                                break 'outer;
                             }
                         } else {
                             //TODO: continue?

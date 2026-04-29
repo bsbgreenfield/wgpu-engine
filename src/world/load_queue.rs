@@ -160,6 +160,7 @@ impl EntityLoadQueue {
         Ok(())
     }
 
+    // pass through fn for now, but in the future I may want finer grain control over per entity loads
     fn poll_entity(
         &mut self,
         entity_handle: EntityHandle,

@@ -8,6 +8,7 @@ use crate::{
         InstanceUploadQuery,
         components::{Component, MeshCollectionComponent, RigidAnimationMode},
         instance_manager::InstanceHandle,
+        world::InstanceUploadData,
     },
 };
 
@@ -43,7 +44,6 @@ pub enum InstanceRenderData {
         pnu_vertex_ranges: Option<Vec<Range<u32>>>,
         pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
         index_ranges: Option<Vec<Range<u32>>>,
-        local_transforms: LocalTransformData,
     },
 }
 
@@ -54,6 +54,17 @@ pub struct Renderables<'a> {
 }
 
 impl EntityManager {
+    pub fn get_instance_gpu_data(&self, instance_handle: &InstanceHandle) -> InstanceUploadData {
+        let mcc = self
+            .mesh_collections
+            .get(instance_handle.entity_handle.0 as usize)
+            .unwrap();
+        let mesh_accessor = &mcc.mesh_accessor;
+        let asset_handle = &mcc.resource_backing;
+        self.asset_manager
+            .get_instanced_upload_data_for(asset_handle, mesh_accessor)
+    }
+
     pub fn get_renderables<'frame>(
         &'frame self,
         entity_handle: &'frame EntityHandle,

@@ -10,8 +10,11 @@ use crate::{
             gpu_allocator::UploadIndexJob, renderer::Renderer,
         },
     },
-    util::types::{PNUJWVertex, PNUVertex},
-    world::{instance_manager::InstanceGPUBindings, world::InstanceUploadData},
+    util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
+    world::{
+        instance_manager::{InstanceGPUBindings, InstanceHandle},
+        world::InstanceUploadData,
+    },
 };
 
 impl<'frame> VMValue<'frame> {
@@ -21,10 +24,36 @@ impl<'frame> VMValue<'frame> {
             _ => panic!("value is not a gpu upload job, it is {:?}", self),
         }
     }
-    fn unwrap_instance_upload_jobs(&'frame self) -> &'frame InstanceUploadData {
+    fn unwrap_transform_set(&'frame self) -> &'frame Vec<Mat4F32> {
         match self {
-            VMValue::InstanceDataUpload(data) => data,
-            _ => panic!("value is not a gpu upload job, it is {:?}", self),
+            VMValue::TransformSet(transforms) => transforms,
+            _ => panic!("value is not transforms, it is {:?}", self),
+        }
+    }
+    fn unwrap_lt_set(&'frame self) -> &'frame Vec<LocalTransform> {
+        match self {
+            VMValue::LocalTransformSet(transforms) => transforms,
+            _ => panic!("value is not transforms, it is {:?}", self),
+        }
+    }
+    fn unwrap_instance_handle_ref(&'frame self) -> &'frame InstanceHandle {
+        match self {
+            VMValue::InstanceHandle(handle) => handle,
+            _ => panic!("value is not instance handle, it is {:?}", self),
+        }
+    }
+    fn unwrap_instance_handle(self) -> InstanceHandle {
+        match self {
+            VMValue::InstanceHandle(handle) => handle,
+            _ => panic!("value is not instance handle, it is {:?}", self),
+        }
+    }
+    fn clone(&self) -> Self {
+        match self {
+            Self::Transform(transform) => Self::Transform(*transform),
+            Self::InstanceHandle(handle) => Self::InstanceHandle(handle.clone()),
+            Self::UploadJob(job) => Self::UploadJob(job.clone()),
+            _ => panic!("cannot clone {:?}", self),
         }
     }
 }
@@ -45,6 +74,7 @@ impl<'frame> Renderer {
         instructions: Vec<Instruction>,
         queue: &wgpu::Queue,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
+        let mut stack = Vec::<VMValue>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
 
@@ -52,6 +82,9 @@ impl<'frame> Renderer {
             let instr = instr_peek.next().unwrap();
             match instr {
                 Instruction::Op(op) => match op {
+                    Operations::Pop => {
+                        stack.pop();
+                    }
                     Operations::AddAsset => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
                         let gpu_upload_job: &GPUAssetUploadJob =
@@ -99,24 +132,22 @@ impl<'frame> Renderer {
                         // TODO
                     }
                     Operations::MoveEntity => todo!(),
+                    Operations::LocalTransformUpload => {
+                        let instance_handle = stack.pop().unwrap().unwrap_instance_handle();
+                        let lt_idx = Self::get_constant_idx(&mut instr_peek);
+                        let lt = constants[lt_idx as usize].unwrap_lt_set();
+                        let lt_upload_job = InstanceUploadJob::new(lt, instance_handle.clone());
+                        let lt_offset = self.upload_local_transforms(lt_upload_job, queue)?;
+                        // TODO: in the future each instance data upload needs to contribute to the
+                        // instance gpu bindings. Right now lt is the only one, so it can just return
+                        res.push(RenderUpdateDelta::EntitySpawned((
+                            instance_handle.clone(),
+                            InstanceGPUBindings { lt_offset },
+                        )));
+                    }
                     Operations::SpawnEntityInstance => {
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        let instance_upload_jobs =
-                            constants[const_idx as usize].unwrap_instance_upload_jobs();
-
-                        if let Some(ref local_transform_data) =
-                            instance_upload_jobs.local_transforms
-                        {
-                            let lt_upload_job = InstanceUploadJob::new(
-                                local_transform_data,
-                                instance_upload_jobs.instance_handle.clone(),
-                            );
-                            let lt_offset = self.upload_local_transforms(lt_upload_job, queue)?;
-                            res.push(RenderUpdateDelta::EntitySpawned((
-                                instance_upload_jobs.instance_handle.clone(),
-                                InstanceGPUBindings { lt_offset },
-                            )));
-                        }
+                        stack.push(constants[const_idx as usize].clone());
                     }
                 },
                 Instruction::Byte(_byte) => {}

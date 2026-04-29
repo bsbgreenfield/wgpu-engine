@@ -79,35 +79,6 @@ impl VertexArenaCollection {
     }
 }
 
-pub struct InstanceDataCollector<'a> {
-    pub offset_map: OffsetMap,
-    pub global_transforms: Vec<&'a [GlobalTransform]>,
-    pub gt_len: usize,
-}
-
-#[derive(Default)]
-pub struct OffsetMap {
-    pub a_postion_offset: u16,
-    // other tables
-}
-impl OffsetMap {
-    fn offset_of(&self, a_id: ArchetypeId) -> u16 {
-        match a_id {
-            ArchetypeId::Position => self.a_postion_offset,
-        }
-    }
-}
-
-impl<'a> InstanceDataCollector<'a> {
-    fn new() -> Self {
-        Self {
-            gt_len: 0,
-            offset_map: OffsetMap::default(),
-            global_transforms: Vec::new(),
-        }
-    }
-}
-
 pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
@@ -132,102 +103,35 @@ impl Renderer {
         self.passes.push(EngineRenderPass { label, categories });
     }
 
-    pub fn gen_draw_calls<'frame>(
-        &'frame self,
-        instance_manager: &'frame InstanceManager,
-        packet: &mut DrawPacket,
-        queue: &wgpu::Queue,
-    ) {
-        let mut collector = InstanceDataCollector::new();
+    // pub fn gen_draw_calls<'frame>(
+    //     &'frame self,
+    //     instance_manager: &'frame InstanceManager,
+    //     packet: &mut DrawPacket,
+    //     queue: &wgpu::Queue,
+    // ) {
+    //     let mut collector = InstanceDataCollector::new();
 
-        instance_manager.pos.collect(&mut collector, 0);
-        // COPY GLOBAL TRANSFORMS
-        {
-            let global_transforms = collector.global_transforms;
-            if global_transforms.is_empty() {
-                return;
-            }
-            if let Some(mut buffer_view) = queue.write_buffer_with(
-                &self.global_transform_buffer,
-                0,
-                NonZero::new((collector.gt_len * size_of::<GlobalTransform>()) as u64).unwrap(),
-            ) {
-                let mut offset: usize = 0;
-                for pos_slice in &global_transforms {
-                    buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
-                        .copy_from_slice(bytemuck::cast_slice(pos_slice));
-                    offset += pos_slice.len() * size_of::<GlobalTransform>();
-                }
-            }
-        }
-
-        for group in self.groups.iter() {
-            for view in group.views.iter() {
-                if let Some(pnu) = &view.pnu_draws {
-                    // create a new per-gpu alloc entry
-                    let entry = packet
-                        .pnu
-                        .entry(view.gpu_handle.clone())
-                        .or_insert_with(Vec::new);
-
-                    for instance_handle in group.instance_handles.iter() {
-                        // calculate the instance idx of each draw call
-                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
-                        let instance_idx = instance_manager
-                            .resolve_idx(instance_handle)
-                            .expect("should be valid")
-                            as u32
-                            + offset as u32;
-                        let lt_offset = self.instance_arena.resolve(instance_handle);
-                        for (i, pr) in pnu.primtitive_ranges.iter().enumerate() {
-                            entry.push(DrawItem {
-                                lt_idx: lt_offset,
-                                instances: instance_idx..instance_idx + 1,
-                                primitives: pr.clone(),
-                                indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
-                            });
-                        }
-                    }
-                }
-                if let Some(pnujw) = &view.pnujw_draws {
-                    // create a new per-gpu alloc entry
-                    let entry = packet
-                        .pnujw
-                        .entry(view.gpu_handle.clone())
-                        .or_insert_with(Vec::new);
-
-                    for instance_handle in group.instance_handles.iter() {
-                        // calculate the instance idx of each draw call
-                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
-                        let instance_idx = instance_manager
-                            .resolve_idx(instance_handle)
-                            .expect("should be valid")
-                            as u32
-                            + offset as u32;
-                        let lt_offset = self.instance_arena.resolve(instance_handle);
-                        for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
-                            entry.push(DrawItem {
-                                lt_idx: lt_offset,
-                                instances: instance_idx..instance_idx + 1,
-                                primitives: pr.clone(),
-                                indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub(super) fn add_render_group(
-        &mut self,
-        views: Vec<RenderView>,
-        instance_handle: InstanceHandle,
-    ) {
-        self.entity_group_index
-            .insert(instance_handle.entity_handle.clone(), self.groups.len());
-        self.groups.push(RenderGroup::new(instance_handle, views));
-    }
+    //     instance_manager.pos.collect(&mut collector, 0);
+    //     // COPY GLOBAL TRANSFORMS
+    //     {
+    //         let global_transforms = collector.global_transforms;
+    //         if global_transforms.is_empty() {
+    //             return;
+    //         }
+    //         if let Some(mut buffer_view) = queue.write_buffer_with(
+    //             &self.global_transform_buffer,
+    //             0,
+    //             NonZero::new((collector.gt_len * size_of::<GlobalTransform>()) as u64).unwrap(),
+    //         ) {
+    //             let mut offset: usize = 0;
+    //             for pos_slice in &global_transforms {
+    //                 buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
+    //                     .copy_from_slice(bytemuck::cast_slice(pos_slice));
+    //                 offset += pos_slice.len() * size_of::<GlobalTransform>();
+    //             }
+    //         }
+    //     }
+    // }
 
     pub(super) fn get_global_alloc_id(&mut self) -> u32 {
         self.allocations.push(self.allocations.len() as u32);

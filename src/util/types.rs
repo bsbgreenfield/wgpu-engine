@@ -70,6 +70,12 @@ impl StorageData for LocalTransform {
 #[derive(bytemuck::Pod, Clone, Copy, bytemuck::Zeroable, Debug)]
 pub struct LocalTransform(Mat4F32);
 
+impl Deref for LocalTransform {
+    type Target = Mat4F32;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 impl From<Mat4F32> for LocalTransform {
     fn from(value: Mat4F32) -> Self {
         Self(value)

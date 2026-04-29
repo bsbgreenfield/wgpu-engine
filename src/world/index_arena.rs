@@ -36,7 +36,6 @@ impl<A: Archetype + ArchetypeIdent> InstanceArenaNew<A> {
                 dense_index: 0, // NON-INIT
             });
 
-            println!("pushing new slot: {}", self.slots.len() - 1);
             (self.slots.len() - 1) as u16
         };
 

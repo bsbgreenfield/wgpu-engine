@@ -30,6 +30,7 @@ mod integration_tests {
     }
 
     /// Variant-only mirrors of WorldUpdateDelta — use these to declare what a frame should produce.
+    #[derive(Debug)]
     enum WorldDeltaKind {
         AssetDidLoad,
         EntityDidSpawn,
@@ -37,9 +38,10 @@ mod integration_tests {
     }
 
     /// Variant-only mirrors of RenderUpdateDelta — use these to declare what the renderer should emit.
+    #[derive(Debug)]
     enum RenderDeltaKind {
         AssetGPULoaded,
-        EntityGPULoaded,
+        EntitySpawn,
     }
 
     fn get_bytecode<'a>(
@@ -57,7 +59,13 @@ mod integration_tests {
     }
 
     fn assert_world_deltas(actual: &[WorldUpdateDelta], expected: &[WorldDeltaKind]) {
-        assert_eq!(actual.len(), expected.len(), "world delta count mismatch");
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "world delta count mismatch actual {:?} expected: {:?}",
+            actual,
+            expected
+        );
         for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
             let matches = matches!(
                 (a, e),
@@ -77,7 +85,13 @@ mod integration_tests {
     }
 
     fn assert_render_deltas(actual: &[RenderUpdateDelta], expected: &[RenderDeltaKind]) {
-        assert_eq!(actual.len(), expected.len(), "render delta count mismatch");
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "render delta count mismatch. actual: {:?}, expected: {:?}",
+            actual,
+            expected
+        );
         for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
             let matches = matches!(
                 (a, e),
@@ -85,8 +99,8 @@ mod integration_tests {
                     RenderUpdateDelta::AssetGPULoaded(..),
                     RenderDeltaKind::AssetGPULoaded
                 ) | (
-                    RenderUpdateDelta::EntityGPULoaded(_),
-                    RenderDeltaKind::EntityGPULoaded
+                    RenderUpdateDelta::EntitySpawned(_),
+                    RenderDeltaKind::EntitySpawn
                 )
             );
             assert!(matches, "render delta[{i}] variant mismatch");
@@ -136,7 +150,6 @@ mod integration_tests {
             .unwrap_or_else(|e| panic!("{}", e));
 
         assert_render_deltas(&render_deltas, expected_render_deltas);
-
         app.world.as_mut().unwrap().post_frame_update(render_deltas);
     }
 
@@ -159,11 +172,11 @@ mod integration_tests {
 
     fn gen_draw_calls(app: &mut App) {
         app.draw_packet.clear();
-        app.renderer.as_ref().unwrap().gen_draw_calls(
-            &app.world.as_ref().unwrap().instance_manager,
-            &mut app.draw_packet,
-            &app.app_config.as_ref().unwrap().queue,
-        );
+        app.world
+            .as_ref()
+            .unwrap()
+            .instance_manager
+            .gen_draw_calls(&mut app.draw_packet);
     }
 
     #[test]
@@ -179,7 +192,11 @@ mod integration_tests {
             gen_draw_calls(&mut app);
             assert!(app.draw_packet.is_empty());
 
-            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityDidSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
@@ -211,7 +228,11 @@ mod integration_tests {
             gen_draw_calls(&mut app);
             assert!(app.draw_packet.is_empty());
 
-            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityDidSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
@@ -244,7 +265,11 @@ mod integration_tests {
                 &[WorldDeltaKind::AssetDidLoad],
                 &[RenderDeltaKind::AssetGPULoaded],
             );
-            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityDidSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
 
             gen_draw_calls(&mut app);
 
@@ -283,7 +308,7 @@ mod integration_tests {
                     WorldDeltaKind::EntityDidSpawn,
                     WorldDeltaKind::EntityDidSpawn,
                 ],
-                &[],
+                &[RenderDeltaKind::EntitySpawn, RenderDeltaKind::EntitySpawn],
             );
 
             gen_draw_calls(&mut app);
@@ -325,7 +350,7 @@ mod integration_tests {
                     WorldDeltaKind::EntityDidSpawn,
                     WorldDeltaKind::EntityDidSpawn,
                 ],
-                &[],
+                &[RenderDeltaKind::EntitySpawn, RenderDeltaKind::EntitySpawn],
             );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 2);
@@ -353,16 +378,14 @@ mod integration_tests {
         pollster::block_on(async {
             let mut app = setup_world(TestCases::Box).await;
             run_frame_unchecked(&mut app);
-            gen_draw_calls(&mut app);
             run_frame_unchecked(&mut app);
-            gen_draw_calls(&mut app);
 
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
 
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
 
-            let groups = app.renderer.as_ref().unwrap().get_groups();
+            let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
 
@@ -380,10 +403,15 @@ mod integration_tests {
                 }),
             )]);
 
-            run_frame(&mut app, &[WorldDeltaKind::EntityDidSpawn], &[]);
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityDidSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
 
             gen_draw_calls(&mut app);
-            let groups = app.renderer.as_ref().unwrap().get_groups();
+
+            let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
             assert_eq!(groups[0].instance_handles.len(), 2);
