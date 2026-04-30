@@ -9,7 +9,7 @@ use crate::{
     world::{
         InstanceUploadQuery,
         components::{MeshAcessor, MeshCollectionComponent},
-        entity_manager::InstanceRenderData,
+        entity_manager::Renderables,
         scene::SceneLoadLevel,
         world::InstanceUploadData,
     },
@@ -156,8 +156,9 @@ impl AssetManagerNew {
     pub fn get_renderables_for(
         &self,
         mesh_collection_component: &MeshCollectionComponent,
+        renderables: &mut Renderables,
         query: &InstanceUploadQuery,
-    ) -> Result<Vec<InstanceRenderData>, AssetLoadError> {
+    ) -> Result<(), AssetLoadError> {
         match &self
             .registered_assets
             .get(&mesh_collection_component.resource_backing)
@@ -166,7 +167,7 @@ impl AssetManagerNew {
         {
             AssetResidency::GPU(aloc_handle, la_index) => {
                 let la = &self.loaded_assets[*la_index];
-                la.get_renderables(aloc_handle.clone(), query)
+                la.get_renderables(aloc_handle.clone(), renderables, query)
             }
             AssetResidency::Registered => {
                 panic!("this mesh_collection_component is not yet loaded")

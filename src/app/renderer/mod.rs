@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, fmt::Display, ops::Range};
+use std::{collections::HashMap, error::Error, fmt::Display, ops::Range, sync::Arc};
 
 use bytemuck::Pod;
 
@@ -8,7 +8,7 @@ use crate::{
         renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
     },
     asset_manager_new::AssetHandle,
-    util::types::{LocalTransform, Mat4F32, ModelVertex},
+    util::types::{LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
     world::{
         entity_manager::{EntityHandle, LocalTransformData, Renderables},
         instance_manager::{InstanceGPUBindings, InstanceHandle},
@@ -80,6 +80,11 @@ pub enum Operations {
     SpawnEntityInstance,
     LocalTransformUpload,
     Pop,
+}
+
+pub enum RenderConstant<'frame> {
+    Data(&'frame [u8]),
+    Key(u64),
 }
 
 #[derive(Debug)]

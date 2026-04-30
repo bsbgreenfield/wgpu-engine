@@ -51,9 +51,11 @@ impl App<'_> {
         //TODO make these persist to avoid the extra allocations
         let mut constants = Vec::<VMValue<'frame>>::new();
         let mut instructions = Vec::<Instruction>::new();
+        let world = self.world.as_mut().unwrap();
         for delta in deltas.iter() {
             delta.gen_bytecode(
-                self.world.as_ref().unwrap(),
+                &mut world.instance_manager,
+                &world.entity_manager,
                 &mut constants,
                 &mut instructions,
             );

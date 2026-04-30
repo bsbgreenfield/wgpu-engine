@@ -86,6 +86,7 @@ impl From<EntityManagerError> for WorldInitError {
 
 #[derive(Default)]
 pub struct InstanceUploadQuery<'a> {
+    pub needs_meshes: bool,
+    pub needs_local_transforms: bool,
     pub mesh_accesor: Option<&'a MeshAcessor>,
-    pub rigid_animation_mode: Option<&'a RigidAnimationMode>,
 }

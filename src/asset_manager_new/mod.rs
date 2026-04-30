@@ -4,7 +4,7 @@ use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
     world::{
-        InstanceUploadQuery, components::MeshAcessor, entity_manager::InstanceRenderData,
+        InstanceUploadQuery, components::MeshAcessor, entity_manager::Renderables,
         scene::SceneLoadLevel, world::InstanceUploadData,
     },
 };
@@ -131,8 +131,9 @@ pub trait LoadedAsset {
     fn get_renderables(
         &self,
         alloc_handle: GPUAllocationHandle,
+        renderables: &mut Renderables,
         query: &InstanceUploadQuery,
-    ) -> Result<Vec<InstanceRenderData>, AssetLoadError>;
+    ) -> Result<(), AssetLoadError>;
 
     fn get_instance_upload_data<'a>(&'a self, mesh_accessor: &MeshAcessor) -> InstanceUploadData;
 }

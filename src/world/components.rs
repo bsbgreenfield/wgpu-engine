@@ -54,12 +54,20 @@ impl MeshCollectionComponent {
 }
 
 pub trait Component {
-    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>);
+    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool);
 }
 
 impl Component for MeshCollectionComponent {
-    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>) {
-        query.mesh_accesor = Some(&self.mesh_accessor);
-        query.rigid_animation_mode = Some(&self.rigid_animation_mode);
+    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool) {
+        if is_instanced {
+            if matches!(self.rigid_animation_mode, RigidAnimationMode::Independent) {
+                query.needs_local_transforms = true;
+                query.mesh_accesor = Some(&self.mesh_accessor);
+            }
+        } else {
+            query.needs_meshes = true;
+            query.needs_local_transforms = true;
+            query.mesh_accesor = Some(&self.mesh_accessor);
+        }
     }
 }

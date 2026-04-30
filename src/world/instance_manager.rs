@@ -4,7 +4,8 @@ use crate::{
     app::renderer::{DrawItem, DrawPacket, InstanceUploadJob},
     util::types::{GlobalTransform, LocalTransform},
     world::{
-        entity_manager::{EntityHandle, EntityManager, InstanceRenderData, Renderables},
+        InstanceUploadQuery,
+        entity_manager::{EntityHandle, EntityManager, RenderData, Renderables},
         index_arena::InstanceArenaNew,
         world::{DrawSet, InstanceUploadData, RenderGroup, RenderView},
     },
@@ -202,22 +203,45 @@ impl InstanceManager {
 
     pub(super) fn spawn<'a>(
         &mut self,
-        renderables: Renderables<'a>,
+        entity_handle: &EntityHandle,
         data: Box<dyn Archetype>,
     ) -> InstanceHandle {
-        let instance_handle = data.insert_self(self, renderables.entity_handle);
+        data.insert_self(self, entity_handle)
+    }
 
-        if let Some(group_id) = self.entity_group_index.get(&instance_handle.entity_handle) {
+    pub fn do_stuff(
+        &mut self,
+        instance_handle: &InstanceHandle,
+        entity_manager: &EntityManager,
+    ) -> InstanceUploadData {
+        let is_instanced = self
+            .entity_group_index
+            .contains_key(&instance_handle.entity_handle);
+        let mut renderables =
+            entity_manager.get_entity_renderables(&instance_handle.entity_handle, is_instanced);
+
+        if is_instanced {
+            let group_id = self
+                .entity_group_index
+                .get(&instance_handle.entity_handle)
+                .unwrap();
             let group = self
                 .render_groups
                 .get_mut(*group_id)
                 .expect("group should exist, maybe you deleted from the value, but not the entry?");
             group.instance_handles.push(instance_handle.clone());
         } else {
-            let mut views: Vec<RenderView> = Vec::with_capacity(renderables.instance_data.len());
-            for instance_data in renderables.instance_data {
-                match instance_data {
-                    InstanceRenderData::MeshRenderable {
+            let mut views = Vec::<RenderView>::with_capacity(
+                renderables
+                    .common
+                    .as_ref()
+                    .expect("this is the first instance, so it should have common data")
+                    .len(),
+            );
+
+            for render_data in renderables.common.take().unwrap() {
+                match render_data {
+                    RenderData::MeshRenderable {
                         gpu_alloc_handle,
                         pnu_vertex_ranges,
                         pnujw_vertex_ranges,
@@ -239,19 +263,60 @@ impl InstanceManager {
                     }
                 }
             }
-
-            self.render_groups.push(RenderGroup {
-                instance_handles: vec![instance_handle.clone()],
-                views,
-            });
-
-            self.entity_group_index.insert(
-                instance_handle.entity_handle.clone(),
-                self.render_groups.len() - 1,
-            );
         }
-        instance_handle
+
+        renderables.instance_data
     }
+
+    // pub fn update_render_state<'a>(
+    //     &mut self,
+    //     instance_handle: &InstanceHandle,
+    //     renderables: Renderables<'a>,
+    // ) {
+    //     if let Some(group_id) = self.entity_group_index.get(&instance_handle.entity_handle) {
+    //         let group = self
+    //             .render_groups
+    //             .get_mut(*group_id)
+    //             .expect("group should exist, maybe you deleted from the value, but not the entry?");
+    //         group.instance_handles.push(instance_handle.clone());
+    //     } else {
+    //         let mut views: Vec<RenderView> = Vec::with_capacity(renderables.instance_data.len());
+    //         for instance_data in renderables.instance_data {
+    //             match instance_data {
+    //                 InstanceRenderData::MeshRenderable {
+    //                     gpu_alloc_handle,
+    //                     pnu_vertex_ranges,
+    //                     pnujw_vertex_ranges,
+    //                     index_ranges,
+    //                 } => {
+    //                     let view = RenderView {
+    //                         gpu_handle: gpu_alloc_handle,
+
+    //                         pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
+    //                             primtitive_ranges: pnu,
+    //                             index_ranges: index_ranges.clone(),
+    //                         }),
+    //                         pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
+    //                             primtitive_ranges: pnujw,
+    //                             index_ranges: index_ranges,
+    //                         }),
+    //                     };
+    //                     views.push(view);
+    //                 }
+    //             }
+    //         }
+
+    //         self.render_groups.push(RenderGroup {
+    //             instance_handles: vec![instance_handle.clone()],
+    //             views,
+    //         });
+
+    //         self.entity_group_index.insert(
+    //             instance_handle.entity_handle.clone(),
+    //             self.render_groups.len() - 1,
+    //         );
+    //     }
+    // }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {
         match handle.archetype {

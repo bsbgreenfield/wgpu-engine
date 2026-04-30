@@ -38,7 +38,7 @@ pub struct LocalTransformData {
 }
 
 #[derive(Debug)]
-pub enum InstanceRenderData {
+pub enum RenderData {
     MeshRenderable {
         gpu_alloc_handle: GPUAllocationHandle,
         pnu_vertex_ranges: Option<Vec<Range<u32>>>,
@@ -50,7 +50,8 @@ pub enum InstanceRenderData {
 #[derive(Debug)]
 pub struct Renderables<'a> {
     pub entity_handle: &'a EntityHandle,
-    pub instance_data: Vec<InstanceRenderData>,
+    pub common: Option<Vec<RenderData>>,
+    pub instance_data: InstanceUploadData,
 }
 
 impl EntityManager {
@@ -65,29 +66,33 @@ impl EntityManager {
             .get_instanced_upload_data_for(asset_handle, mesh_accessor)
     }
 
-    pub fn get_renderables<'frame>(
+    /// For each component that might contribute Renderable data to that is needed for the Renderer
+    /// modify the InstanceUploadQuery, and then get the appropriate renderables
+    /// If for example, an Entity has a MeshCollectionComponent, then the component will update the
+    /// query to require some combination of mesh data and local transform data.
+    /// This is repeated for all components until Renderables is populated with the data it the
+    /// Renderer needs.
+    pub fn get_entity_renderables<'frame>(
         &'frame self,
         entity_handle: &'frame EntityHandle,
-    ) -> Option<Renderables<'frame>> {
+        is_instanced: bool,
+    ) -> Renderables<'frame> {
         let mut query = InstanceUploadQuery::default();
-        let mut instance_render_data: Vec<InstanceRenderData> = Vec::new();
+        let mut renderables = Renderables {
+            entity_handle,
+            common: None,
+            instance_data: InstanceUploadData {
+                local_transforms: None,
+            },
+        };
         let mesh_collection = self.mesh_collections.get(entity_handle.0 as usize);
         if let Some(mesh_collection) = mesh_collection {
-            mesh_collection.modify_query(&mut query);
-            instance_render_data.extend(
-                self.asset_manager
-                    .get_renderables_for(mesh_collection, &query)
-                    .unwrap_or(vec![]),
-            );
+            mesh_collection.modify_query(&mut query, is_instanced);
+            self.asset_manager
+                .get_renderables_for(mesh_collection, &mut renderables, &query);
         }
         // TODO: collect other instance render data
-        if instance_render_data.is_empty() {
-            return None;
-        }
-        Some(Renderables {
-            entity_handle,
-            instance_data: instance_render_data,
-        })
+        renderables
     }
 
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {

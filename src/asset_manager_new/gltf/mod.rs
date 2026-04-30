@@ -9,7 +9,7 @@ use crate::{
     world::{
         InstanceUploadQuery,
         components::MeshAcessor,
-        entity_manager::{InstanceRenderData, LocalTransformData},
+        entity_manager::{RenderData, Renderables},
         world::InstanceUploadData,
     },
 };
@@ -69,13 +69,19 @@ fn get_root_node(nodes: &[GltfNode], node_id: usize) -> Option<&GltfNode> {
     None
 }
 
-fn collect_mesh_instances(node: &GltfNode) -> Vec<u32> {
-    let mut result = Vec::<u32>::new();
+fn collect_mesh_instances(
+    node: &GltfNode,
+    parent_transform: Mat4F32,
+) -> Vec<(u32, LocalTransform)> {
+    let mut result = Vec::<(u32, LocalTransform)>::new();
+    use cgmath::Matrix4;
+    let accumulated: Mat4F32 =
+        (Matrix4::from(parent_transform) * Matrix4::from(node.transform)).into();
     if let Some(mesh_id) = node.mesh_id {
-        result.push(mesh_id as u32);
+        result.push((mesh_id as u32, accumulated.into()));
     }
     for child in &node.children {
-        result.extend(collect_mesh_instances(child));
+        result.extend(collect_mesh_instances(child, accumulated));
     }
     result
 }
@@ -133,19 +139,20 @@ impl LoadedAsset for LoadedGltfAsset {
     fn get_renderables(
         &self,
         alloc_handle: GPUAllocationHandle,
+        renderables: &mut Renderables,
         query: &InstanceUploadQuery,
-    ) -> Result<Vec<InstanceRenderData>, AssetLoadError> {
-        let mut render_data_vec: Vec<InstanceRenderData> = Vec::new();
-        if let Some(mesh_accessor) = query.mesh_accesor {
-            let mesh_instances: Vec<u32> = match mesh_accessor {
+    ) -> Result<(), AssetLoadError> {
+        let mut render_data_vec: Vec<RenderData> = Vec::new();
+        if query.needs_meshes && query.needs_local_transforms {
+            let mesh_instances: Vec<(u32, LocalTransform)> = match query.mesh_accesor.unwrap() {
                 MeshAcessor::All => self
                     .node_tree
                     .iter()
-                    .flat_map(|node| collect_mesh_instances(node))
+                    .flat_map(|node| collect_mesh_instances(node, MAT4_IDENTITY))
                     .collect(),
                 MeshAcessor::GltfRootNode(root) => {
                     match get_root_node(&self.node_tree, *root as usize) {
-                        Some(root_node) => collect_mesh_instances(root_node),
+                        Some(root_node) => collect_mesh_instances(root_node, MAT4_IDENTITY),
                         None => {
                             return Err(AssetLoadError::InstanceUploadFailure(String::from(
                                 "The root node defined for this entity is not valid for the asset",
@@ -154,14 +161,13 @@ impl LoadedAsset for LoadedGltfAsset {
                     }
                 }
             };
-
             let mut pnu_ranges = Vec::new();
             let mut pnujw_ranges = Vec::new();
             let mut index_ranges = Vec::new();
-
+            let mut local_transforms = Vec::new();
             let has_indices = self.meshes[0].primitives[0].indices.is_some();
-            for mesh_id in mesh_instances.iter() {
-                let mesh = self.meshes.iter().find(|m| m.id == *mesh_id).ok_or(
+            for (mesh_id, local_transform) in mesh_instances {
+                let mesh = self.meshes.iter().find(|m| m.id == mesh_id).ok_or(
                     AssetLoadError::InstanceUploadFailure(
                         "could not find mesh instance".to_string(),
                     ),
@@ -178,18 +184,46 @@ impl LoadedAsset for LoadedGltfAsset {
                         let i = primitive.indices.clone().unwrap();
                         index_ranges.push(i)
                     }
+                    local_transforms.push(local_transform);
                 }
             }
 
-            render_data_vec.push(InstanceRenderData::MeshRenderable {
+            let mesh_render_data = RenderData::MeshRenderable {
                 gpu_alloc_handle: alloc_handle,
                 pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),
                 pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
                 index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
-            });
-        }
+            };
+            // INSERT COMMON MESH DATA
+            if let Some(common) = renderables.common.as_mut() {
+                common.push(mesh_render_data);
+            } else {
+                renderables.common.insert(vec![mesh_render_data]);
+            }
+            // INSERT LOCAL TRANSFORMS
+            renderables.instance_data.local_transforms = Some(local_transforms);
+        } else if query.needs_local_transforms {
+            let local_transforms = match query.mesh_accesor.unwrap() {
+                MeshAcessor::All => self
+                    .node_tree
+                    .iter()
+                    .flat_map(|node| collect_local_transforms(node, MAT4_IDENTITY))
+                    .collect(),
+                MeshAcessor::GltfRootNode(root) => {
+                    match get_root_node(&self.node_tree, *root as usize) {
+                        Some(root_node) => collect_local_transforms(root_node, MAT4_IDENTITY),
+                        None => {
+                            return Err(AssetLoadError::InstanceUploadFailure(String::from(
+                                "The root node defined for this entity is not valid for the asset",
+                            )));
+                        }
+                    }
+                }
+            };
 
-        Ok(render_data_vec)
+            renderables.instance_data.local_transforms = Some(local_transforms);
+        }
+        Ok(())
     }
 }
 

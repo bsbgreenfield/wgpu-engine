@@ -79,24 +79,28 @@ pub enum WorldUpdateDelta {
 impl WorldUpdateDelta {
     pub fn gen_bytecode<'frame>(
         &'frame self,
-        world: &'frame World,
+        instance_manager: &mut InstanceManager,
+        entity_manager: &'frame EntityManager,
         constants: &mut Vec<VMValue<'frame>>,
         instructions: &mut Vec<Instruction>,
     ) {
         match self {
             Self::AssetDidLoad(asset_handle) => {
-                let gpu_upload_job = world.get_upload_job_for(asset_handle);
+                let gpu_upload_job = entity_manager
+                    .asset_manager
+                    .get_upload_job_for(asset_handle)
+                    .unwrap();
                 instructions.push(Instruction::Op(Operations::AddAsset));
                 constants.push(VMValue::UploadJob(gpu_upload_job));
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
 
             Self::EntityDidSpawn(instance_handle) => {
-                //put instance handle on stack
+                let instance_data = instance_manager.do_stuff(instance_handle, entity_manager);
                 instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
                 constants.push(VMValue::InstanceHandle(instance_handle.clone()));
                 instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                let upload_data = world.entity_manager.get_instance_gpu_data(instance_handle);
+                let upload_data = entity_manager.get_instance_gpu_data(instance_handle);
                 if let Some(local_transforms) = upload_data.local_transforms {
                     //
                     instructions.push(Instruction::Op(Operations::LocalTransformUpload));
@@ -162,13 +166,10 @@ impl World {
     }
     pub fn spawn(
         &mut self,
-        entity_handle: EntityHandle,
+        entity_handle: &EntityHandle,
         archetype: Box<dyn Archetype>,
-    ) -> Result<InstanceHandle, WorldUpdateError> {
-        if let Some(renderables) = self.entity_manager.get_renderables(&entity_handle) {
-            return Ok(self.instance_manager.spawn(renderables, archetype));
-        }
-        Err(WorldUpdateError::InstanceSpawnFailure)
+    ) -> InstanceHandle {
+        return self.instance_manager.spawn(entity_handle, archetype);
     }
 
     pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
@@ -239,8 +240,8 @@ impl World {
                     SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
                         SceneEvent::Spawn(mut instance_data) => {
                             for (entity_handle, archetype) in instance_data.drain(..) {
-                                let instance_upload_jobs = self.spawn(entity_handle, archetype)?;
-                                deltas.push(WorldUpdateDelta::EntityDidSpawn(instance_upload_jobs));
+                                let instance_handle = self.spawn(&entity_handle, archetype);
+                                deltas.push(WorldUpdateDelta::EntityDidSpawn(instance_handle));
                             }
                         }
                         _ => unreachable!(),
