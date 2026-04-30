@@ -103,7 +103,7 @@ fn collect_local_transforms(node: &GltfNode, parent_transform: Mat4F32) -> Vec<L
 impl LoadedAsset for LoadedGltfAsset {
     fn upload_job<'a>(
         &'a self,
-        asset_handle: &'a AssetHandle,
+        asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError> {
         GPUAssetUploadJob::new(
             asset_handle,

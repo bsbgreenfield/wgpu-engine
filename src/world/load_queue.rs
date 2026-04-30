@@ -6,7 +6,6 @@ use crate::{
         WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager},
         scene::{Scene, SceneId, SceneLoadLevel},
-        world::WorldUpdateDelta,
     },
 };
 
@@ -27,6 +26,7 @@ struct AssetLoadJob {
 }
 pub(super) struct EntityLoadQueue {
     pub(super) completed_queue: HashMap<SceneId, SceneLoadJob>,
+    pub(super) pending_asset_uploads: Vec<AssetHandle>,
     scene_jobs: HashMap<SceneId, SceneLoadJob>,
     entity_jobs: HashMap<EntityHandle, EntityLoadJob>,
     asset_jobs: HashMap<AssetHandle, AssetLoadJob>,
@@ -36,6 +36,7 @@ impl EntityLoadQueue {
     pub(super) fn new() -> Self {
         Self {
             scene_jobs: HashMap::new(),
+            pending_asset_uploads: Vec::new(),
             completed_queue: HashMap::new(),
             entity_jobs: HashMap::new(),
             asset_jobs: HashMap::new(),
@@ -141,14 +142,13 @@ impl EntityLoadQueue {
         &mut self,
         scene_id: SceneId,
         manager: &mut AssetManagerNew,
-        deltas: &mut Vec<WorldUpdateDelta>,
     ) -> Result<(), WorldUpdateError> {
         let mut complete = true;
         let entity_count = self.scene_jobs[&scene_id].entity_load_jobs.len();
         for i in 0..entity_count {
             let load_level = self.scene_jobs[&scene_id].load_level;
             let entity = self.scene_jobs[&scene_id].entity_load_jobs[i];
-            if !self.poll_entity(entity, manager, deltas, load_level)? {
+            if !self.poll_entity(entity, manager, load_level)? {
                 complete = false;
             }
         }
@@ -165,10 +165,9 @@ impl EntityLoadQueue {
         &mut self,
         entity_handle: EntityHandle,
         manager: &mut AssetManagerNew,
-        deltas: &mut Vec<WorldUpdateDelta>,
         load_level: SceneLoadLevel,
     ) -> Result<bool, WorldUpdateError> {
-        if self.poll_assets_for_job(entity_handle, manager, deltas, load_level)? {
+        if self.poll_assets_for_job(entity_handle, manager, load_level)? {
             return Ok(true);
         } else {
             return Ok(false);
@@ -179,7 +178,6 @@ impl EntityLoadQueue {
         &mut self,
         entity: EntityHandle,
         asset_manager: &mut AssetManagerNew,
-        deltas: &mut Vec<WorldUpdateDelta>,
         load_level: SceneLoadLevel,
     ) -> Result<bool, WorldUpdateError> {
         let job = self.entity_jobs.get(&entity).unwrap();
@@ -198,7 +196,7 @@ impl EntityLoadQueue {
                 } else {
                     match load_result {
                         AssetLoadResult::PendingGPU => {
-                            deltas.push(WorldUpdateDelta::AssetDidLoad(*asset));
+                            self.pending_asset_uploads.push(*asset);
                         }
                         _ => {}
                     }
@@ -284,10 +282,7 @@ mod load_queue_tests {
 
         queue.new_scene_job(&scene, &entity_manager).unwrap();
 
-        let mut deltas: Vec<WorldUpdateDelta> = Vec::new();
-        queue
-            .poll_scene_job(scene_id, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(scene_id, &mut asset_manager).unwrap();
 
         assert!(!queue.has_pending_scene_job(scene_id));
         assert!(queue.completed_queue.contains_key(&scene_id));
@@ -308,10 +303,7 @@ mod load_queue_tests {
 
         queue.new_scene_job(&scene, &entity_manager).unwrap();
 
-        let mut deltas = Vec::new();
-        queue
-            .poll_scene_job(scene_id, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(scene_id, &mut asset_manager).unwrap();
 
         queue.dequeue_spawned_scene(scene_id);
 
@@ -355,13 +347,8 @@ mod load_queue_tests {
         // Entity should have ref_count == 2 at this point.
         assert_eq!(queue.entity_jobs[&shared_entity].ref_count, 2);
 
-        let mut deltas = Vec::new();
-        queue
-            .poll_scene_job(id_a, &mut asset_manager, &mut deltas)
-            .unwrap();
-        queue
-            .poll_scene_job(id_b, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(id_a, &mut asset_manager).unwrap();
+        queue.poll_scene_job(id_b, &mut asset_manager).unwrap();
 
         // Dequeue scene A — entity still referenced by scene B.
         queue.dequeue_spawned_scene(id_a);
@@ -401,13 +388,8 @@ mod load_queue_tests {
         queue.new_scene_job(&scene_a, &entity_manager).unwrap();
         queue.new_scene_job(&scene_b, &entity_manager).unwrap();
 
-        let mut deltas = Vec::new();
-        queue
-            .poll_scene_job(id_a, &mut asset_manager, &mut deltas)
-            .unwrap();
-        queue
-            .poll_scene_job(id_b, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(id_a, &mut asset_manager).unwrap();
+        queue.poll_scene_job(id_b, &mut asset_manager).unwrap();
 
         queue.dequeue_spawned_scene(id_a);
 
@@ -467,13 +449,8 @@ mod load_queue_tests {
         // Asset is referenced by two distinct entities — ref_count should be 2.
         assert_eq!(queue.asset_jobs[&shared_asset].ref_count, 2);
 
-        let mut deltas = Vec::new();
-        queue
-            .poll_scene_job(id_a, &mut asset_manager, &mut deltas)
-            .unwrap();
-        queue
-            .poll_scene_job(id_b, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(id_a, &mut asset_manager).unwrap();
+        queue.poll_scene_job(id_b, &mut asset_manager).unwrap();
 
         // Dequeue scene A — entity_a removed, but asset still referenced by entity_b.
         queue.dequeue_spawned_scene(id_a);
@@ -535,10 +512,7 @@ mod load_queue_tests {
         // Shared asset is referenced by two entities.
         assert_eq!(queue.asset_jobs[&shared_asset].ref_count, 2);
 
-        let mut deltas = Vec::new();
-        queue
-            .poll_scene_job(id_a, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(id_a, &mut asset_manager).unwrap();
 
         // Scene A should be done; asset state advanced to CPU.
         assert!(!queue.has_pending_scene_job(id_a));
@@ -553,7 +527,7 @@ mod load_queue_tests {
         );
 
         queue
-            .poll_scene_job(id_b, &mut asset_manager, &mut deltas)
+            .poll_scene_job(id_b, &mut asset_manager)
             .expect("scene b should still be active");
 
         // the assets of the scene have only reached CPU, so this job should stil be active
@@ -561,10 +535,7 @@ mod load_queue_tests {
         assert!(!queue.completed_queue.contains_key(&id_b));
 
         // Renderer should have been told to upload the asset.
-        let asset_did_load_count = deltas
-            .iter()
-            .filter(|d| matches!(d, WorldUpdateDelta::AssetDidLoad(_)))
-            .count();
+        let asset_did_load_count = queue.pending_asset_uploads.len();
         assert_eq!(asset_did_load_count, 1);
 
         asset_manager
@@ -572,7 +543,7 @@ mod load_queue_tests {
             .expect("should registered with the asset manager");
 
         queue
-            .poll_scene_job(id_b, &mut asset_manager, &mut deltas)
+            .poll_scene_job(id_b, &mut asset_manager)
             .expect("scene b should still be active");
         assert!(!queue.has_pending_scene_job(id_b));
         assert!(queue.completed_queue.contains_key(&id_b));
@@ -620,10 +591,7 @@ mod load_queue_tests {
         queue.new_scene_job(&scene_a, &entity_manager).unwrap();
         queue.new_scene_job(&scene_b, &entity_manager).unwrap();
 
-        let mut deltas = Vec::new();
-        queue
-            .poll_scene_job(id_a, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(id_a, &mut asset_manager).unwrap();
 
         assert!(!queue.has_pending_scene_job(id_a));
         assert_eq!(
@@ -632,14 +600,12 @@ mod load_queue_tests {
         );
 
         // Scene B polls — asset already at CPU, should resolve immediately.
-        queue
-            .poll_scene_job(id_b, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(id_b, &mut asset_manager).unwrap();
         assert!(!queue.has_pending_scene_job(id_b));
         assert!(queue.completed_queue.contains_key(&id_b));
 
         // No AssetDidLoad deltas — asset never needed GPU upload.
-        assert!(deltas.is_empty());
+        assert!(queue.pending_asset_uploads.is_empty());
     }
 
     #[test]
@@ -684,15 +650,11 @@ mod load_queue_tests {
         queue.new_scene_job(&scene_a, &entity_manager).unwrap();
         queue.new_scene_job(&scene_b, &entity_manager).unwrap();
 
-        let mut deltas = Vec::new();
-
         // poll b first
-        queue
-            .poll_scene_job(id_b, &mut asset_manager, &mut deltas)
-            .unwrap();
+        queue.poll_scene_job(id_b, &mut asset_manager).unwrap();
 
         queue
-            .poll_scene_job(id_a, &mut asset_manager, &mut deltas)
+            .poll_scene_job(id_a, &mut asset_manager)
             .expect("should still be active ");
 
         assert!(!queue.has_pending_scene_job(id_a));
@@ -704,12 +666,7 @@ mod load_queue_tests {
         assert!(queue.has_pending_scene_job(id_b));
         assert!(!queue.completed_queue.contains_key(&id_b));
 
-        assert_eq!(deltas.len(), 1);
-        match deltas[0] {
-            WorldUpdateDelta::AssetDidLoad(handle) => {
-                assert_eq!(handle, shared_asset);
-            }
-            _ => panic!("this shouldnt be here"),
-        }
+        assert_eq!(queue.pending_asset_uploads.len(), 1);
+        assert_eq!(queue.pending_asset_uploads[0], shared_asset);
     }
 }

@@ -1,4 +1,6 @@
-use std::{collections::HashMap, error::Error, fmt::Display, ops::Range, sync::Arc};
+use std::{
+    collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range, sync::Arc,
+};
 
 use bytemuck::Pod;
 
@@ -8,8 +10,9 @@ use crate::{
         renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
     },
     asset_manager_new::AssetHandle,
-    util::types::{LocalTransform, Mat4F32, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{LocalTransform, Mat4F32, ModelVertex},
     world::{
+        RenderKey,
         entity_manager::{EntityHandle, LocalTransformData, Renderables},
         instance_manager::{InstanceGPUBindings, InstanceHandle},
         world::InstanceUploadData,
@@ -33,6 +36,17 @@ pub struct GPUAllocationHandle {
     global_allocation_id: u32,
 }
 
+impl RenderKey for GPUAllocationHandle {
+    fn as_key(&self) -> u64 {
+        self.global_allocation_id as u64
+    }
+    fn from_key(key: u64) -> Self {
+        Self {
+            global_allocation_id: key as u32,
+        }
+    }
+}
+
 #[cfg(test)]
 impl GPUAllocationHandle {
     pub fn mock(global_allocation_id: u32) -> Self {
@@ -44,15 +58,17 @@ impl GPUAllocationHandle {
 
 #[derive(Debug)]
 pub struct InstanceUploadJob<'a, T: Pod> {
-    pub data: &'a [T],
+    pub data: &'a [u8],
     pub instance_handle: InstanceHandle,
+    _t: PhantomData<T>,
 }
 
 impl<'a, T: Pod> InstanceUploadJob<'a, T> {
-    pub fn new(data: &'a [T], instance_handle: InstanceHandle) -> Self {
+    pub fn new(data: &'a [u8], instance_handle: InstanceHandle) -> Self {
         Self {
             data,
             instance_handle,
+            _t: PhantomData,
         }
     }
 }
@@ -75,16 +91,55 @@ pub enum Instruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operations {
     AddAsset,
-    AddEntity,
     MoveEntity,
     SpawnEntityInstance,
     LocalTransformUpload,
+    PNUUpload,
+    PNUJWUpload,
+    IndexUpload,
+    EmitAssetUpload,
+    EmitEntitySpawn,
     Pop,
 }
 
+#[derive(Debug)]
 pub enum RenderConstant<'frame> {
     Data(&'frame [u8]),
     Key(u64),
+    Offset(u64),
+}
+
+impl<'frame> Clone for RenderConstant<'frame> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Key(key) => Self::Key(*key),
+            Self::Offset(offset) => Self::Offset(*offset),
+            Self::Data(_) => panic!("cannot clone data (maybe make it an arc)"),
+        }
+    }
+}
+
+impl<'frame> RenderConstant<'frame> {
+    fn unwrap_key(&self) -> u64 {
+        match self {
+            Self::Key(key) => *key,
+            _ => panic!("invalid bytecode, expected key, found {:?}", self),
+        }
+    }
+
+    fn unwrap_data(&self) -> &[u8] {
+        match self {
+            Self::Data(data_ref) => data_ref,
+            _ => panic!("invalid bytecode, expected data, found {:?}", self),
+        }
+    }
+
+    fn unwrap_offset(&self) -> u64 {
+        match self {
+            Self::Offset(offset) => *offset,
+            _ => panic!("invalid bytecode, expected offset, found {:?}", self),
+        }
+    }
 }
 
 #[derive(Debug)]

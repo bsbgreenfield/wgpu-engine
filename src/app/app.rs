@@ -5,14 +5,11 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{DrawPacket, Instruction, RenderCategory, VMValue, renderer::Renderer},
+        renderer::{
+            DrawPacket, Instruction, RenderCategory, RenderConstant, VMValue, renderer::Renderer,
+        },
     },
-    world::{
-        WorldUpdateError,
-        entity_manager::EntityManager,
-        scene::Scene,
-        world::{World, WorldUpdateDelta},
-    },
+    world::{entity_manager::EntityManager, scene::Scene, world::World},
 };
 use winit::{
     application::ApplicationHandler,
@@ -46,20 +43,13 @@ impl App<'_> {
         }
     }
 
-    pub fn run_frame<'frame>(&'frame mut self) -> Result<(), FrameError> {
-        let deltas = self.update_world()?;
-        //TODO make these persist to avoid the extra allocations
-        let mut constants = Vec::<VMValue<'frame>>::new();
+    pub fn run_frame(&mut self) -> Result<(), FrameError> {
+        let deltas = self.world.as_mut().unwrap().update()?;
+
+        let mut constants = Vec::<RenderConstant>::new();
         let mut instructions = Vec::<Instruction>::new();
-        let world = self.world.as_mut().unwrap();
-        for delta in deltas.iter() {
-            delta.gen_bytecode(
-                &mut world.instance_manager,
-                &world.entity_manager,
-                &mut constants,
-                &mut instructions,
-            );
-        }
+
+        World::gen_bytecode(deltas, &mut instructions, &mut constants);
         let render_deltas = self.renderer.as_mut().unwrap().update(
             constants,
             instructions,
@@ -97,10 +87,6 @@ impl App<'_> {
         }
 
         Ok(())
-    }
-
-    pub fn update_world(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
-        unsafe { self.world.as_mut().unwrap_unchecked().update() }
     }
 }
 

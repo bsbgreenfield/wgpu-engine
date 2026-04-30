@@ -6,9 +6,9 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            DrawItem, DrawPacket, InstanceUploadJob, Instruction, RenderCategory, RenderError,
-            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaError,
-            VertexArenaSelector,
+            DrawItem, DrawPacket, InstanceUploadJob, Instruction, RenderCategory, RenderConstant,
+            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
+            VertexArenaError, VertexArenaSelector,
             gpu_allocator::{
                 GPUAllocator, GPUInstanceAllocator, UploadIndexJob,
                 instance_arena::InstanceArena,
@@ -140,7 +140,7 @@ impl Renderer {
 
     pub fn update(
         &mut self,
-        constants: Vec<VMValue>,
+        constants: Vec<RenderConstant>,
         ops: Vec<Instruction>,
         queue: &wgpu::Queue,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {

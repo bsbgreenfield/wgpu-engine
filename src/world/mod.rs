@@ -90,3 +90,8 @@ pub struct InstanceUploadQuery<'a> {
     pub needs_local_transforms: bool,
     pub mesh_accesor: Option<&'a MeshAcessor>,
 }
+
+pub trait RenderKey {
+    fn as_key(&self) -> u64;
+    fn from_key(key: u64) -> Self;
+}

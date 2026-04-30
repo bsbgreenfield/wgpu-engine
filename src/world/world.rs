@@ -4,12 +4,15 @@ use super::scene::Scene;
 use crate::{
     app::{
         GPUAssetUploadJob,
-        renderer::{GPUAllocationHandle, Instruction, Operations, RenderUpdateDelta, VMValue},
+        renderer::{
+            GPUAllocationHandle, Instruction, Operations, RenderConstant, RenderUpdateDelta,
+            VMValue,
+        },
     },
     asset_manager_new::{Asset, AssetHandle, AssetLoadError, LoadableAsset},
-    util::types::LocalTransform,
+    util::types::{LocalTransform, PNUJWVertex, PNUVertex, VIndex},
     world::{
-        WorldInitError, WorldUpdateError,
+        RenderKey, WorldInitError, WorldUpdateError,
         camera::Camera,
         entity_manager::{EntityHandle, EntityManager},
         instance_manager::{Archetype, InstanceHandle, InstanceManager},
@@ -70,47 +73,44 @@ pub struct InstanceUploadData {
 }
 
 #[derive(Debug)]
-pub enum WorldUpdateDelta {
-    EntityDidSpawn(InstanceHandle),
-    EntityDidLoad(EntityHandle),
-    AssetDidLoad(AssetHandle),
+pub enum WorldUpdateDelta<'frame> {
+    EntityDidSpawn(InstanceUploadData),
+    AssetDidLoad(GPUAssetUploadJob<'frame>),
 }
 
-impl WorldUpdateDelta {
-    pub fn gen_bytecode<'frame>(
+impl<'frame> WorldUpdateDelta<'frame> {
+    pub fn gen_bytecode(
         &'frame self,
-        instance_manager: &mut InstanceManager,
-        entity_manager: &'frame EntityManager,
+        world: &'frame World,
         constants: &mut Vec<VMValue<'frame>>,
         instructions: &mut Vec<Instruction>,
     ) {
         match self {
             Self::AssetDidLoad(asset_handle) => {
-                let gpu_upload_job = entity_manager
-                    .asset_manager
-                    .get_upload_job_for(asset_handle)
-                    .unwrap();
-                instructions.push(Instruction::Op(Operations::AddAsset));
-                constants.push(VMValue::UploadJob(gpu_upload_job));
-                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                todo!()
+                // let gpu_upload_job = entity_manager
+                //     .asset_manager
+                //     .get_upload_job_for(asset_handle)
+                //     .unwrap();
+                // instructions.push(Instruction::Op(Operations::AddAsset));
+                // constants.push(VMValue::UploadJob(gpu_upload_job));
+                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
             }
 
             Self::EntityDidSpawn(instance_handle) => {
-                let instance_data = instance_manager.do_stuff(instance_handle, entity_manager);
-                instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                constants.push(VMValue::InstanceHandle(instance_handle.clone()));
-                instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                let upload_data = entity_manager.get_instance_gpu_data(instance_handle);
-                if let Some(local_transforms) = upload_data.local_transforms {
-                    //
-                    instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                    constants.push(VMValue::LocalTransformSet(local_transforms));
-                    instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                }
-                instructions.push(Instruction::Op(Operations::Pop));
-            }
-            WorldUpdateDelta::EntityDidLoad(_) => {
-                //TODO spawn based on user input
+                todo!()
+                // let instance_data = instance_manager.do_stuff(instance_handle, entity_manager);
+                // instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                // constants.push(VMValue::InstanceHandle(instance_handle.clone()));
+                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                // let upload_data = entity_manager.get_instance_gpu_data(instance_handle);
+                // if let Some(local_transforms) = upload_data.local_transforms {
+                //     //
+                //     instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                //     constants.push(VMValue::LocalTransformSet(local_transforms));
+                //     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                // }
+                // instructions.push(Instruction::Op(Operations::Pop));
             }
         }
     }
@@ -125,6 +125,40 @@ pub struct World {
 }
 
 impl World {
+    pub fn gen_bytecode<'frame>(
+        deltas: Vec<WorldUpdateDelta<'frame>>,
+        instructions: &mut Vec<Instruction>,
+        constants: &mut Vec<RenderConstant<'frame>>,
+    ) {
+        for delta in deltas {
+            match delta {
+                WorldUpdateDelta::AssetDidLoad(asset_upload_job) => {
+                    instructions.push(Instruction::Op(Operations::AddAsset));
+                    constants.push(RenderConstant::Key(asset_upload_job.asset_handle.as_key()));
+                    if let Some(pnu) = asset_upload_job.pnu_vertices {
+                        instructions.push(Instruction::Op(Operations::PNUUpload));
+                        let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(pnu);
+                        constants.push(RenderConstant::Data(pnu_data));
+                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                    }
+                    if let Some(pnujw) = asset_upload_job.pnujw_vertices {
+                        instructions.push(Instruction::Op(Operations::PNUJWUpload));
+                        let pnujw_data = bytemuck::cast_slice::<PNUJWVertex, u8>(pnujw);
+                        constants.push(RenderConstant::Data(pnujw_data));
+                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                    }
+                    if let Some(indices) = asset_upload_job.indices {
+                        instructions.push(Instruction::Op(Operations::IndexUpload));
+                        let index_data = bytemuck::cast_slice::<VIndex, u8>(indices);
+                        constants.push(RenderConstant::Data(index_data));
+                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                    }
+                    instructions.push(Instruction::Op(Operations::EmitAssetUpload));
+                }
+                WorldUpdateDelta::EntityDidSpawn(_) => todo!(),
+            }
+        }
+    }
     pub fn add_scene(&mut self, scene: Scene) {
         self.scene = scene;
     }
@@ -155,21 +189,13 @@ impl World {
         })
     }
 
-    fn get_upload_job_for<'frame>(
-        &'frame self,
-        asset_handle: &'frame AssetHandle,
-    ) -> GPUAssetUploadJob<'frame> {
-        self.entity_manager
-            .asset_manager
-            .get_upload_job_for(asset_handle)
-            .expect("should be uploadable")
-    }
     pub fn spawn(
         &mut self,
         entity_handle: &EntityHandle,
         archetype: Box<dyn Archetype>,
-    ) -> InstanceHandle {
-        return self.instance_manager.spawn(entity_handle, archetype);
+    ) -> InstanceUploadData {
+        self.instance_manager
+            .spawn(entity_handle, &self.entity_manager, archetype)
     }
 
     pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
@@ -178,20 +204,21 @@ impl World {
         if self.scene.is_dirty() {
             self.handle_scene_event(&mut deltas)?; // TODO: allow for multiple scenes
         }
-        // TODO: emit EntityDidSpawn event when necessary
+        let pending_assets = self.load_queue.pending_asset_uploads.drain(..);
+        for handle in pending_assets {
+            let job: GPUAssetUploadJob = self
+                .entity_manager
+                .asset_manager
+                .get_upload_job_for(handle)?;
+            deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+        }
 
         Ok(deltas)
     }
 
-    fn try_handle_scene_load(
-        &mut self,
-        deltas: &mut Vec<WorldUpdateDelta>,
-    ) -> Result<bool, WorldUpdateError> {
-        self.load_queue.poll_scene_job(
-            self.scene.scene_id,
-            &mut self.entity_manager.asset_manager,
-            deltas,
-        )?;
+    fn try_handle_scene_load(&mut self) -> Result<bool, WorldUpdateError> {
+        self.load_queue
+            .poll_scene_job(self.scene.scene_id, &mut self.entity_manager.asset_manager)?;
         if self
             .load_queue
             .completed_queue
@@ -224,13 +251,13 @@ impl World {
                     }
                     SceneEvent::LoadLevelChanged(old, new) => {
                         if self.load_queue.has_pending_scene_job(self.scene.scene_id) {
-                            if !self.try_handle_scene_load(deltas)? {
+                            if !self.try_handle_scene_load()? {
                                 break;
                             }
                         } else if new > old {
                             self.load_queue
                                 .new_scene_job(&self.scene, &self.entity_manager)?;
-                            if !self.try_handle_scene_load(deltas)? {
+                            if !self.try_handle_scene_load()? {
                                 break 'outer;
                             }
                         } else {
@@ -240,8 +267,8 @@ impl World {
                     SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
                         SceneEvent::Spawn(mut instance_data) => {
                             for (entity_handle, archetype) in instance_data.drain(..) {
-                                let instance_handle = self.spawn(&entity_handle, archetype);
-                                deltas.push(WorldUpdateDelta::EntityDidSpawn(instance_handle));
+                                let instance_upload_data = self.spawn(&entity_handle, archetype);
+                                deltas.push(WorldUpdateDelta::EntityDidSpawn(instance_upload_data));
                             }
                         }
                         _ => unreachable!(),

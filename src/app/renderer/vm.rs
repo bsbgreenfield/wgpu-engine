@@ -1,17 +1,19 @@
 use core::panic;
-use std::{iter::Peekable, slice::Iter};
+use std::{clone, iter::Peekable, slice::Iter};
 
 use crate::{
     app::{
         GPUAssetUploadJob,
         renderer::{
-            GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderUpdateDelta,
-            RenderUpdateError, UploadMeshJob, VMValue, VertexArenaSelector,
+            GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderConstant,
+            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaSelector,
             gpu_allocator::UploadIndexJob, renderer::Renderer,
         },
     },
+    asset_manager_new::AssetHandle,
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
     world::{
+        RenderKey,
         instance_manager::{InstanceGPUBindings, InstanceHandle},
         world::InstanceUploadData,
     },
@@ -70,11 +72,11 @@ impl<'frame> Renderer {
     }
     pub(super) fn interpret(
         &mut self,
-        constants: Vec<VMValue>,
+        constants: Vec<RenderConstant>,
         instructions: Vec<Instruction>,
         queue: &wgpu::Queue,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
-        let mut stack = Vec::<VMValue>::new();
+        let mut stack = Vec::<RenderConstant>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
 
@@ -85,61 +87,86 @@ impl<'frame> Renderer {
                     Operations::Pop => {
                         stack.pop();
                     }
+                    Operations::PNUUpload => {
+                        let global_alloc_key = stack.pop().expect("should be gac");
+                        let global_alloc_id = global_alloc_key.unwrap_key() as u32;
+                        let pnu = constants[Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data();
+                        self.upload_mesh(
+                            UploadMeshJob::<PNUVertex>::new(pnu, global_alloc_id.clone()),
+                            queue,
+                        )?;
+                        stack.push(global_alloc_key);
+                    }
+
+                    Operations::PNUJWUpload => {
+                        let global_alloc_key = stack.pop().expect("should be gac");
+                        let global_alloc_id = global_alloc_key.unwrap_key() as u32;
+                        let pnujw = constants[Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data();
+                        self.upload_mesh(
+                            UploadMeshJob::<PNUJWVertex>::new(pnujw, global_alloc_id.clone()),
+                            queue,
+                        )?;
+                        stack.push(global_alloc_key);
+                    }
+                    Operations::IndexUpload => {
+                        let global_alloc_key = stack.pop().expect("should be gac");
+                        let global_alloc_id = global_alloc_key.unwrap_key() as u32;
+                        let indices = constants[Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data();
+                        self.upload_indices(
+                            UploadIndexJob {
+                                indices,
+                                global_alloc_id,
+                            },
+                            queue,
+                        )?;
+                        stack.push(global_alloc_key);
+                    }
+                    Operations::EmitAssetUpload => {
+                        let global_alloc_id = stack.pop().expect("should be gac").unwrap_key();
+                        let asset_handle =
+                            stack.pop().expect("should be asset handle").unwrap_key();
+                        res.push(RenderUpdateDelta::AssetGPULoaded(
+                            AssetHandle::from_key(asset_handle),
+                            GPUAllocationHandle::from_key(global_alloc_id),
+                        ));
+                    }
                     Operations::AddAsset => {
-                        let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        let gpu_upload_job: &GPUAssetUploadJob =
-                            constants[const_idx as usize].unwrap_gpu_upload_job();
+                        let handle_idx = Self::get_constant_idx(&mut instr_peek);
+                        stack.push(constants[handle_idx as usize].clone()); // push asset handle to stack
 
                         let global_allocation_id = self.get_global_alloc_id();
 
-                        let maybe_skinned_job: Option<UploadMeshJob<'_, PNUJWVertex>> =
-                            gpu_upload_job.pnujw_vertices.map(|x| UploadMeshJob {
-                                verts: x,
-                                global_alloc_id: global_allocation_id,
-                            });
-
-                        let maybe_static_job: Option<UploadMeshJob<'_, PNUVertex>> =
-                            gpu_upload_job.pnu_vertices.map(|x| UploadMeshJob {
-                                verts: x,
-                                global_alloc_id: global_allocation_id,
-                            });
-
-                        let maybe_index_job: Option<UploadIndexJob<'_>> =
-                            gpu_upload_job.indices.map(|x| UploadIndexJob {
-                                indices: x,
-                                global_alloc_id: global_allocation_id,
-                            });
-
-                        if let Some(static_job) = maybe_static_job {
-                            self.upload_mesh(static_job, queue)?;
-                        }
-                        if let Some(skinned_job) = maybe_skinned_job {
-                            self.upload_mesh(skinned_job, queue)?;
-                        }
-
-                        if let Some(index_job) = maybe_index_job {
-                            self.upload_indices(index_job, queue)?;
-                        }
-
-                        res.push(RenderUpdateDelta::AssetGPULoaded(
-                            *gpu_upload_job.asset_handle,
+                        stack.push(RenderConstant::Key(
                             GPUAllocationHandle {
                                 global_allocation_id,
-                            },
+                            }
+                            .as_key(),
                         ));
                     }
-                    Operations::AddEntity => {
-                        // TODO
-                    }
                     Operations::MoveEntity => todo!(),
+                    Operations::EmitEntitySpawn => {
+                        let instance_handle_key = stack.pop().expect("should be key").unwrap_key();
+                        let lt_offset = stack.pop().expect("should be offset").unwrap_offset();
+
+                        res.push(RenderUpdateDelta::EntitySpawned((
+                            InstanceHandle::from_key(instance_handle_key),
+                            InstanceGPUBindings {
+                                lt_offset: lt_offset as u32,
+                            },
+                        )));
+                    }
                     Operations::LocalTransformUpload => {
-                        let instance_handle = stack.pop().unwrap().unwrap_instance_handle();
-                        let lt_idx = Self::get_constant_idx(&mut instr_peek);
-                        let lt = constants[lt_idx as usize].unwrap_lt_set();
+                        let instance_handle_key = stack.pop().expect("should be key");
+                        let instance_handle =
+                            InstanceHandle::from_key(instance_handle_key.unwrap_key());
+                        let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data();
                         let lt_upload_job = InstanceUploadJob::new(lt, instance_handle.clone());
                         let lt_offset = self.upload_local_transforms(lt_upload_job, queue)?;
-                        // TODO: in the future each instance data upload needs to contribute to the
-                        // instance gpu bindings. Right now lt is the only one, so it can just return
+                        stack.push(instance_handle_key);
                         res.push(RenderUpdateDelta::EntitySpawned((
                             instance_handle.clone(),
                             InstanceGPUBindings { lt_offset },

@@ -67,11 +67,11 @@ impl AssetManagerNew {
 
     pub fn get_upload_job_for<'a>(
         &'a self,
-        asset_handle: &'a AssetHandle,
+        asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError> {
         match self
             .registered_assets
-            .get(asset_handle)
+            .get(&asset_handle)
             .unwrap()
             .residency_level
         {

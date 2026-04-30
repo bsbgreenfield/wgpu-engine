@@ -4,7 +4,7 @@ use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
     world::{
-        InstanceUploadQuery, components::MeshAcessor, entity_manager::Renderables,
+        InstanceUploadQuery, RenderKey, components::MeshAcessor, entity_manager::Renderables,
         scene::SceneLoadLevel, world::InstanceUploadData,
     },
 };
@@ -62,6 +62,15 @@ impl From<GltfLoadError> for AssetLoadError {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct AssetHandle(u32);
+impl RenderKey for AssetHandle {
+    fn as_key(&self) -> u64 {
+        self.0 as u64
+    }
+
+    fn from_key(key: u64) -> Self {
+        Self(key as u32)
+    }
+}
 
 pub trait Asset {
     fn new(dir_name: &str) -> Result<Self, AssetLoadError>
@@ -125,7 +134,7 @@ pub trait LoadableAsset: Asset {
 pub trait LoadedAsset {
     fn upload_job<'a>(
         &'a self,
-        asset_handle: &'a AssetHandle,
+        asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError>;
 
     fn get_renderables(

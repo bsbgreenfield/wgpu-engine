@@ -49,7 +49,7 @@ struct InstanceChunk<T: bytemuck::Pod + Debug> {
 impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
     pub(super) fn gpu_alloc(
         &mut self,
-        data: &[T],
+        data: &[u8],
         queue: &wgpu::Queue,
         label: &str,
     ) -> Result<(usize, Range<u32>), VertexArenaError> {
@@ -63,14 +63,14 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
         //     println!("{:?}", datum);
         // }
         let offset = self.allocator.offset_of(node_idx) as u32;
-        queue.write_buffer(&self.buffer, offset.into(), bytemuck::cast_slice(data));
+        queue.write_buffer(&self.buffer, offset.into(), data);
         Ok((node_idx, offset..offset + (data.len() as u32)))
     }
 }
 impl<T: bytemuck::Pod + Debug> InstanceChunk<T> {
     pub(super) fn gpu_alloc(
         &mut self,
-        data: &[T],
+        data: &[u8],
         queue: &wgpu::Queue,
         label: &str,
     ) -> Result<(usize, Range<u32>), VertexArenaError> {
@@ -173,11 +173,22 @@ impl Display for VertexArenaError {
 impl Error for VertexArenaError {}
 
 pub(super) struct UploadMeshJob<'frame, V: ModelVertex> {
-    pub verts: &'frame [V],
+    pub verts: &'frame [u8],
     pub(super) global_alloc_id: u32,
+    _t: PhantomData<V>,
+}
+
+impl<'frame, V: ModelVertex> UploadMeshJob<'frame, V> {
+    pub(super) fn new(verts: &'frame [u8], alloc_id: u32) -> Self {
+        Self {
+            verts,
+            global_alloc_id: alloc_id,
+            _t: PhantomData,
+        }
+    }
 }
 
 pub(super) struct UploadIndexJob<'frame> {
-    pub indices: &'frame [VIndex],
+    pub indices: &'frame [u8],
     pub(super) global_alloc_id: u32,
 }

@@ -14,15 +14,15 @@ pub mod renderer;
 
 #[derive(Debug, Clone)]
 pub struct GPUAssetUploadJob<'a> {
-    asset_handle: &'a AssetHandle,
-    pnu_vertices: Option<&'a [PNUVertex]>,
-    pnujw_vertices: Option<&'a [PNUJWVertex]>,
-    indices: Option<&'a [VIndex]>,
+    pub asset_handle: AssetHandle,
+    pub pnu_vertices: Option<&'a [PNUVertex]>,
+    pub pnujw_vertices: Option<&'a [PNUJWVertex]>,
+    pub indices: Option<&'a [VIndex]>,
 }
 
 impl<'a> GPUAssetUploadJob<'a> {
     pub fn new(
-        asset_handle: &'a AssetHandle,
+        asset_handle: AssetHandle,
         pnu_vertices: Option<&'a [PNUVertex]>,
         pnujw_vertices: Option<&'a [PNUJWVertex]>,
         indices: Option<&'a [VIndex]>,

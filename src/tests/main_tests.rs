@@ -9,8 +9,8 @@ mod integration_tests {
             app_config::AppConfig,
             app_state::AppState,
             renderer::{
-                DrawItem, DrawPacket, Instruction, Operations, RenderUpdateDelta, VMValue,
-                renderer::Renderer,
+                DrawItem, DrawPacket, Instruction, Operations, RenderConstant, RenderUpdateDelta,
+                VMValue, renderer::Renderer,
             },
         },
         asset_manager_new::asset_manager_new::AssetManagerNew,
@@ -45,15 +45,12 @@ mod integration_tests {
     }
 
     fn get_bytecode<'a>(
-        world: &'a World,
-        deltas: &'a [WorldUpdateDelta],
-    ) -> (Vec<VMValue<'a>>, Vec<Instruction>) {
-        let mut constants = Vec::<VMValue<'a>>::new();
+        deltas: Vec<WorldUpdateDelta<'a>>,
+    ) -> (Vec<RenderConstant<'a>>, Vec<Instruction>) {
+        let mut constants = Vec::<RenderConstant<'a>>::new();
         let mut instructions = Vec::<Instruction>::new();
 
-        for delta in deltas.iter() {
-            delta.gen_bytecode(world, &mut constants, &mut instructions);
-        }
+        World::gen_bytecode(deltas, &mut instructions, &mut constants);
 
         (constants, instructions)
     }
@@ -75,9 +72,6 @@ mod integration_tests {
                 ) | (
                     WorldUpdateDelta::EntityDidSpawn(_),
                     WorldDeltaKind::EntityDidSpawn
-                ) | (
-                    WorldUpdateDelta::EntityDidLoad(_),
-                    WorldDeltaKind::EntityDidLoad
                 )
             );
             assert!(matches, "world delta[{i}] variant mismatch");
@@ -133,10 +127,15 @@ mod integration_tests {
         expected_world_deltas: &[WorldDeltaKind],
         expected_render_deltas: &[RenderDeltaKind],
     ) {
-        let deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
+        let deltas = app
+            .world
+            .as_mut()
+            .unwrap()
+            .update()
+            .unwrap_or_else(|e| panic!("{}", e));
         assert_world_deltas(&deltas, expected_world_deltas);
 
-        let (constants, instructions) = get_bytecode(app.world.as_ref().unwrap(), &deltas);
+        let (constants, instructions) = get_bytecode(deltas);
 
         let render_deltas = app
             .renderer
@@ -154,8 +153,13 @@ mod integration_tests {
     }
 
     fn run_frame_unchecked(app: &mut App<'_>) {
-        let deltas = app.update_world().unwrap_or_else(|e| panic!("{}", e));
-        let (constants, instructions) = get_bytecode(app.world.as_ref().unwrap(), &deltas);
+        let deltas = app
+            .world
+            .as_mut()
+            .unwrap()
+            .update()
+            .unwrap_or_else(|e| panic!("{}", e));
+        let (constants, instructions) = get_bytecode(deltas);
 
         let render_deltas = app
             .renderer

@@ -4,7 +4,7 @@ use crate::{
     app::renderer::{DrawItem, DrawPacket, InstanceUploadJob},
     util::types::{GlobalTransform, LocalTransform},
     world::{
-        InstanceUploadQuery,
+        InstanceUploadQuery, RenderKey,
         entity_manager::{EntityHandle, EntityManager, RenderData, Renderables},
         index_arena::InstanceArenaNew,
         world::{DrawSet, InstanceUploadData, RenderGroup, RenderView},
@@ -26,6 +26,15 @@ pub trait Archetype {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArchetypeId {
     Position = 0,
+}
+impl TryFrom<u16> for ArchetypeId {
+    type Error = ();
+    fn try_from(v: u16) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(Self::Position),
+            _ => Err(()),
+        }
+    }
 }
 
 pub trait ArchetypeTable {
@@ -107,6 +116,30 @@ pub struct InstanceHandle {
     pub entity_handle: EntityHandle,
     pub instance_id: u16,
     pub generation: u16,
+}
+
+impl RenderKey for InstanceHandle {
+    fn as_key(&self) -> u64 {
+        let i = self.instance_id as u64;
+        let e = self.entity_handle.0 as u64 >> 16;
+        let a = self.archetype as u64 >> 32;
+        let g = self.generation as u64 >> 48;
+        i | e | a | g
+    }
+
+    fn from_key(key: u64) -> Self {
+        let archetype = ((key >> 48) & 0xFFFF) as u16;
+        let generation = ((key >> 32) & 0xFFFF) as u16;
+        let entity = ((key >> 16) & 0xFFFF) as u16;
+        let instance = (key & 0xFFFF) as u16;
+
+        Self {
+            archetype: ArchetypeId::try_from(archetype).expect("invalid archetype in key"),
+            entity_handle: EntityHandle(entity),
+            generation,
+            instance_id: instance,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -204,12 +237,14 @@ impl InstanceManager {
     pub(super) fn spawn<'a>(
         &mut self,
         entity_handle: &EntityHandle,
+        entity_manager: &EntityManager,
         data: Box<dyn Archetype>,
-    ) -> InstanceHandle {
-        data.insert_self(self, entity_handle)
+    ) -> InstanceUploadData {
+        let instance_handle = data.insert_self(self, entity_handle);
+        self.update_render_state(&instance_handle, entity_manager)
     }
 
-    pub fn do_stuff(
+    fn update_render_state(
         &mut self,
         instance_handle: &InstanceHandle,
         entity_manager: &EntityManager,

@@ -57,7 +57,7 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
         queue: &wgpu::Queue,
     ) -> Result<u32, Self::AllocationError> {
         'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
-            match chunk.gpu_alloc(&job.data, queue, self.label.as_ref().unwrap()) {
+            match chunk.gpu_alloc(job.data, queue, self.label.as_ref().unwrap()) {
                 Ok((node_id, _)) => {
                     self.alloc_table.insert(
                         job.instance_handle.clone(),
