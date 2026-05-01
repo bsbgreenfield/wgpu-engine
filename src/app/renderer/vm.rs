@@ -1,64 +1,19 @@
 use core::panic;
-use std::{clone, iter::Peekable, slice::Iter};
+use std::{iter::Peekable, slice::Iter};
 
 use crate::{
-    app::{
-        GPUAssetUploadJob,
-        renderer::{
-            GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderConstant,
-            RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue, VertexArenaSelector,
-            gpu_allocator::UploadIndexJob, renderer::Renderer,
-        },
+    app::renderer::{
+        GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderConstant,
+        RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaSelector,
+        gpu_allocator::UploadIndexJob, renderer::Renderer,
     },
     asset_manager_new::AssetHandle,
-    util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
+    util::types::{PNUJWVertex, PNUVertex},
     world::{
         RenderKey,
         instance_manager::{InstanceGPUBindings, InstanceHandle},
-        world::InstanceUploadData,
     },
 };
-
-impl<'frame> VMValue<'frame> {
-    fn unwrap_gpu_upload_job(&'frame self) -> &'frame GPUAssetUploadJob<'frame> {
-        match self {
-            VMValue::UploadJob(gpu_job) => gpu_job,
-            _ => panic!("value is not a gpu upload job, it is {:?}", self),
-        }
-    }
-    fn unwrap_transform_set(&'frame self) -> &'frame Vec<Mat4F32> {
-        match self {
-            VMValue::TransformSet(transforms) => transforms,
-            _ => panic!("value is not transforms, it is {:?}", self),
-        }
-    }
-    fn unwrap_lt_set(&'frame self) -> &'frame Vec<LocalTransform> {
-        match self {
-            VMValue::LocalTransformSet(transforms) => transforms,
-            _ => panic!("value is not transforms, it is {:?}", self),
-        }
-    }
-    fn unwrap_instance_handle_ref(&'frame self) -> &'frame InstanceHandle {
-        match self {
-            VMValue::InstanceHandle(handle) => handle,
-            _ => panic!("value is not instance handle, it is {:?}", self),
-        }
-    }
-    fn unwrap_instance_handle(self) -> InstanceHandle {
-        match self {
-            VMValue::InstanceHandle(handle) => handle,
-            _ => panic!("value is not instance handle, it is {:?}", self),
-        }
-    }
-    fn clone(&self) -> Self {
-        match self {
-            Self::Transform(transform) => Self::Transform(*transform),
-            Self::InstanceHandle(handle) => Self::InstanceHandle(handle.clone()),
-            Self::UploadJob(job) => Self::UploadJob(job.clone()),
-            _ => panic!("cannot clone {:?}", self),
-        }
-    }
-}
 
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 
@@ -91,7 +46,7 @@ impl<'frame> Renderer {
                         let global_alloc_key = stack.pop().expect("should be gac");
                         let global_alloc_id = global_alloc_key.unwrap_key() as u32;
                         let pnu = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data();
+                            .unwrap_data_ref();
                         self.upload_mesh(
                             UploadMeshJob::<PNUVertex>::new(pnu, global_alloc_id.clone()),
                             queue,
@@ -103,7 +58,7 @@ impl<'frame> Renderer {
                         let global_alloc_key = stack.pop().expect("should be gac");
                         let global_alloc_id = global_alloc_key.unwrap_key() as u32;
                         let pnujw = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data();
+                            .unwrap_data_ref();
                         self.upload_mesh(
                             UploadMeshJob::<PNUJWVertex>::new(pnujw, global_alloc_id.clone()),
                             queue,
@@ -114,7 +69,7 @@ impl<'frame> Renderer {
                         let global_alloc_key = stack.pop().expect("should be gac");
                         let global_alloc_id = global_alloc_key.unwrap_key() as u32;
                         let indices = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data();
+                            .unwrap_data_ref();
                         self.upload_indices(
                             UploadIndexJob {
                                 indices,
@@ -163,16 +118,26 @@ impl<'frame> Renderer {
                         let instance_handle =
                             InstanceHandle::from_key(instance_handle_key.unwrap_key());
                         let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data();
+                            .unwrap_data_owned();
                         let lt_upload_job = InstanceUploadJob::new(lt, instance_handle.clone());
                         let lt_offset = self.upload_local_transforms(lt_upload_job, queue)?;
+                        stack.push(RenderConstant::Offset(lt_offset as u64));
                         stack.push(instance_handle_key);
-                        res.push(RenderUpdateDelta::EntitySpawned((
-                            instance_handle.clone(),
-                            InstanceGPUBindings { lt_offset },
-                        )));
+                    }
+                    Operations::ResolveSharedLTBinding => {
+                        let donor_handle = constants
+                            [Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_key();
+                        let new_handle = stack.pop().expect("should be key");
+                        let lt_offset = self.resolve_shared_lt_binding(
+                            &InstanceHandle::from_key(donor_handle),
+                            &InstanceHandle::from_key(new_handle.unwrap_key()),
+                        )?;
+                        stack.push(RenderConstant::Offset(lt_offset as u64));
+                        stack.push(new_handle);
                     }
                     Operations::SpawnEntityInstance => {
+                        // push instance handle
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
                         stack.push(constants[const_idx as usize].clone());
                     }

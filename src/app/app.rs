@@ -5,9 +5,7 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{
-            DrawPacket, Instruction, RenderCategory, RenderConstant, VMValue, renderer::Renderer,
-        },
+        renderer::{DrawPacket, Instruction, RenderCategory, RenderConstant, renderer::Renderer},
     },
     world::{entity_manager::EntityManager, scene::Scene, world::World},
 };

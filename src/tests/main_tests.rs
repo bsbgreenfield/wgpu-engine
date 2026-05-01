@@ -1,24 +1,19 @@
 #[cfg(test)]
 mod integration_tests {
 
-    use cgmath::SquareMatrix;
-
     use crate::{
         app::{
             app::App,
             app_config::AppConfig,
             app_state::AppState,
             renderer::{
-                DrawItem, DrawPacket, Instruction, Operations, RenderConstant, RenderUpdateDelta,
-                VMValue, renderer::Renderer,
+                DrawItem, Instruction, RenderConstant, RenderUpdateDelta, renderer::Renderer,
             },
         },
-        asset_manager_new::asset_manager_new::AssetManagerNew,
         world::{
-            self,
             entity_manager::{EntityHandle, EntityManager},
-            instance_manager::{self, APosition, ArchetypeId, InstanceHandle},
-            scene::{Scene, SceneLoadLevel},
+            instance_manager::{APosition, ArchetypeId, InstanceHandle},
+            scene::Scene,
             world::{World, WorldUpdateDelta},
         },
     };
@@ -34,7 +29,6 @@ mod integration_tests {
     enum WorldDeltaKind {
         AssetDidLoad,
         EntityDidSpawn,
-        EntityDidLoad,
     }
 
     /// Variant-only mirrors of RenderUpdateDelta — use these to declare what the renderer should emit.

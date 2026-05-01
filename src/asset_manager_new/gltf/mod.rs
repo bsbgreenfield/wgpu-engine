@@ -8,9 +8,10 @@ use crate::{
     util::types::{LocalTransform, MAT4_IDENTITY, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
         InstanceUploadQuery,
-        components::MeshAcessor,
+        components::{MeshAcessor, RigidAnimationMode},
         entity_manager::{RenderData, Renderables},
-        world::InstanceUploadData,
+        instance_manager::InstanceHandle,
+        world::{InstanceUploadData, LocalTransformData},
     },
 };
 mod build;
@@ -113,36 +114,37 @@ impl LoadedAsset for LoadedGltfAsset {
         )
     }
 
-    fn get_instance_upload_data<'a>(
-        &'a self,
-        mesh_accessor: &MeshAcessor,
-    ) -> crate::world::world::InstanceUploadData {
-        let local_transforms = match mesh_accessor {
-            MeshAcessor::All => self
-                .node_tree
-                .iter()
-                .flat_map(|node| collect_local_transforms(node, MAT4_IDENTITY))
-                .collect(),
-            MeshAcessor::GltfRootNode(root) => {
-                match get_root_node(&self.node_tree, *root as usize) {
-                    Some(root_node) => collect_local_transforms(root_node, MAT4_IDENTITY),
-                    None => {
-                        panic!()
-                    }
-                }
-            }
-        };
-        InstanceUploadData {
-            local_transforms: Some(local_transforms),
-        }
-    }
+    // fn get_instance_upload_data<'a>(
+    //     &'a self,
+    //     instance_handle: InstanceHandle,
+    //     mesh_accessor: &MeshAcessor,
+    // ) -> crate::world::world::InstanceUploadData {
+    //     let local_transforms = match mesh_accessor {
+    //         MeshAcessor::All => self
+    //             .node_tree
+    //             .iter()
+    //             .flat_map(|node| collect_local_transforms(node, MAT4_IDENTITY))
+    //             .collect(),
+    //         MeshAcessor::GltfRootNode(root) => {
+    //             match get_root_node(&self.node_tree, *root as usize) {
+    //                 Some(root_node) => collect_local_transforms(root_node, MAT4_IDENTITY),
+    //                 None => {
+    //                     panic!()
+    //                 }
+    //             }
+    //         }
+    //     };
+    //     InstanceUploadData {
+    //         instance_handle,
+    //         local_transforms: Some(local_transforms),
+    //     }
+    // }
     fn get_renderables(
         &self,
         alloc_handle: GPUAllocationHandle,
         renderables: &mut Renderables,
         query: &InstanceUploadQuery,
     ) -> Result<(), AssetLoadError> {
-        let mut render_data_vec: Vec<RenderData> = Vec::new();
         if query.needs_meshes && query.needs_local_transforms {
             let mesh_instances: Vec<(u32, LocalTransform)> = match query.mesh_accesor.unwrap() {
                 MeshAcessor::All => self
@@ -198,10 +200,17 @@ impl LoadedAsset for LoadedGltfAsset {
             if let Some(common) = renderables.common.as_mut() {
                 common.push(mesh_render_data);
             } else {
-                renderables.common.insert(vec![mesh_render_data]);
+                let _ = renderables.common.insert(vec![mesh_render_data]);
             }
             // INSERT LOCAL TRANSFORMS
-            renderables.instance_data.local_transforms = Some(local_transforms);
+            if let Some(instance_data) = renderables.instance_data.as_mut() {
+                instance_data.local_transforms = LocalTransformData::FromVec(local_transforms);
+            } else {
+                renderables.instance_data = Some(InstanceUploadData {
+                    instance_handle: renderables.instance_handle.clone(),
+                    local_transforms: LocalTransformData::FromVec(local_transforms),
+                })
+            }
         } else if query.needs_local_transforms {
             let local_transforms = match query.mesh_accesor.unwrap() {
                 MeshAcessor::All => self
@@ -221,7 +230,29 @@ impl LoadedAsset for LoadedGltfAsset {
                 }
             };
 
-            renderables.instance_data.local_transforms = Some(local_transforms);
+            // INSERT LOCAL TRANSFORMS
+            if let Some(instance_data) = renderables.instance_data.as_mut() {
+                instance_data.local_transforms = LocalTransformData::FromVec(local_transforms);
+            } else {
+                renderables.instance_data = Some(InstanceUploadData {
+                    instance_handle: renderables.instance_handle.clone(),
+                    local_transforms: LocalTransformData::FromVec(local_transforms),
+                });
+            }
+        } else {
+            // the instance spawned, but it does NOT require local transforms, interesting!
+            assert!(
+                matches!(query.rigid_animation_mode, Some(RigidAnimationMode::Shared)),
+                "the instance DOESNT need local transforms but ISNT shared?"
+            );
+            if let Some(instance_data) = renderables.instance_data.as_mut() {
+                instance_data.local_transforms = LocalTransformData::NeedsDonor;
+            } else {
+                renderables.instance_data = Some(InstanceUploadData {
+                    instance_handle: renderables.instance_handle.clone(),
+                    local_transforms: LocalTransformData::NeedsDonor,
+                });
+            }
         }
         Ok(())
     }

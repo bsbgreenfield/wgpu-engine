@@ -6,7 +6,6 @@ use crate::{
         GPUAssetUploadJob,
         renderer::{
             GPUAllocationHandle, Instruction, Operations, RenderConstant, RenderUpdateDelta,
-            VMValue,
         },
     },
     asset_manager_new::{Asset, AssetHandle, AssetLoadError, LoadableAsset},
@@ -67,8 +66,17 @@ impl RenderGroup {
 }
 
 #[derive(Debug)]
+pub enum LocalTransformData {
+    None,
+    NeedsDonor,
+    FromShared { donor: InstanceHandle },
+    FromVec(Vec<LocalTransform>),
+}
+
+#[derive(Debug)]
 pub struct InstanceUploadData {
-    pub local_transforms: Option<Vec<LocalTransform>>,
+    pub instance_handle: InstanceHandle,
+    pub local_transforms: LocalTransformData,
     // others
 }
 
@@ -76,44 +84,6 @@ pub struct InstanceUploadData {
 pub enum WorldUpdateDelta<'frame> {
     EntityDidSpawn(InstanceUploadData),
     AssetDidLoad(GPUAssetUploadJob<'frame>),
-}
-
-impl<'frame> WorldUpdateDelta<'frame> {
-    pub fn gen_bytecode(
-        &'frame self,
-        world: &'frame World,
-        constants: &mut Vec<VMValue<'frame>>,
-        instructions: &mut Vec<Instruction>,
-    ) {
-        match self {
-            Self::AssetDidLoad(asset_handle) => {
-                todo!()
-                // let gpu_upload_job = entity_manager
-                //     .asset_manager
-                //     .get_upload_job_for(asset_handle)
-                //     .unwrap();
-                // instructions.push(Instruction::Op(Operations::AddAsset));
-                // constants.push(VMValue::UploadJob(gpu_upload_job));
-                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-            }
-
-            Self::EntityDidSpawn(instance_handle) => {
-                todo!()
-                // let instance_data = instance_manager.do_stuff(instance_handle, entity_manager);
-                // instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                // constants.push(VMValue::InstanceHandle(instance_handle.clone()));
-                // instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                // let upload_data = entity_manager.get_instance_gpu_data(instance_handle);
-                // if let Some(local_transforms) = upload_data.local_transforms {
-                //     //
-                //     instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                //     constants.push(VMValue::LocalTransformSet(local_transforms));
-                //     instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
-                // }
-                // instructions.push(Instruction::Op(Operations::Pop));
-            }
-        }
-    }
 }
 
 pub struct World {
@@ -125,6 +95,9 @@ pub struct World {
 }
 
 impl World {
+    fn const_last(constants: &Vec<RenderConstant<'_>>) -> Instruction {
+        Instruction::ConstIdx((constants.len() - 1) as u8)
+    }
     pub fn gen_bytecode<'frame>(
         deltas: Vec<WorldUpdateDelta<'frame>>,
         instructions: &mut Vec<Instruction>,
@@ -135,27 +108,60 @@ impl World {
                 WorldUpdateDelta::AssetDidLoad(asset_upload_job) => {
                     instructions.push(Instruction::Op(Operations::AddAsset));
                     constants.push(RenderConstant::Key(asset_upload_job.asset_handle.as_key()));
+                    instructions.push(Self::const_last(constants));
                     if let Some(pnu) = asset_upload_job.pnu_vertices {
                         instructions.push(Instruction::Op(Operations::PNUUpload));
                         let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(pnu);
-                        constants.push(RenderConstant::Data(pnu_data));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                        constants.push(RenderConstant::DataRef(pnu_data));
+                        instructions.push(Self::const_last(constants));
                     }
                     if let Some(pnujw) = asset_upload_job.pnujw_vertices {
                         instructions.push(Instruction::Op(Operations::PNUJWUpload));
                         let pnujw_data = bytemuck::cast_slice::<PNUJWVertex, u8>(pnujw);
-                        constants.push(RenderConstant::Data(pnujw_data));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                        constants.push(RenderConstant::DataRef(pnujw_data));
+                        instructions.push(Self::const_last(constants));
                     }
                     if let Some(indices) = asset_upload_job.indices {
                         instructions.push(Instruction::Op(Operations::IndexUpload));
                         let index_data = bytemuck::cast_slice::<VIndex, u8>(indices);
-                        constants.push(RenderConstant::Data(index_data));
-                        instructions.push(Instruction::ConstIdx((constants.len() - 1) as u8));
+                        constants.push(RenderConstant::DataRef(index_data));
+                        instructions.push(Self::const_last(constants));
                     }
                     instructions.push(Instruction::Op(Operations::EmitAssetUpload));
                 }
-                WorldUpdateDelta::EntityDidSpawn(_) => todo!(),
+                WorldUpdateDelta::EntityDidSpawn(instance_upload_data) => {
+                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                    constants.push(RenderConstant::Key(
+                        instance_upload_data.instance_handle.as_key(),
+                    ));
+                    instructions.push(Self::const_last(constants));
+                    match instance_upload_data.local_transforms {
+                        LocalTransformData::FromVec(mut local_transforms) => {
+                            instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                            let lt_bytes: Vec<u8> = {
+                                let ptr = local_transforms.as_mut_ptr() as *mut u8;
+                                let len =
+                                    local_transforms.len() * std::mem::size_of::<LocalTransform>();
+                                let cap = local_transforms.capacity()
+                                    * std::mem::size_of::<LocalTransform>();
+                                std::mem::forget(local_transforms);
+                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                            };
+                            constants.push(RenderConstant::DataOwned(lt_bytes));
+                            instructions.push(Self::const_last(constants));
+                        }
+                        LocalTransformData::FromShared { donor } => {
+                            instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
+                            constants.push(RenderConstant::Key(donor.as_key()));
+                            instructions.push(Self::const_last(constants));
+                        }
+                        LocalTransformData::NeedsDonor => panic!(
+                            "instance manager is responsible for providing the instance upload data with a donor handle"
+                        ),
+                        LocalTransformData::None => panic!("not supported yet"),
+                    }
+                    instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+                }
             }
         }
     }
@@ -194,11 +200,14 @@ impl World {
         entity_handle: &EntityHandle,
         archetype: Box<dyn Archetype>,
     ) -> InstanceUploadData {
+        println!("spawning {:?}!!!", entity_handle);
         self.instance_manager
             .spawn(entity_handle, &self.entity_manager, archetype)
     }
 
-    pub fn update(&mut self) -> Result<Vec<WorldUpdateDelta>, WorldUpdateError> {
+    pub fn update<'frame>(
+        &'frame mut self,
+    ) -> Result<Vec<WorldUpdateDelta<'frame>>, WorldUpdateError> {
         let mut deltas = Vec::<WorldUpdateDelta>::new();
         // check scenes
         if self.scene.is_dirty() {
@@ -295,6 +304,7 @@ impl World {
                     // TODO wait to dequeue until GPU reports it has successfully loaded entity?
                 }
                 RenderUpdateDelta::EntitySpawned(gpu_bindings) => {
+                    println!("Renderer spawned entity! gpu bindings: {:?}", gpu_bindings);
                     self.instance_manager.update_gpu_bindings(gpu_bindings);
                 }
             }

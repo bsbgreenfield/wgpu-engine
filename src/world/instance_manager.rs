@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::renderer::{DrawItem, DrawPacket, InstanceUploadJob},
-    util::types::{GlobalTransform, LocalTransform},
+    app::renderer::{DrawItem, DrawPacket},
+    util::types::GlobalTransform,
     world::{
-        InstanceUploadQuery, RenderKey,
-        entity_manager::{EntityHandle, EntityManager, RenderData, Renderables},
+        RenderKey, WorldUpdateError,
+        entity_manager::{EntityHandle, EntityManager, RenderData},
         index_arena::InstanceArenaNew,
-        world::{DrawSet, InstanceUploadData, RenderGroup, RenderView},
+        world::{DrawSet, InstanceUploadData, LocalTransformData, RenderGroup, RenderView},
     },
 };
 
@@ -37,7 +37,7 @@ impl TryFrom<u16> for ArchetypeId {
     }
 }
 
-pub trait ArchetypeTable {
+trait ArchetypeTable {
     type A: Archetype;
 
     fn new() -> Self;
@@ -61,6 +61,7 @@ impl Archetype for APosition {
         manager: &mut InstanceManager,
         entity_handle: &EntityHandle,
     ) -> InstanceHandle {
+        println!("inserting for entity: {:?}", entity_handle);
         manager.pos.insert(*self, *entity_handle)
     }
 }
@@ -121,17 +122,17 @@ pub struct InstanceHandle {
 impl RenderKey for InstanceHandle {
     fn as_key(&self) -> u64 {
         let i = self.instance_id as u64;
-        let e = self.entity_handle.0 as u64 >> 16;
-        let a = self.archetype as u64 >> 32;
-        let g = self.generation as u64 >> 48;
+        let e = (self.entity_handle.0 as u64) << 16;
+        let a = (self.archetype as u64) << 32;
+        let g = (self.generation as u64) << 48;
         i | e | a | g
     }
 
     fn from_key(key: u64) -> Self {
-        let archetype = ((key >> 48) & 0xFFFF) as u16;
-        let generation = ((key >> 32) & 0xFFFF) as u16;
-        let entity = ((key >> 16) & 0xFFFF) as u16;
         let instance = (key & 0xFFFF) as u16;
+        let entity = ((key >> 16) & 0xFFFF) as u16;
+        let archetype = ((key >> 32) & 0xFFFF) as u16;
+        let generation = ((key >> 48) & 0xFFFF) as u16;
 
         Self {
             archetype: ArchetypeId::try_from(archetype).expect("invalid archetype in key"),
@@ -241,19 +242,25 @@ impl InstanceManager {
         data: Box<dyn Archetype>,
     ) -> InstanceUploadData {
         let instance_handle = data.insert_self(self, entity_handle);
+        println!("got instance handle: {:?}", instance_handle);
         self.update_render_state(&instance_handle, entity_manager)
+            .unwrap_or_else(|e| panic!("could not spawn: {e:?}"))
     }
 
     fn update_render_state(
         &mut self,
         instance_handle: &InstanceHandle,
         entity_manager: &EntityManager,
-    ) -> InstanceUploadData {
+    ) -> Result<InstanceUploadData, WorldUpdateError> {
         let is_instanced = self
             .entity_group_index
             .contains_key(&instance_handle.entity_handle);
-        let mut renderables =
-            entity_manager.get_entity_renderables(&instance_handle.entity_handle, is_instanced);
+
+        let mut renderables = entity_manager
+            .get_entity_renderables(instance_handle, is_instanced)
+            .map_err(|_| {
+                WorldUpdateError::RenderablesNotAvailable(instance_handle.entity_handle)
+            })?;
 
         if is_instanced {
             let group_id = self
@@ -265,6 +272,16 @@ impl InstanceManager {
                 .get_mut(*group_id)
                 .expect("group should exist, maybe you deleted from the value, but not the entry?");
             group.instance_handles.push(instance_handle.clone());
+
+            if matches!(
+                renderables.instance_data.as_ref().unwrap().local_transforms,
+                LocalTransformData::NeedsDonor
+            ) {
+                renderables.instance_data.as_mut().unwrap().local_transforms =
+                    LocalTransformData::FromShared {
+                        donor: group.instance_handles[0].clone(),
+                    }
+            }
         } else {
             let mut views = Vec::<RenderView>::with_capacity(
                 renderables
@@ -284,7 +301,6 @@ impl InstanceManager {
                     } => {
                         let view = RenderView {
                             gpu_handle: gpu_alloc_handle,
-
                             pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
                                 primtitive_ranges: pnu,
                                 index_ranges: index_ranges.clone(),
@@ -298,60 +314,19 @@ impl InstanceManager {
                     }
                 }
             }
+            // ADD GROUP
+            self.render_groups.push(RenderGroup {
+                instance_handles: vec![instance_handle.clone()],
+                views,
+            });
+            self.entity_group_index.insert(
+                instance_handle.entity_handle.clone(),
+                self.render_groups.len() - 1,
+            );
         }
 
-        renderables.instance_data
+        Ok(renderables.instance_data.unwrap())
     }
-
-    // pub fn update_render_state<'a>(
-    //     &mut self,
-    //     instance_handle: &InstanceHandle,
-    //     renderables: Renderables<'a>,
-    // ) {
-    //     if let Some(group_id) = self.entity_group_index.get(&instance_handle.entity_handle) {
-    //         let group = self
-    //             .render_groups
-    //             .get_mut(*group_id)
-    //             .expect("group should exist, maybe you deleted from the value, but not the entry?");
-    //         group.instance_handles.push(instance_handle.clone());
-    //     } else {
-    //         let mut views: Vec<RenderView> = Vec::with_capacity(renderables.instance_data.len());
-    //         for instance_data in renderables.instance_data {
-    //             match instance_data {
-    //                 InstanceRenderData::MeshRenderable {
-    //                     gpu_alloc_handle,
-    //                     pnu_vertex_ranges,
-    //                     pnujw_vertex_ranges,
-    //                     index_ranges,
-    //                 } => {
-    //                     let view = RenderView {
-    //                         gpu_handle: gpu_alloc_handle,
-
-    //                         pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
-    //                             primtitive_ranges: pnu,
-    //                             index_ranges: index_ranges.clone(),
-    //                         }),
-    //                         pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
-    //                             primtitive_ranges: pnujw,
-    //                             index_ranges: index_ranges,
-    //                         }),
-    //                     };
-    //                     views.push(view);
-    //                 }
-    //             }
-    //         }
-
-    //         self.render_groups.push(RenderGroup {
-    //             instance_handles: vec![instance_handle.clone()],
-    //             views,
-    //         });
-
-    //         self.entity_group_index.insert(
-    //             instance_handle.entity_handle.clone(),
-    //             self.render_groups.len() - 1,
-    //         );
-    //     }
-    // }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {
         match handle.archetype {
@@ -365,13 +340,18 @@ impl InstanceManager {
         self.pos.collect(&mut collector, 0);
 
         for group in self.render_groups.iter() {
+            println!("GROUP!");
             for view in group.views.iter() {
+                println!("VIEW!   ");
+                println!(" has pnujw {:?}", view.pnujw_draws.is_some());
+                println!(" has pnu {:?}", view.pnu_draws.is_some());
                 if let Some(pnu) = &view.pnu_draws {
                     let entry = packet
                         .pnu
                         .entry(view.gpu_handle.clone())
                         .or_insert_with(Vec::new);
                     for instance_handle in group.instance_handles.iter() {
+                        println!("generating for instance handle {:?}", instance_handle);
                         // calculate the instance idx of each draw call
                         let offset = collector.offset_map.offset_of(instance_handle.archetype);
                         let instance_idx =
@@ -390,17 +370,23 @@ impl InstanceManager {
                     }
                 }
                 if let Some(pnujw) = &view.pnujw_draws {
+                    println!("generating draw calls for pnujw");
                     let entry = packet
                         .pnujw
                         .entry(view.gpu_handle.clone())
                         .or_insert_with(Vec::new);
                     for instance_handle in group.instance_handles.iter() {
+                        println!(
+                            "generating draw calls for pnujw instance {:?}",
+                            instance_handle
+                        );
                         // calculate the instance idx of each draw call
                         let offset = collector.offset_map.offset_of(instance_handle.archetype);
                         let instance_idx =
                             self.resolve_idx(instance_handle).expect("should be valid") as u32
                                 + offset as u32;
                         if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
+                            println!("this instance has gpu bindings");
                             for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
                                 entry.push(DrawItem::new(
                                     bindings.lt_offset,
@@ -409,6 +395,9 @@ impl InstanceManager {
                                     pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
                                 ));
                             }
+                        } else {
+                            println!("this instance does NOT have gpu bindings");
+                            println!("{:?}", instance_handle);
                         }
                     }
                 }

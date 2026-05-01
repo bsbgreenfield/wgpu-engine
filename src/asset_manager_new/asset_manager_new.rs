@@ -10,6 +10,7 @@ use crate::{
         InstanceUploadQuery,
         components::{MeshAcessor, MeshCollectionComponent},
         entity_manager::Renderables,
+        instance_manager::InstanceHandle,
         scene::SceneLoadLevel,
         world::InstanceUploadData,
     },
@@ -192,12 +193,13 @@ impl AssetManagerNew {
         }
     }
 
-    pub fn get_instanced_upload_data_for(
-        &self,
-        asset_handle: &AssetHandle,
-        mesh_accessor: &MeshAcessor,
-    ) -> InstanceUploadData {
-        let la = self.unwrap_la(asset_handle);
-        la.get_instance_upload_data(mesh_accessor)
-    }
+    // pub fn get_instanced_upload_data_for(
+    //     &self,
+    //     asset_handle: &AssetHandle,
+    //     instance_handle: InstanceHandle,
+    //     mesh_accessor: &MeshAcessor,
+    // ) -> InstanceUploadData {
+    //     let la = self.unwrap_la(asset_handle);
+    //     la.get_instance_upload_data(instance_handle, mesh_accessor)
+    // }
 }

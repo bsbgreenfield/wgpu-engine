@@ -1,14 +1,12 @@
-use std::num::NonZero;
-
 use wgpu::RenderPass;
 
 use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            DrawItem, DrawPacket, InstanceUploadJob, Instruction, RenderCategory, RenderConstant,
-            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VMValue,
-            VertexArenaError, VertexArenaSelector,
+            DrawPacket, InstanceUploadJob, Instruction, RenderCategory, RenderConstant,
+            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaError,
+            VertexArenaSelector,
             gpu_allocator::{
                 GPUAllocator, GPUInstanceAllocator, UploadIndexJob,
                 instance_arena::InstanceArena,
@@ -18,11 +16,7 @@ use crate::{
         },
     },
     util::types::{GlobalTransform, LocalTransform, PNUJWVertex, PNUVertex, VIndex},
-    world::{
-        camera::Camera,
-        instance_manager::{ArchetypeId, ArchetypeTable, InstanceHandle, InstanceManager},
-        world::{DrawSet, RenderGroup, RenderView},
-    },
+    world::{camera::Camera, instance_manager::InstanceHandle, world::DrawSet},
 };
 
 pub(super) struct EngineRenderPass {
@@ -103,36 +97,6 @@ impl Renderer {
         self.passes.push(EngineRenderPass { label, categories });
     }
 
-    // pub fn gen_draw_calls<'frame>(
-    //     &'frame self,
-    //     instance_manager: &'frame InstanceManager,
-    //     packet: &mut DrawPacket,
-    //     queue: &wgpu::Queue,
-    // ) {
-    //     let mut collector = InstanceDataCollector::new();
-
-    //     instance_manager.pos.collect(&mut collector, 0);
-    //     // COPY GLOBAL TRANSFORMS
-    //     {
-    //         let global_transforms = collector.global_transforms;
-    //         if global_transforms.is_empty() {
-    //             return;
-    //         }
-    //         if let Some(mut buffer_view) = queue.write_buffer_with(
-    //             &self.global_transform_buffer,
-    //             0,
-    //             NonZero::new((collector.gt_len * size_of::<GlobalTransform>()) as u64).unwrap(),
-    //         ) {
-    //             let mut offset: usize = 0;
-    //             for pos_slice in &global_transforms {
-    //                 buffer_view[offset..offset + pos_slice.len() * size_of::<GlobalTransform>()]
-    //                     .copy_from_slice(bytemuck::cast_slice(pos_slice));
-    //                 offset += pos_slice.len() * size_of::<GlobalTransform>();
-    //             }
-    //         }
-    //     }
-    // }
-
     pub(super) fn get_global_alloc_id(&mut self) -> u32 {
         self.allocations.push(self.allocations.len() as u32);
         (self.allocations.len() - 1) as u32
@@ -162,6 +126,15 @@ impl Renderer {
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
         self.instance_arena.upload(job, queue)
+    }
+
+    pub(super) fn resolve_shared_lt_binding(
+        &mut self,
+        donor_handle: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, VertexArenaError> {
+        self.instance_arena
+            .register_shared_lt_binding(donor_handle, new_handle)
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {

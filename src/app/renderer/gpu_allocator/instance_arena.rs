@@ -98,6 +98,25 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
         Err(VertexArenaError::MaxAllocationReached)
     }
 
+    fn register_shared_lt_binding(
+        &mut self,
+        donor: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, Self::AllocationError> {
+        let meta = self
+            .alloc_table
+            .get(donor)
+            .ok_or(VertexArenaError::HandleNotFound(donor.clone()))?;
+        self.alloc_table.insert(
+            new_handle.clone(),
+            AllocMetaData {
+                chunk_id: meta.chunk_id,
+                node_id: meta.node_id,
+            },
+        );
+        Ok(self.resolve(new_handle))
+    }
+
     fn resolve(&self, handle: &crate::world::instance_manager::InstanceHandle) -> u32 {
         let meta = self.alloc_table.get(&handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);

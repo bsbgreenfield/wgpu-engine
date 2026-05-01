@@ -219,7 +219,6 @@ mod load_queue_tests {
             entity_manager::EntityManager,
             load_queue::EntityLoadQueue,
             scene::{Scene, SceneLoadLevel},
-            world::WorldUpdateDelta,
         },
     };
 

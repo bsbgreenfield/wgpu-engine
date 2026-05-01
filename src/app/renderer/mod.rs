@@ -1,21 +1,15 @@
-use std::{
-    collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range, sync::Arc,
-};
+use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range};
 
 use bytemuck::Pod;
 
 use crate::{
-    app::{
-        GPUAssetUploadJob,
-        renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
-    },
+    app::renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
     asset_manager_new::AssetHandle,
-    util::types::{LocalTransform, Mat4F32, ModelVertex},
+    util::types::ModelVertex,
     world::{
         RenderKey,
-        entity_manager::{EntityHandle, LocalTransformData, Renderables},
+        entity_manager::EntityHandle,
         instance_manager::{InstanceGPUBindings, InstanceHandle},
-        world::InstanceUploadData,
     },
 };
 
@@ -24,6 +18,31 @@ mod pipeline;
 pub mod renderer;
 mod vm;
 
+#[derive(Debug, Default)]
+pub struct DrawPacket {
+    pub pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
+    pub pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
+}
+
+impl DrawPacket {
+    pub fn is_empty(&self) -> bool {
+        self.pnu.is_empty() && self.pnujw.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.pnu.clear();
+        self.pnujw.clear();
+    }
+
+    #[cfg(test)]
+    pub fn get_pnu(&self) -> &HashMap<GPUAllocationHandle, Vec<DrawItem>> {
+        &self.pnu
+    }
+
+    pub fn get_pnujw(&self) -> &HashMap<GPUAllocationHandle, Vec<DrawItem>> {
+        &self.pnujw
+    }
+}
 #[derive(Debug)]
 pub enum RenderUpdateDelta {
     AssetGPULoaded(AssetHandle, GPUAllocationHandle),
@@ -73,13 +92,6 @@ impl<'a, T: Pod> InstanceUploadJob<'a, T> {
     }
 }
 
-//#[derive(Hash, PartialEq, PartialOrd, Eq, Debug, Clone, Copy)]
-//struct AllocationHandle<T> {
-//    pub(super) global_alloc_id: u32,
-//    pipeline_alloc_id: u32,
-//    _t: PhantomData<T>,
-//}
-
 #[allow(unused)]
 #[derive(Clone, Copy, Debug)]
 pub enum Instruction {
@@ -94,6 +106,7 @@ pub enum Operations {
     MoveEntity,
     SpawnEntityInstance,
     LocalTransformUpload,
+    ResolveSharedLTBinding,
     PNUUpload,
     PNUJWUpload,
     IndexUpload,
@@ -104,7 +117,8 @@ pub enum Operations {
 
 #[derive(Debug)]
 pub enum RenderConstant<'frame> {
-    Data(&'frame [u8]),
+    DataOwned(Vec<u8>),
+    DataRef(&'frame [u8]),
     Key(u64),
     Offset(u64),
 }
@@ -114,7 +128,8 @@ impl<'frame> Clone for RenderConstant<'frame> {
         match self {
             Self::Key(key) => Self::Key(*key),
             Self::Offset(offset) => Self::Offset(*offset),
-            Self::Data(_) => panic!("cannot clone data (maybe make it an arc)"),
+            Self::DataRef(_) => panic!("cannot clone ref data (maybe make it an arc)"),
+            Self::DataOwned(_) => panic!("cannot clone owned data"),
         }
     }
 }
@@ -127,9 +142,15 @@ impl<'frame> RenderConstant<'frame> {
         }
     }
 
-    fn unwrap_data(&self) -> &[u8] {
+    fn unwrap_data_ref(&self) -> &[u8] {
         match self {
-            Self::Data(data_ref) => data_ref,
+            Self::DataRef(data_ref) => data_ref,
+            _ => panic!("invalid bytecode, expected data, found {:?}", self),
+        }
+    }
+    fn unwrap_data_owned(&self) -> &[u8] {
+        match self {
+            Self::DataOwned(data) => data,
             _ => panic!("invalid bytecode, expected data, found {:?}", self),
         }
     }
@@ -140,15 +161,6 @@ impl<'frame> RenderConstant<'frame> {
             _ => panic!("invalid bytecode, expected offset, found {:?}", self),
         }
     }
-}
-
-#[derive(Debug)]
-pub enum VMValue<'frame> {
-    TransformSet(Vec<Mat4F32>),
-    LocalTransformSet(Vec<LocalTransform>),
-    Transform(Mat4F32),
-    UploadJob(GPUAssetUploadJob<'frame>),
-    InstanceHandle(InstanceHandle),
 }
 
 #[derive(Debug)]
@@ -251,30 +263,4 @@ impl DrawItem {
 pub struct BufferChunks {
     index: Option<usize>,
     vertex: usize,
-}
-
-#[derive(Debug, Default)]
-pub struct DrawPacket {
-    pub pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
-    pub pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
-}
-
-impl DrawPacket {
-    pub fn is_empty(&self) -> bool {
-        self.pnu.is_empty() && self.pnujw.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.pnu.clear();
-        self.pnujw.clear();
-    }
-
-    #[cfg(test)]
-    pub fn get_pnu(&self) -> &HashMap<GPUAllocationHandle, Vec<DrawItem>> {
-        &self.pnu
-    }
-
-    pub fn get_pnujw(&self) -> &HashMap<GPUAllocationHandle, Vec<DrawItem>> {
-        &self.pnujw
-    }
 }

@@ -69,5 +69,6 @@ impl Component for MeshCollectionComponent {
             query.needs_local_transforms = true;
             query.mesh_accesor = Some(&self.mesh_accessor);
         }
+        query.rigid_animation_mode = Some(&self.rigid_animation_mode)
     }
 }

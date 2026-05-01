@@ -5,7 +5,7 @@ use crate::{
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
     world::{
         InstanceUploadQuery, RenderKey, components::MeshAcessor, entity_manager::Renderables,
-        scene::SceneLoadLevel, world::InstanceUploadData,
+        instance_manager::InstanceHandle, scene::SceneLoadLevel, world::InstanceUploadData,
     },
 };
 
@@ -144,7 +144,11 @@ pub trait LoadedAsset {
         query: &InstanceUploadQuery,
     ) -> Result<(), AssetLoadError>;
 
-    fn get_instance_upload_data<'a>(&'a self, mesh_accessor: &MeshAcessor) -> InstanceUploadData;
+    //    fn get_instance_upload_data<'a>(
+    //        &'a self,
+    //        instance_handle: InstanceHandle,
+    //        mesh_accessor: &MeshAcessor,
+    //    ) -> InstanceUploadData;
 }
 #[derive(Debug)]
 pub enum ModelBuilderError {

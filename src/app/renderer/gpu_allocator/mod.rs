@@ -118,6 +118,11 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
     fn bind_group(&self) -> &wgpu::BindGroup;
 
     fn new(device: &wgpu::Device) -> Self;
+    fn register_shared_lt_binding(
+        &mut self,
+        donor: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, Self::AllocationError>;
 }
 #[derive(Debug)]
 pub enum FreeListAllocError {
@@ -143,6 +148,7 @@ impl Display for FreeListAllocError {
 pub enum VertexArenaError {
     DataTooLarge(u32, String),
     FreeListError(FreeListAllocError),
+    HandleNotFound(InstanceHandle),
     MaxAllocationReached,
 }
 
@@ -154,7 +160,7 @@ impl From<FreeListAllocError> for VertexArenaError {
 
 impl Display for VertexArenaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
+        match self {
             Self::DataTooLarge(size, label) => f.write_str(
                 format!(
                     "cannot allocate into {} mesh of size {}, which exceeds chunk size: {}",
@@ -165,6 +171,11 @@ impl Display for VertexArenaError {
             Self::FreeListError(err) => Display::fmt(&err, f),
             Self::MaxAllocationReached => f.write_str(
                 "All Chunks are allocated, and there is no room in any of them for this upload",
+            ),
+            Self::HandleNotFound(handle) => write!(
+                f,
+                "you probably tried to resolve shared instance data from an instance arena, but the handle {:?} was not found to be within the arena's alloc table",
+                handle
             ),
         }
     }

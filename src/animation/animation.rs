@@ -1,16 +1,19 @@
 use std::collections::HashMap;
 
+#[allow(unused)]
 enum AnimationTransform {
     Rotation(Vec<cgmath::Quaternion<f32>>),
     Translation(Vec<cgmath::Vector3<f32>>),
     Scale(Vec<cgmath::Vector3<f32>>),
 }
 
+#[allow(unused)]
 struct NodeTransform {
     rot: cgmath::Quaternion<f32>,
     trans: cgmath::Vector3<f32>,
     scale: cgmath::Vector3<f32>,
 }
+#[allow(unused)]
 impl NodeTransform {
     fn new(
         rot: cgmath::Quaternion<f32>,
@@ -33,6 +36,7 @@ impl From<gltf::animation::Interpolation> for InterpolationType {
         }
     }
 }
+#[allow(unused)]
 struct AnimationSampler {
     id: usize,
     interp: InterpolationType,
@@ -40,6 +44,7 @@ struct AnimationSampler {
     transform: AnimationTransform,
 }
 
+#[allow(unused)]
 type AnimationSamplerMap = HashMap<usize, Vec<AnimationSampler>>;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd)]
@@ -48,6 +53,7 @@ pub enum NodeType {
     Mesh,
     Joint(usize),
 }
+#[allow(unused)]
 struct AnimationNode {
     samplers: AnimationSamplerMap,
     children: Vec<AnimationNode>,

@@ -147,13 +147,13 @@ impl Scene {
         scene.add_entity(fox_entity);
         scene.spawn(vec![
             (
-                EntityHandle(0),
+                box_entity,
                 Box::new(APosition {
                     position: cgmath::Matrix4::<f32>::identity().into(),
                 }),
             ),
             (
-                EntityHandle(1),
+                fox_entity,
                 Box::new(APosition {
                     position: (cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
                         1.5, 0.0, 0.0,

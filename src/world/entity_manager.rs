@@ -17,7 +17,9 @@ pub enum EntityManagerError {
     MaxEntitiesExceeded,
     InvalidInitialization,
     UploadJobFail,
+    RenderableFetchError(String),
 }
+
 impl Display for EntityManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return f.write_str(&self.to_string());
@@ -48,23 +50,26 @@ pub enum RenderData {
 }
 
 #[derive(Debug)]
-pub struct Renderables<'a> {
-    pub entity_handle: &'a EntityHandle,
+pub struct Renderables {
+    pub instance_handle: InstanceHandle,
     pub common: Option<Vec<RenderData>>,
-    pub instance_data: InstanceUploadData,
+    pub instance_data: Option<InstanceUploadData>,
 }
 
 impl EntityManager {
-    pub fn get_instance_gpu_data(&self, instance_handle: &InstanceHandle) -> InstanceUploadData {
-        let mcc = self
-            .mesh_collections
-            .get(instance_handle.entity_handle.0 as usize)
-            .unwrap();
-        let mesh_accessor = &mcc.mesh_accessor;
-        let asset_handle = &mcc.resource_backing;
-        self.asset_manager
-            .get_instanced_upload_data_for(asset_handle, mesh_accessor)
-    }
+    // pub fn get_instance_gpu_data(&self, instance_handle: &InstanceHandle) -> InstanceUploadData {
+    //     let mcc = self
+    //         .mesh_collections
+    //         .get(instance_handle.entity_handle.0 as usize)
+    //         .unwrap();
+    //     let mesh_accessor = &mcc.mesh_accessor;
+    //     let asset_handle = &mcc.resource_backing;
+    //     self.asset_manager.get_instanced_upload_data_for(
+    //         asset_handle,
+    //         instance_handle.clone(),
+    //         mesh_accessor,
+    //     )
+    // }
 
     /// For each component that might contribute Renderable data to that is needed for the Renderer
     /// modify the InstanceUploadQuery, and then get the appropriate renderables
@@ -74,25 +79,26 @@ impl EntityManager {
     /// Renderer needs.
     pub fn get_entity_renderables<'frame>(
         &'frame self,
-        entity_handle: &'frame EntityHandle,
+        instance_handle: &InstanceHandle,
         is_instanced: bool,
-    ) -> Renderables<'frame> {
+    ) -> Result<Renderables, EntityManagerError> {
         let mut query = InstanceUploadQuery::default();
         let mut renderables = Renderables {
-            entity_handle,
+            instance_handle: instance_handle.clone(),
             common: None,
-            instance_data: InstanceUploadData {
-                local_transforms: None,
-            },
+            instance_data: None,
         };
-        let mesh_collection = self.mesh_collections.get(entity_handle.0 as usize);
+        let mesh_collection = self
+            .mesh_collections
+            .get(instance_handle.entity_handle.0 as usize);
         if let Some(mesh_collection) = mesh_collection {
             mesh_collection.modify_query(&mut query, is_instanced);
             self.asset_manager
-                .get_renderables_for(mesh_collection, &mut renderables, &query);
+                .get_renderables_for(mesh_collection, &mut renderables, &query)
+                .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
         }
         // TODO: collect other instance render data
-        renderables
+        Ok(renderables)
     }
 
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {

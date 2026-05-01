@@ -31,6 +31,7 @@ pub enum WorldUpdateError {
     EntityLoadFailed(EntityHandle),
     EntityLoadAlreadyEnqeued(EntityHandle),
     InstanceSpawnFailure,
+    RenderablesNotAvailable(EntityHandle),
 }
 
 impl Display for WorldUpdateError {
@@ -61,6 +62,11 @@ impl Display for WorldUpdateError {
                 handle
             ),
             Self::InstanceSpawnFailure => f.write_str("failed to upload instance"),
+            Self::RenderablesNotAvailable(handle) => write!(
+                f,
+                "In update render state, the entity with handle {:?} could not generate renderable data",
+                handle
+            ),
         }
     }
 }
@@ -89,6 +95,7 @@ pub struct InstanceUploadQuery<'a> {
     pub needs_meshes: bool,
     pub needs_local_transforms: bool,
     pub mesh_accesor: Option<&'a MeshAcessor>,
+    pub rigid_animation_mode: Option<&'a RigidAnimationMode>,
 }
 
 pub trait RenderKey {
