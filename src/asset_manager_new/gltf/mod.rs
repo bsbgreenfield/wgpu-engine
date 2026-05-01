@@ -10,7 +10,6 @@ use crate::{
         InstanceUploadQuery,
         components::{MeshAcessor, RigidAnimationMode},
         entity_manager::{RenderData, Renderables},
-        instance_manager::InstanceHandle,
         world::{InstanceUploadData, LocalTransformData},
     },
 };

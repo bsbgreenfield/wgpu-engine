@@ -3,10 +3,7 @@ use std::fmt::{Debug, Display};
 use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
-    world::{
-        InstanceUploadQuery, RenderKey, components::MeshAcessor, entity_manager::Renderables,
-        instance_manager::InstanceHandle, scene::SceneLoadLevel, world::InstanceUploadData,
-    },
+    world::{InstanceUploadQuery, RenderKey, entity_manager::Renderables, scene::SceneLoadLevel},
 };
 
 pub mod asset_manager_new;

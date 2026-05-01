@@ -61,7 +61,6 @@ impl Archetype for APosition {
         manager: &mut InstanceManager,
         entity_handle: &EntityHandle,
     ) -> InstanceHandle {
-        println!("inserting for entity: {:?}", entity_handle);
         manager.pos.insert(*self, *entity_handle)
     }
 }
@@ -242,7 +241,6 @@ impl InstanceManager {
         data: Box<dyn Archetype>,
     ) -> InstanceUploadData {
         let instance_handle = data.insert_self(self, entity_handle);
-        println!("got instance handle: {:?}", instance_handle);
         self.update_render_state(&instance_handle, entity_manager)
             .unwrap_or_else(|e| panic!("could not spawn: {e:?}"))
     }
@@ -340,18 +338,13 @@ impl InstanceManager {
         self.pos.collect(&mut collector, 0);
 
         for group in self.render_groups.iter() {
-            println!("GROUP!");
             for view in group.views.iter() {
-                println!("VIEW!   ");
-                println!(" has pnujw {:?}", view.pnujw_draws.is_some());
-                println!(" has pnu {:?}", view.pnu_draws.is_some());
                 if let Some(pnu) = &view.pnu_draws {
                     let entry = packet
                         .pnu
                         .entry(view.gpu_handle.clone())
                         .or_insert_with(Vec::new);
                     for instance_handle in group.instance_handles.iter() {
-                        println!("generating for instance handle {:?}", instance_handle);
                         // calculate the instance idx of each draw call
                         let offset = collector.offset_map.offset_of(instance_handle.archetype);
                         let instance_idx =
@@ -370,23 +363,17 @@ impl InstanceManager {
                     }
                 }
                 if let Some(pnujw) = &view.pnujw_draws {
-                    println!("generating draw calls for pnujw");
                     let entry = packet
                         .pnujw
                         .entry(view.gpu_handle.clone())
                         .or_insert_with(Vec::new);
                     for instance_handle in group.instance_handles.iter() {
-                        println!(
-                            "generating draw calls for pnujw instance {:?}",
-                            instance_handle
-                        );
                         // calculate the instance idx of each draw call
                         let offset = collector.offset_map.offset_of(instance_handle.archetype);
                         let instance_idx =
                             self.resolve_idx(instance_handle).expect("should be valid") as u32
                                 + offset as u32;
                         if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
-                            println!("this instance has gpu bindings");
                             for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
                                 entry.push(DrawItem::new(
                                     bindings.lt_offset,
@@ -396,8 +383,7 @@ impl InstanceManager {
                                 ));
                             }
                         } else {
-                            println!("this instance does NOT have gpu bindings");
-                            println!("{:?}", instance_handle);
+                            // skip rendering
                         }
                     }
                 }

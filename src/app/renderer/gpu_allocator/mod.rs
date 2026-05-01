@@ -8,8 +8,7 @@ use std::error::Error;
 use crate::app::renderer::InstanceUploadJob;
 use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::{
-    app::renderer::GPUAllocationHandle,
-    util::types::{ModelVertex, VIndex},
+    app::renderer::GPUAllocationHandle, util::types::ModelVertex,
     world::instance_manager::InstanceHandle,
 };
 

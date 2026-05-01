@@ -11,7 +11,7 @@ use crate::{
         },
     },
     util::types::LocalTransform,
-    world::{components::RigidAnimationMode, instance_manager::InstanceHandle},
+    world::instance_manager::InstanceHandle,
 };
 
 #[allow(unused)]
@@ -75,26 +75,6 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
                 },
             }
         }
-        // if let Some(alloc_entry) = self.alloc_table.get(job.instance_handle)
-        //     && job.data.mode == RigidAnimationMode::Shared
-        // {
-        //     if let Some(alloc) = self.alloc_table.insert(
-        //         job.instance_handle.clone(),
-        //         AllocMetaData {
-        //             node_id: alloc_entry.node_id,
-        //             chunk_id: alloc_entry.chunk_id,
-        //         },
-        //     ) {
-        //         return Ok(self.chunks[alloc.chunk_id]
-        //             .allocator
-        //             .resolve(alloc.node_id)
-        //             .start
-        //             / size_of::<LocalTransform>() as u32);
-        //     } else {
-        //         panic!("there was a fatal error with inserting into the lt alloc table")
-        //     }
-        // } else {
-        // }
         Err(VertexArenaError::MaxAllocationReached)
     }
 

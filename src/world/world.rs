@@ -200,7 +200,6 @@ impl World {
         entity_handle: &EntityHandle,
         archetype: Box<dyn Archetype>,
     ) -> InstanceUploadData {
-        println!("spawning {:?}!!!", entity_handle);
         self.instance_manager
             .spawn(entity_handle, &self.entity_manager, archetype)
     }
@@ -304,7 +303,6 @@ impl World {
                     // TODO wait to dequeue until GPU reports it has successfully loaded entity?
                 }
                 RenderUpdateDelta::EntitySpawned(gpu_bindings) => {
-                    println!("Renderer spawned entity! gpu bindings: {:?}", gpu_bindings);
                     self.instance_manager.update_gpu_bindings(gpu_bindings);
                 }
             }

@@ -7,12 +7,8 @@ use crate::{
         LoadedAsset,
     },
     world::{
-        InstanceUploadQuery,
-        components::{MeshAcessor, MeshCollectionComponent},
-        entity_manager::Renderables,
-        instance_manager::InstanceHandle,
+        InstanceUploadQuery, components::MeshCollectionComponent, entity_manager::Renderables,
         scene::SceneLoadLevel,
-        world::InstanceUploadData,
     },
 };
 
