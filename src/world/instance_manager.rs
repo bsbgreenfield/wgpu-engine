@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     app::renderer::{DrawItem, DrawPacket},
-    util::types::GlobalTransform,
+    util::types::{GlobalTransform, LocalTransform},
     world::{
         RenderKey, WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager, RenderData},
@@ -46,7 +46,7 @@ trait ArchetypeTable {
 
     fn remove(&mut self, handle: InstanceHandle);
 
-    fn collect<'a>(&'a self, collector: &mut InstanceDataCollector<'a>, offset: u16);
+    fn collect<'a>(&'a self, collector: &mut RenderFrame<'a>);
 }
 
 pub struct APosition {
@@ -79,11 +79,11 @@ impl APositionTable {
 impl ArchetypeTable for APositionTable {
     type A = APosition;
 
-    fn collect<'a>(&'a self, collector: &mut InstanceDataCollector<'a>, offset: u16) {
+    fn collect<'a>(&'a self, render_frame: &mut RenderFrame<'a>) {
         if !self.positions.is_empty() {
-            collector.gt_len += self.positions.len();
-            collector.global_transforms.push(&self.positions[..]);
-            collector.offset_map.a_postion_offset = offset;
+            render_frame
+                .global_transforms
+                .push(bytemuck::cast_slice(&self.positions[..]));
         }
     }
 
@@ -177,20 +177,6 @@ impl OffsetMap {
     }
 }
 
-struct InstanceDataCollector<'a> {
-    offset_map: OffsetMap,
-    global_transforms: Vec<&'a [GlobalTransform]>,
-    gt_len: usize,
-}
-impl<'a> InstanceDataCollector<'a> {
-    fn new() -> Self {
-        Self {
-            gt_len: 0,
-            offset_map: OffsetMap::default(),
-            global_transforms: Vec::new(),
-        }
-    }
-}
 pub struct InstanceManager {
     pub(super) next_id: u16,
     gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
@@ -333,10 +319,15 @@ impl InstanceManager {
         // TODO: other tables
     }
 
-    pub fn gen_draw_calls<'frame>(&'frame self, packet: &mut DrawPacket) {
-        let mut collector = InstanceDataCollector::new();
-        self.pos.collect(&mut collector, 0);
+    // Calulate the offset based on the length of the archetype tables, and a defined order in which
+    // the tables are read
+    pub fn offset_of(&self, archetype: ArchetypeId) -> usize {
+        match archetype {
+            ArchetypeId::Position => 0,
+        }
+    }
 
+    pub fn gen_draw_calls<'frame>(&'frame self, packet: &mut DrawPacket) {
         for group in self.render_groups.iter() {
             for view in group.views.iter() {
                 if let Some(pnu) = &view.pnu_draws {
@@ -346,7 +337,7 @@ impl InstanceManager {
                         .or_insert_with(Vec::new);
                     for instance_handle in group.instance_handles.iter() {
                         // calculate the instance idx of each draw call
-                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
+                        let offset = self.offset_of(instance_handle.archetype);
                         let instance_idx =
                             self.resolve_idx(instance_handle).expect("should be valid") as u32
                                 + offset as u32;
@@ -369,7 +360,7 @@ impl InstanceManager {
                         .or_insert_with(Vec::new);
                     for instance_handle in group.instance_handles.iter() {
                         // calculate the instance idx of each draw call
-                        let offset = collector.offset_map.offset_of(instance_handle.archetype);
+                        let offset = self.offset_of(instance_handle.archetype);
                         let instance_idx =
                             self.resolve_idx(instance_handle).expect("should be valid") as u32
                                 + offset as u32;
@@ -390,4 +381,17 @@ impl InstanceManager {
             }
         }
     }
+
+    pub fn prepare_render_frame<'frame>(&'frame self) -> RenderFrame<'frame> {
+        let mut render_frame = RenderFrame::default();
+        self.pos.collect(&mut render_frame);
+
+        render_frame
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct RenderFrame<'frame> {
+    pub global_transforms: Vec<&'frame [u8]>,
+    pub local_transforms: Vec<&'frame [u8]>,
 }

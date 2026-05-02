@@ -371,6 +371,181 @@ mod integration_tests {
         });
     }
 
+    /// Test that instances that spawned with a global transform have that global transform properly
+    /// stored in the archetype table, which is accessible with its instance handle
+    #[test]
+    fn pos_table_stores_scene_spawn_transforms() {
+        pollster::block_on(async {
+            use cgmath::SquareMatrix;
+
+            let mut app = setup_world(TestCases::Box).await;
+            run_frame_unchecked(&mut app); // asset load
+            run_frame_unchecked(&mut app); // entity spawn at identity
+
+            let im = &app.world.as_ref().unwrap().instance_manager;
+            let positions = im.get_pos_table().get_positions();
+            assert_eq!(positions.len(), 1);
+
+            // box_scene spawns at the identity matrix
+            let identity: crate::util::types::GlobalTransform =
+                cgmath::Matrix4::<f32>::identity().into();
+            let mock_instance_handle_1 =
+                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
+
+            let pos_table_ix = im.resolve_idx(&mock_instance_handle_1).unwrap_or_else(|| {
+                panic!("instance handle not found in the archetype table. ",);
+            });
+
+            assert_eq!(
+                positions[pos_table_ix].transform, identity.transform,
+                "archetype table must store the identity transform given at spawn"
+            );
+
+            // spawn a second instance at a distinct, known translation
+            let translation_mat =
+                cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(3.0, 5.0, 7.0));
+            let translation_gt: crate::util::types::GlobalTransform = translation_mat.into();
+
+            app.world.as_mut().unwrap().scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: translation_mat.into(),
+                }),
+            )]);
+
+            run_frame_unchecked(&mut app);
+
+            let positions = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_pos_table()
+                .get_positions();
+            assert_eq!(positions.len(), 2);
+            let mock_instance_handle_2 =
+                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 1, 0);
+
+            let pos_table_idx_1 = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .resolve_idx(&mock_instance_handle_1)
+                .unwrap_or_else(|| {
+                    panic!("instance handle not found in the archetype table. ",);
+                });
+            let pos_table_idx_2 = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .resolve_idx(&mock_instance_handle_2)
+                .unwrap_or_else(|| {
+                    panic!("instance handle not found in the archetype table. ",);
+                });
+            assert_eq!(
+                positions[pos_table_idx_1].transform, identity.transform,
+                "slot 0 must retain the identity transform from the first spawn"
+            );
+            assert_eq!(
+                positions[pos_table_idx_2].transform, translation_gt.transform,
+                "slot 1 must store the translation transform from the second spawn"
+            );
+        });
+    }
+
+    /// The instance range inside each DrawItem is an index into the global-transform buffer that
+    /// `prepare_render_frame` produces.  This test verifies that the buffer correctly copies the
+    /// instance manager's archetype tables, and  that every DrawItem's range start points at the transform that was
+    /// originally given to scene.spawn.
+    #[test]
+    fn draw_item_instance_range_indexes_render_frame_transform() {
+        pollster::block_on(async {
+            use cgmath::SquareMatrix;
+
+            let mut app = setup_world(TestCases::Box).await;
+            run_frame_unchecked(&mut app); // asset load
+            run_frame_unchecked(&mut app); // first entity spawn at identity
+
+            let translation_mat =
+                cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(10.0, 20.0, 0.0));
+
+            app.world.as_mut().unwrap().scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: translation_mat.into(),
+                }),
+            )]);
+
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+
+            let (frame_transforms, positions): (
+                Vec<crate::util::types::GlobalTransform>,
+                Vec<crate::util::types::GlobalTransform>,
+            ) = {
+                let im = &app.world.as_ref().unwrap().instance_manager;
+                let render_frame = im.prepare_render_frame();
+                assert_eq!(
+                    render_frame.global_transforms.len(),
+                    1,
+                    "one byte-slice expected: one archetype table"
+                );
+                // THE GLOBAL TRANSFORMS IN THE RENDER FRAME
+                let render_bytes_as_global_transforms: Vec<crate::util::types::GlobalTransform> =
+                    bytemuck::cast_slice(render_frame.global_transforms[0]).to_vec();
+                // THE GLOBAL TRANSFORMS IN THE ARCH TABLE
+                let positions = im.get_pos_table().get_positions();
+                (render_bytes_as_global_transforms, positions)
+            };
+
+            // should be the same
+            assert_eq!(frame_transforms.len(), 2);
+            assert_eq!(positions.len(), 2);
+
+            for i in 0..2 {
+                assert_eq!(
+                    frame_transforms[i].transform, positions[i].transform,
+                    "render frame slot {i} must equal pos table slot {i}"
+                );
+            }
+
+            // Every draw items instance range must point at a transform we actually spawned.
+            let identity_gt: crate::util::types::GlobalTransform =
+                cgmath::Matrix4::<f32>::identity().into();
+            let translation_gt: crate::util::types::GlobalTransform = translation_mat.into();
+
+            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
+            assert_eq!(
+                pnu_items.len(),
+                2,
+                "expected two pnu draw items for two instances"
+            );
+
+            let mut seen_identity = false;
+            let mut seen_translation = false;
+            for item in pnu_items.iter() {
+                let idx = item.get_instances().start as usize;
+                if idx == 0 {
+                    seen_identity = true;
+                    assert_eq!(frame_transforms[idx].transform, identity_gt.transform);
+                } else if idx == 1 {
+                    seen_translation = true;
+                    assert_eq!(frame_transforms[idx].transform, translation_gt.transform);
+                }
+            }
+            assert!(
+                seen_identity,
+                "no draw item mapped to the identity transform"
+            );
+            assert!(
+                seen_translation,
+                "no draw item mapped to the translation transform"
+            );
+        });
+    }
+
     #[test]
     fn render_box_box() {
         pollster::block_on(async {

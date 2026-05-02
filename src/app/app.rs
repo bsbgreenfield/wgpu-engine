@@ -48,6 +48,7 @@ impl App<'_> {
         let mut instructions = Vec::<Instruction>::new();
 
         World::gen_bytecode(deltas, &mut instructions, &mut constants);
+
         let render_deltas = self.renderer.as_mut().unwrap().update(
             constants,
             instructions,
@@ -63,6 +64,18 @@ impl App<'_> {
             .unwrap()
             .instance_manager
             .gen_draw_calls(&mut self.draw_packet);
+
+        let render_frame = self
+            .world
+            .as_ref()
+            .unwrap()
+            .instance_manager
+            .prepare_render_frame();
+
+        self.renderer
+            .as_mut()
+            .unwrap()
+            .prepare_frame(render_frame, &self.app_config.as_ref().unwrap().queue);
 
         if !self.draw_packet.is_empty() {
             let _ = self

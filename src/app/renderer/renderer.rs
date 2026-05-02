@@ -1,3 +1,5 @@
+use std::num::NonZero;
+
 use wgpu::RenderPass;
 
 use crate::{
@@ -16,7 +18,11 @@ use crate::{
         },
     },
     util::types::{GlobalTransform, LocalTransform, PNUJWVertex, PNUVertex, VIndex},
-    world::{camera::Camera, instance_manager::InstanceHandle, world::DrawSet},
+    world::{
+        camera::Camera,
+        instance_manager::{InstanceHandle, RenderFrame},
+        world::DrawSet,
+    },
 };
 
 pub(super) struct EngineRenderPass {
@@ -109,6 +115,28 @@ impl Renderer {
         queue: &wgpu::Queue,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
         self.interpret(constants, ops, queue)
+    }
+
+    pub fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {
+        'global_transforms: {
+            let global_transforms = &render_frame.global_transforms;
+            if global_transforms.is_empty() {
+                break 'global_transforms;
+            }
+            let gt_size = global_transforms.iter().fold(0, |acc, e| acc + e.len());
+            if let Some(mut buffer_view) = queue.write_buffer_with(
+                &self.global_transform_buffer,
+                0,
+                NonZero::new(gt_size as u64).unwrap(),
+            ) {
+                let mut offset: usize = 0;
+                for pos_slice in global_transforms {
+                    buffer_view[offset..offset + pos_slice.len()]
+                        .copy_from_slice(bytemuck::cast_slice(pos_slice));
+                    offset += pos_slice.len();
+                }
+            }
+        }
     }
 
     pub(super) fn upload_indices<'frame>(
