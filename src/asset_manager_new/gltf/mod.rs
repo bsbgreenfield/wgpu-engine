@@ -1,6 +1,7 @@
-use std::{any::TypeId, fmt::Display, path::PathBuf};
+use std::{any::TypeId, collections::HashMap, fmt::Display, path::PathBuf, sync::Arc};
 
 use crate::{
+    animation::animation::{Animation, AnimationSampler},
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, LoadedAsset, ModelBuilderError, gltf::mesh::Mesh,
@@ -301,3 +302,10 @@ impl From<gltf::Error> for GltfLoadError {
         Self::GltfPackageError(value)
     }
 }
+
+pub struct GltfAnimation {
+    node_tree: Arc<GltfNode>,
+    samplers: HashMap<usize, AnimationSampler>,
+}
+
+impl Animation for GltfAnimation {}

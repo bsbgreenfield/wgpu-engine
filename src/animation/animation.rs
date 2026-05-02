@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 #[allow(unused)]
 enum AnimationTransform {
@@ -37,7 +37,7 @@ impl From<gltf::animation::Interpolation> for InterpolationType {
     }
 }
 #[allow(unused)]
-struct AnimationSampler {
+pub struct AnimationSampler {
     id: usize,
     interp: InterpolationType,
     times: Vec<f32>,
@@ -60,4 +60,18 @@ struct AnimationNode {
     transform: NodeTransform,
     node_type: NodeType,
     node_id: usize,
+}
+
+pub trait Animation {
+    // TODO: get_animation_frame
+}
+
+pub struct AnimationSample {
+    end_time: f32,
+    transform_index: i32,
+}
+
+pub struct AnimationInstance<A: Animation> {
+    animation: A,
+    samples: Vec<AnimationSample>,
 }
