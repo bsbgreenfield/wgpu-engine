@@ -1,6 +1,16 @@
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Arc;
 
+use gltf::animation;
+
+use crate::animation::animation::{
+    AnimationChannel, AnimationSampler, AnimationTransforms, InterpolationType,
+};
+use crate::asset_manager_new::gltf::mesh::copy_binary_data_from_gltf;
+use crate::asset_manager_new::gltf::{
+    GltfAnimation, GltfAttributeType, get_root_node_from_child_id,
+};
 use crate::asset_manager_new::{GltfValidationError, LoadedAsset, ModelBuilderError};
 use crate::util::types::{ModelVertex, VIndex};
 use crate::{
@@ -27,6 +37,75 @@ impl GltfNode {
             transform: node.transform().matrix(),
         }
     }
+}
+
+fn get_animations(
+    gltf: &gltf::Gltf,
+    buffer_offsets: &Vec<usize>,
+    binary_data: &Vec<u8>,
+    node_tree: &Arc<Vec<GltfNode>>,
+) -> Result<Vec<GltfAnimation>, GltfValidationError> {
+    let mut animations = Vec::<GltfAnimation>::with_capacity(gltf.animations().count());
+    for animation in gltf.animations() {
+        let mut root_node_ids = Vec::<usize>::new();
+        let mut gltf_channels = animation.channels();
+        let mut samplers: Vec<AnimationSampler> = Vec::with_capacity(animation.samplers().count());
+        let mut channels: Vec<AnimationChannel> = Vec::with_capacity(animation.channels().count());
+        let mut sampler_idx = 0;
+        for sampler in animation.samplers() {
+            let times_bytes = copy_binary_data_from_gltf(
+                &GLTFDataAccessor::from_accessor(&sampler.input())?,
+                buffer_offsets,
+                binary_data,
+            )?;
+            let transforms_bytes = copy_binary_data_from_gltf(
+                &GLTFDataAccessor::from_accessor(&sampler.output())?,
+                buffer_offsets,
+                binary_data,
+            )?;
+
+            let relevent_channel = &gltf_channels
+                .find(|x| x.sampler().index() == sampler_idx)
+                .expect("should be a sampler");
+
+            // this is annoying because we have to recurse for every sampler
+            // but its only at upload time, and its needed to select the correct tree root to
+            // recurse per frame at animation time.
+            if let Some(idx) =
+                get_root_node_from_child_id(&node_tree, relevent_channel.target().node().index())
+            {
+                root_node_ids.push(idx);
+            } else {
+                return Err(GltfValidationError::UnsupportedScheme); // if we cant find the node
+                // target, then we can't build
+                // the animation
+            }
+
+            samplers.push(AnimationSampler::new(
+                InterpolationType::from(sampler.interpolation()),
+                bytemuck::cast_vec(times_bytes),
+                AnimationTransforms::from_bytes(
+                    GltfAttributeType::from_animation_channel(
+                        &gltf_channels
+                            .find(|x| x.sampler().index() == sampler_idx)
+                            .expect("should be a sampler"),
+                    ),
+                    transforms_bytes,
+                ),
+            ));
+            sampler_idx += 1;
+        }
+
+        for channel in animation.channels() {
+            channels.push(AnimationChannel::from_gltf_channel(&channel));
+        }
+        animations.push(GltfAnimation {
+            samplers,
+            channels,
+            root_nodes: root_node_ids,
+        });
+    }
+    Ok(animations)
 }
 
 fn get_buffer_offsets(gltf: &gltf::Gltf) -> Vec<usize> {
@@ -148,7 +227,7 @@ fn set_index_data(index_ranges: &Vec<Range<usize>>, bin: &Vec<u8>) -> Option<Vec
 }
 
 fn build_all_models(
-    bin_source: &BinarySource,
+    binary_data: &Vec<u8>,
     index_ranges: &Vec<Range<usize>>,
     buffer_offsets: &Vec<usize>,
     primitive_data: &HashMap<usize, Vec<PrimitiveData>>,
@@ -161,8 +240,6 @@ fn build_all_models(
     ),
     ModelBuilderError,
 > {
-    let binary_data = super::loader::load_binary_data_from_source(bin_source)
-        .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
     let mut pnujw_vertices: Vec<PNUJWVertex> = Vec::new();
     let mut pnu_vertices: Vec<PNUVertex> = Vec::new();
 
@@ -216,11 +293,14 @@ fn build_all_models(
 impl LoadableAsset for GltfAsset {
     fn load(&self) -> Result<Box<dyn LoadedAsset>, ModelBuilderError> {
         let buffer_offsets = get_buffer_offsets(&self.gltf);
-        let node_tree = build_node_trees(&self.gltf)?;
+        let node_tree = Arc::new(build_node_trees(&self.gltf)?);
+        let binary_data = super::loader::load_binary_data_from_source(&self.bin)
+            .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
+        let animations = get_animations(&self.gltf, &buffer_offsets, &binary_data, &node_tree)?;
         let primitive_data = get_primitive_data_map(&self.gltf)?;
         let index_range_vec = get_index_range_vec(&primitive_data, &buffer_offsets)?;
         let (pnujw, pnu, indices, meshes) = build_all_models(
-            &self.bin,
+            &binary_data,
             &index_range_vec,
             &buffer_offsets,
             &primitive_data,
@@ -231,6 +311,7 @@ impl LoadableAsset for GltfAsset {
             node_tree,
             meshes,
             indices,
+            animations,
         }))
     }
 }

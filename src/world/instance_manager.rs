@@ -26,6 +26,7 @@ pub trait Archetype {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArchetypeId {
     Position = 0,
+    PositionAnimated = 1,
 }
 impl TryFrom<u16> for ArchetypeId {
     type Error = ();
@@ -65,6 +66,69 @@ impl Archetype for APosition {
     }
 }
 
+pub struct APositionAnimated {
+    pub position: GlobalTransform,
+    pub time_delta: f32,
+}
+
+impl ArchetypeIdent for APositionAnimated {
+    const ARCHETYPE_ID: ArchetypeId = ArchetypeId::PositionAnimated;
+}
+
+impl Archetype for APositionAnimated {
+    fn insert_self(
+        self: Box<Self>,
+        manager: &mut InstanceManager,
+        entity_handle: &EntityHandle,
+    ) -> InstanceHandle {
+        todo!()
+    }
+}
+
+pub struct APositionAnimatedTable {
+    pub(super) positions: Vec<GlobalTransform>,
+    pub(super) time_deltas: Vec<f32>,
+    pub(super) arena: InstanceArenaNew<APositionAnimated>,
+}
+
+impl ArchetypeTable for APositionAnimatedTable {
+    type A = APositionAnimated;
+
+    fn collect<'a>(&'a self, collector: &mut RenderFrame<'a>) {
+        if !self.positions.is_empty() {
+            collector
+                .global_transforms
+                .push(bytemuck::cast_slice(&self.positions));
+            todo!("deltas?")
+        }
+        todo!()
+    }
+
+    fn new() -> Self {
+        Self {
+            positions: Vec::new(),
+            time_deltas: Vec::new(),
+            arena: InstanceArenaNew::new(),
+        }
+    }
+    fn remove(&mut self, handle: InstanceHandle) {
+        let last = self.positions.len() - 1;
+        if let Some(idx_of_goner) = self.arena.remove(handle) {
+            self.positions.swap(idx_of_goner, last);
+            self.time_deltas.swap(idx_of_goner, last);
+        } else {
+            self.positions.pop();
+            self.time_deltas.pop();
+        }
+    }
+
+    fn insert(&mut self, data: Self::A, entity_handle: EntityHandle) -> InstanceHandle {
+        self.positions.push(data.position);
+        self.time_deltas.push(data.time_delta);
+        self.arena.insert(entity_handle)
+    }
+}
+
 pub struct APositionTable {
     pub(super) positions: Vec<GlobalTransform>,
     pub(super) arena: InstanceArenaNew<APosition>,
@@ -96,8 +160,7 @@ impl ArchetypeTable for APositionTable {
 
     fn insert(&mut self, data: APosition, entity_handle: EntityHandle) -> InstanceHandle {
         self.positions.push(data.position);
-        let a = self.arena.insert(entity_handle);
-        a
+        self.arena.insert(entity_handle)
     }
 
     fn remove(&mut self, handle: InstanceHandle) {
@@ -164,23 +227,11 @@ pub struct InstanceGPUBindings {
     pub lt_offset: u32,
 }
 
-#[derive(Default)]
-struct OffsetMap {
-    a_postion_offset: u16,
-    // other tables
-}
-impl OffsetMap {
-    fn offset_of(&self, a_id: ArchetypeId) -> u16 {
-        match a_id {
-            ArchetypeId::Position => self.a_postion_offset,
-        }
-    }
-}
-
 pub struct InstanceManager {
     pub(super) next_id: u16,
     gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
     pub pos: APositionTable,
+    pub posAnim: APositionAnimatedTable,
     render_groups: Vec<RenderGroup>,
     pub(super) entity_group_index: HashMap<EntityHandle, usize>,
 }
@@ -208,6 +259,7 @@ impl InstanceManager {
         Self {
             next_id: 0,
             pos: APositionTable::new(),
+            posAnim: APositionAnimatedTable::new(),
             gpu_bindings: HashMap::new(),
             render_groups: Vec::new(),
             entity_group_index: HashMap::new(),
@@ -217,6 +269,7 @@ impl InstanceManager {
     pub fn resolve_idx(&self, handle: &InstanceHandle) -> Option<usize> {
         match handle.archetype {
             ArchetypeId::Position => self.pos.arena.resolve(handle),
+            ArchetypeId::PositionAnimated => self.posAnim.arena.resolve(handle),
         }
     }
 

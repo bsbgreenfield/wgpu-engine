@@ -1,7 +1,7 @@
 use std::{any::TypeId, collections::HashMap, fmt::Display, path::PathBuf, sync::Arc};
 
 use crate::{
-    animation::animation::{Animation, AnimationSampler},
+    animation::animation::{Animation, AnimationChannel, AnimationSampler},
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, LoadedAsset, ModelBuilderError, gltf::mesh::Mesh,
@@ -51,11 +51,12 @@ struct GltfNode {
 }
 
 pub(super) struct LoadedGltfAsset {
-    node_tree: Vec<GltfNode>,
+    node_tree: Arc<Vec<GltfNode>>,
     meshes: Vec<Mesh>,
     pnujw_vertices: Vec<PNUJWVertex>,
     pnu_vertices: Vec<PNUVertex>,
     indices: Option<Vec<VIndex>>,
+    animations: Vec<GltfAnimation>,
 }
 
 fn get_root_node(nodes: &[GltfNode], node_id: usize) -> Option<&GltfNode> {
@@ -65,6 +66,18 @@ fn get_root_node(nodes: &[GltfNode], node_id: usize) -> Option<&GltfNode> {
         }
         if let Some(found) = get_root_node(&node.children, node_id) {
             return Some(found);
+        }
+    }
+    None
+}
+
+pub(super) fn get_root_node_from_child_id(roots: &[GltfNode], child_id: usize) -> Option<usize> {
+    for (i, root) in roots.iter().enumerate() {
+        if root.node_id == child_id {
+            return Some(i);
+        }
+        if get_root_node(&root.children, child_id).is_some() {
+            return Some(i);
         }
     }
     None
@@ -275,6 +288,31 @@ pub enum GltfLoadError {
     Unimplemented,
 }
 
+pub enum GltfAttributeType {
+    Position,
+    Normal,
+    TexCoords,
+    Index,
+    Joints,
+    Weights,
+    IBMS,
+    Times,
+    RotationT,
+    TranslationT,
+    ScaleT,
+}
+
+impl GltfAttributeType {
+    pub fn from_animation_channel(channel: &gltf::animation::Channel) -> Self {
+        match channel.target().property() {
+            gltf::animation::Property::Translation => Self::TranslationT,
+            gltf::animation::Property::Rotation => Self::RotationT,
+            gltf::animation::Property::Scale => Self::ScaleT,
+            _ => panic!(),
+        }
+    }
+}
+
 impl Display for GltfLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -304,8 +342,9 @@ impl From<gltf::Error> for GltfLoadError {
 }
 
 pub struct GltfAnimation {
-    node_tree: Arc<GltfNode>,
-    samplers: HashMap<usize, AnimationSampler>,
+    pub root_nodes: Vec<usize>,
+    pub samplers: Vec<AnimationSampler>,
+    pub channels: Vec<AnimationChannel>,
 }
 
 impl Animation for GltfAnimation {}

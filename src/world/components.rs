@@ -72,3 +72,33 @@ impl Component for MeshCollectionComponent {
         query.rigid_animation_mode = Some(&self.rigid_animation_mode)
     }
 }
+
+pub enum AnimationAccessor {
+    All,
+    Index(usize),
+}
+
+pub struct AnimationComponent {
+    resource_backing: AssetHandle,
+    animation_accessor: AnimationAccessor,
+}
+
+pub struct AnimationComponentDescriptor {
+    pub resource_backing: AssetHandle,
+    pub accessor: AnimationAccessor,
+}
+
+impl AnimationComponent {
+    pub fn new(desciptor: AnimationComponentDescriptor) -> Self {
+        Self {
+            resource_backing: desciptor.resource_backing,
+            animation_accessor: desciptor.accessor,
+        }
+    }
+}
+
+impl Component for AnimationComponent {
+    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool) {
+        todo!()
+    }
+}

@@ -6,7 +6,7 @@ use crate::{
     util::types::LocalTransform,
     world::{
         InstanceUploadQuery,
-        components::{Component, MeshCollectionComponent, RigidAnimationMode},
+        components::{AnimationComponent, Component, MeshCollectionComponent, RigidAnimationMode},
         instance_manager::InstanceHandle,
         world::InstanceUploadData,
     },
@@ -30,6 +30,7 @@ impl Error for EntityManagerError {}
 pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent, 100>,
+    animations: SparseSet<AnimationComponent, 100>,
     pub(super) asset_manager: AssetManagerNew,
 }
 
@@ -131,16 +132,25 @@ impl EntityManager {
             asset_manager: AssetManagerNew::new(),
             available_ids: vec![0..10000],
             mesh_collections: SparseSet::new(),
+            animations: SparseSet::new(),
         }
     }
 
     pub fn add_mesh_collection_for_entity(
         &mut self,
-        entity: EntityHandle,
+        entity: &EntityHandle,
         mesh_collection: MeshCollectionComponent,
     ) {
         self.mesh_collections
             .insert(entity.0 as usize, mesh_collection);
+    }
+
+    pub fn add_animation_for_entity(
+        &mut self,
+        entity: &EntityHandle,
+        animation: AnimationComponent,
+    ) {
+        self.animations.insert(entity.0 as usize, animation);
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -359,7 +369,7 @@ mod entity_manager_tests {
             mesh_accessor: MeshAcessor::All,
             rigid_animation_mode: RigidAnimationMode::Shared,
         });
-        manager.add_mesh_collection_for_entity(entity, mesh);
+        manager.add_mesh_collection_for_entity(&entity, mesh);
 
         let _ = manager.mesh_collections.get(entity.0 as usize).unwrap();
 

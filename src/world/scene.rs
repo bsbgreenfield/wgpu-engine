@@ -137,10 +137,10 @@ impl Scene {
         });
         world
             .entity_manager
-            .add_mesh_collection_for_entity(box_entity, box_mesh); // mesh
+            .add_mesh_collection_for_entity(&box_entity, box_mesh); // mesh
         world
             .entity_manager
-            .add_mesh_collection_for_entity(fox_entity, fox_mesh); // mesh
+            .add_mesh_collection_for_entity(&fox_entity, fox_mesh); // mesh
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
@@ -190,7 +190,7 @@ impl Scene {
         });
         world
             .entity_manager
-            .add_mesh_collection_for_entity(box_entity, box_mesh); // mesh
+            .add_mesh_collection_for_entity(&box_entity, box_mesh); // mesh
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
@@ -225,7 +225,7 @@ impl Scene {
         });
         world
             .entity_manager
-            .add_mesh_collection_for_entity(fox_entity, fox_mesh); // mesh
+            .add_mesh_collection_for_entity(&fox_entity, fox_mesh); // mesh
 
         let mut scene = Scene::new();
         scene.add_entity(fox_entity);

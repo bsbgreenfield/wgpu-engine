@@ -52,7 +52,7 @@ pub(super) struct PrimitiveData {
 }
 
 impl GLTFDataAccessor {
-    fn from_accessor(acc: &gltf::Accessor) -> Result<Self, GltfValidationError> {
+    pub(super) fn from_accessor(acc: &gltf::Accessor) -> Result<Self, GltfValidationError> {
         let view = acc.view().ok_or(GltfValidationError::NoView)?;
         let byte_offset = (view.offset() + acc.offset()) as u32;
         let count = acc.count() as u32;
@@ -214,7 +214,7 @@ impl Primitive {
         })
     }
 }
-fn copy_binary_data_from_gltf(
+pub(super) fn copy_binary_data_from_gltf(
     accessor: &GLTFDataAccessor,
     buffer_offsets: &Vec<usize>,
     binary_data: &Vec<u8>,
