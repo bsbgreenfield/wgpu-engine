@@ -1,5 +1,7 @@
 use std::{collections::HashMap, marker::PhantomData, ops::Range, sync::Arc};
 
+use time::{Duration, ext::InstantExt};
+
 use crate::{
     animation::animation::{Animation, AnimationSample},
     app::renderer::{DrawItem, DrawPacket},
@@ -228,10 +230,12 @@ impl InstanceHandle {
 pub struct InstanceGPUBindings {
     pub lt_offset: u32,
 }
-struct AnimationInstance {
-    samples: Vec<AnimationSample>,
+
+pub struct AnimationInstance {
+    pub samples: HashMap<usize, AnimationSample>,
     animation_idx: usize,
-    delta_time: f32,
+    pub start_time: std::time::Duration,
+    instance_handle: InstanceHandle,
 }
 
 #[derive(Default)]
@@ -265,9 +269,11 @@ impl AnimationController {
             .get(&instance_handle.entity_handle)?
             .get(anim_idx)?;
         self.active_animations.push(AnimationInstance {
-            samples: vec![],
+            samples: HashMap::new(),
             animation_idx: anim_idx,
-            delta_time: time_offset.unwrap_or(0.0),
+            start_time: std::time::Instant::now()
+                .add_signed(Duration::milliseconds(time_offset.unwrap_or(0.0) as i64)),
+            instance_handle: instance_handle.clone(),
         });
         Some(())
     }
@@ -313,6 +319,15 @@ impl InstanceManager {
         }
     }
 
+    pub fn activate_animation(
+        &mut self,
+        instance_handle: &InstanceHandle,
+        anim_idx: usize,
+        offset: Option<f32>,
+    ) {
+        self.animation_controller
+            .activate_animations(instance_handle, anim_idx, offset);
+    }
     pub fn resolve_idx(&self, handle: &InstanceHandle) -> Option<usize> {
         match handle.archetype {
             ArchetypeId::Position => self.pos.arena.resolve(handle),
@@ -491,6 +506,16 @@ impl InstanceManager {
     pub fn prepare_render_frame<'frame>(&'frame self) -> RenderFrame<'frame> {
         let mut render_frame = RenderFrame::default();
         self.pos.collect(&mut render_frame);
+
+        for active_animation in self.animation_controller.active_animations.iter() {
+            let lt_offset = self
+                .gpu_bindings
+                .get(&active_animation.instance_handle)
+                .unwrap()
+                .lt_offset;
+
+            let now = std::time::Instant::now();
+        }
 
         render_frame
     }

@@ -1,12 +1,19 @@
 use std::{
     any::TypeId,
     fmt::{Debug, Display},
+    hash::Hash,
+    ops::Deref,
     path::PathBuf,
     sync::Arc,
 };
 
+use cgmath::{Matrix4, Quaternion};
+
 use crate::{
-    animation::animation::{Animation, AnimationChannel, AnimationSampler},
+    animation::animation::{
+        Animation, AnimationChannel, AnimationChannels, AnimationSampler, AnimationTransformType,
+        SampleResult,
+    },
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, LoadedAsset, ModelBuilderError, gltf::mesh::Mesh,
@@ -48,6 +55,7 @@ impl Asset for GltfAsset {
         })
     }
 }
+#[derive(Debug)]
 struct GltfNode {
     mesh_id: Option<usize>,
     node_id: usize,
@@ -55,8 +63,22 @@ struct GltfNode {
     transform: Mat4F32,
 }
 
+impl PartialEq for GltfNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.mesh_id == other.mesh_id
+    }
+}
+
+impl Eq for GltfNode {}
+
+impl Hash for GltfNode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.node_id.hash(state);
+    }
+}
+
 pub(super) struct LoadedGltfAsset {
-    node_tree: Arc<Vec<GltfNode>>,
+    node_tree: Vec<Arc<GltfNode>>,
     meshes: Vec<Mesh>,
     pnujw_vertices: Vec<PNUJWVertex>,
     pnu_vertices: Vec<PNUVertex>,
@@ -64,25 +86,51 @@ pub(super) struct LoadedGltfAsset {
     animations: Vec<Arc<GltfAnimation>>,
 }
 
-fn get_root_node(nodes: &[GltfNode], node_id: usize) -> Option<&GltfNode> {
+fn get_root_node(nodes: &[Arc<GltfNode>], node_id: usize) -> Option<&GltfNode> {
     for node in nodes {
         if node.node_id == node_id {
             return Some(node);
         }
-        if let Some(found) = get_root_node(&node.children, node_id) {
+        if let Some(found) = find_in_children(&node.children, node_id) {
             return Some(found);
         }
     }
     None
 }
 
-pub(super) fn get_root_node_from_child_id(roots: &[GltfNode], child_id: usize) -> Option<usize> {
-    for (i, root) in roots.iter().enumerate() {
+fn find_in_children(chidlren: &[GltfNode], node_id: usize) -> Option<&GltfNode> {
+    for node in chidlren {
+        if node.node_id == node_id {
+            return Some(node);
+        }
+        if let Some(found) = find_in_children(&node.children, node_id) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+//pub(super) fn get_root_node_from_child_id(roots: &[GltfNode], child_id: usize) -> Option<usize> {
+//    for (i, root) in roots.iter().enumerate() {
+//        if root.node_id == child_id {
+//            return Some(i);
+//        }
+//        if get_root_node(&root.children, child_id).is_some() {
+//            return Some(i);
+//        }
+//    }
+//    None
+//}
+pub(super) fn get_root_node_from_child_id(
+    roots: &[Arc<GltfNode>],
+    child_id: usize,
+) -> Option<Arc<GltfNode>> {
+    for root in roots.iter() {
         if root.node_id == child_id {
-            return Some(i);
+            return Some(root.clone());
         }
         if get_root_node(&root.children, child_id).is_some() {
-            return Some(i);
+            return Some(root.clone());
         }
     }
     None
@@ -376,9 +424,9 @@ impl From<gltf::Error> for GltfLoadError {
 }
 
 pub struct GltfAnimation {
-    pub root_nodes: Vec<usize>,
+    pub root_nodes: Vec<Arc<GltfNode>>,
     pub samplers: Vec<AnimationSampler>,
-    pub channels: Vec<AnimationChannel>,
+    pub channels: AnimationChannels,
 }
 
 impl Debug for GltfAnimation {
@@ -391,4 +439,81 @@ impl Debug for GltfAnimation {
     }
 }
 
-impl Animation for GltfAnimation {}
+impl Animation for GltfAnimation {
+    fn get_animation_frame(
+        &self,
+        time_delta: f32,
+        instance: &mut crate::world::instance_manager::AnimationInstance,
+    ) {
+        for node in self.root_nodes.iter() {
+            let mut rotation: Option<Quaternion<f32>> = None;
+            let mut translation: Option<Matrix4<f32>> = None;
+            let mut scale: Option<Matrix4<f32>> = None;
+            if let Some(samplers) = self.channels.get(&node.node_id) {
+                let sample_result = instance
+                    .samples
+                    .get_mut(&node.node_id)
+                    .unwrap()
+                    .sample(time_delta);
+
+                match sample_result {
+                    SampleResult::Done => continue,
+                    SampleResult::Active(i) => {
+                        for (sampler_idx, anim_type) in samplers {
+                            let sampler = &self.samplers[*sampler_idx];
+                            let ratio =
+                                (time_delta - instance.start_time.as_secs_f32() - sampler.times[i])
+                                    / (sampler.times[i + 1] - sampler.times[i]);
+                            match anim_type {
+                                AnimationTransformType::Rotation => {
+                                    rotation =
+                                        Some(interpolate_as_quats(i, ratio, &sampler.transforms.0));
+                                }
+                                AnimationTransformType::Translation => {
+                                    translation = Some(cgmath::Matrix4::from_translation(
+                                        interpolate_as_vec3(i, ratio, &sampler.transforms.0),
+                                    ));
+                                }
+                                AnimationTransformType::Scale => {
+                                    let s = interpolate_as_vec3(i, ratio, &sampler.transforms.0);
+                                    scale =
+                                        Some(cgmath::Matrix4::from_nonuniform_scale(s.x, s.y, s.z));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn interpolate_as_quats(cursor: usize, ratio: f32, floats: &Vec<f32>) -> cgmath::Quaternion<f32> {
+    let quats: &[[f32; 4]] = bytemuck::cast_slice(floats);
+    let q0 = quats[cursor];
+    let q1 = quats[cursor + 1];
+
+    let dot = q0[0] * q1[0] + q0[1] * q1[1] + q0[2] * q1[2] + q0[3] * q1[3];
+    let q1 = if dot < 0.0 {
+        [-q1[0], -q1[1], -q1[2], -q1[3]]
+    } else {
+        q1
+    };
+    let x = q0[0] + ratio * (q1[0] - q0[0]);
+    let y = q0[1] + ratio * (q1[1] - q0[1]);
+    let z = q0[2] + ratio * (q1[2] - q0[2]);
+    let w = q0[3] + ratio * (q1[3] - q0[3]);
+    let inv_len = 1.0 / (x * x + y * y + z * z + w * w).sqrt();
+    cgmath::Quaternion::new(w * inv_len, x * inv_len, y * inv_len, z * inv_len)
+}
+fn interpolate_as_vec3(cursor: usize, ratio: f32, floats: &[f32]) -> cgmath::Vector3<f32> {
+    let vecs: &[[f32; 3]] = bytemuck::cast_slice(floats);
+    let v0 = vecs[cursor];
+    let v1 = vecs[cursor + 1];
+
+    cgmath::Vector3::new(
+        v0[0] + ratio * (v1[0] - v0[0]),
+        v0[1] + ratio * (v1[1] - v0[1]),
+        v0[2] + ratio * (v1[2] - v0[2]),
+    )
+}

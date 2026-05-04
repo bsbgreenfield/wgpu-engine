@@ -2,22 +2,19 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use gltf::animation;
-
 use crate::animation::animation::{
-    AnimationChannel, AnimationSampler, AnimationTransforms, InterpolationType,
+    AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
+    InterpolationType,
 };
 use crate::asset_manager_new::gltf::mesh::copy_binary_data_from_gltf;
-use crate::asset_manager_new::gltf::{
-    GltfAnimation, GltfAttributeType, get_root_node_from_child_id,
-};
+use crate::asset_manager_new::gltf::{GltfAnimation, get_root_node_from_child_id};
 use crate::asset_manager_new::{GltfValidationError, LoadedAsset, ModelBuilderError};
 use crate::util::types::{ModelVertex, VIndex};
 use crate::{
     asset_manager_new::{
         LoadableAsset,
         gltf::{
-            BinarySource, GltfAsset, GltfNode, LoadedGltfAsset, Mesh,
+            GltfAsset, GltfNode, LoadedGltfAsset, Mesh,
             mesh::{GLTFDataAccessor, Primitive, PrimitiveData},
         },
         range_splicer,
@@ -43,15 +40,13 @@ fn get_animations(
     gltf: &gltf::Gltf,
     buffer_offsets: &Vec<usize>,
     binary_data: &Vec<u8>,
-    node_tree: &Arc<Vec<GltfNode>>,
+    node_tree: &[Arc<GltfNode>],
 ) -> Result<Vec<Arc<GltfAnimation>>, GltfValidationError> {
     let mut animations = Vec::<Arc<GltfAnimation>>::with_capacity(gltf.animations().count());
     for animation in gltf.animations() {
-        let mut root_node_ids = Vec::<usize>::new();
-        let mut gltf_channels = animation.channels();
+        let mut root_nodes = Vec::<Arc<GltfNode>>::new();
         let mut samplers: Vec<AnimationSampler> = Vec::with_capacity(animation.samplers().count());
-        let mut channels: Vec<AnimationChannel> = Vec::with_capacity(animation.channels().count());
-        let mut sampler_idx = 0;
+        let mut channels = AnimationChannels::new();
         for sampler in animation.samplers() {
             let times_bytes = copy_binary_data_from_gltf(
                 &GLTFDataAccessor::from_accessor(&sampler.input())?,
@@ -64,45 +59,42 @@ fn get_animations(
                 binary_data,
             )?;
 
-            let relevent_channel = &gltf_channels
-                .find(|x| x.sampler().index() == sampler_idx)
-                .expect("should be a sampler");
+            let relevant_channels = animation
+                .channels()
+                .filter(|c| c.sampler().index() == sampler.index());
 
-            // this is annoying because we have to recurse for every sampler
-            // but its only at upload time, and its needed to select the correct tree root to
-            // recurse per frame at animation time.
-            if let Some(idx) =
-                get_root_node_from_child_id(&node_tree, relevent_channel.target().node().index())
-            {
-                root_node_ids.push(idx);
-            } else {
-                return Err(GltfValidationError::UnsupportedScheme); // if we cant find the node
-                // target, then we can't build
-                // the animation
+            for relevant_channel in relevant_channels {
+                if let Some(node) = get_root_node_from_child_id(
+                    &node_tree,
+                    relevant_channel.target().node().index(),
+                ) {
+                    if !root_nodes.iter().any(|rn| rn.node_id == node.node_id) {
+                        root_nodes.push(node);
+                    }
+                } else {
+                    // channel specified an invalid node
+                    return Err(GltfValidationError::UnsupportedScheme);
+                }
+
+                let ty =
+                    AnimationTransformType::from_gltf_prop(&relevant_channel.target().property());
+                channels
+                    .entry(relevant_channel.target().node().index())
+                    .or_insert_with(Vec::new)
+                    .push((sampler.index(), ty));
             }
 
             samplers.push(AnimationSampler::new(
                 InterpolationType::from(sampler.interpolation()),
                 bytemuck::cast_vec(times_bytes),
-                AnimationTransforms::from_bytes(
-                    GltfAttributeType::from_animation_channel(
-                        &gltf_channels
-                            .find(|x| x.sampler().index() == sampler_idx)
-                            .expect("should be a sampler"),
-                    ),
-                    transforms_bytes,
-                ),
+                AnimationTransforms(bytemuck::cast_vec(transforms_bytes)),
             ));
-            sampler_idx += 1;
         }
 
-        for channel in animation.channels() {
-            channels.push(AnimationChannel::from_gltf_channel(&channel));
-        }
         animations.push(Arc::new(GltfAnimation {
             samplers,
             channels,
-            root_nodes: root_node_ids,
+            root_nodes,
         }));
     }
     Ok(animations)
@@ -117,7 +109,7 @@ fn get_buffer_offsets(gltf: &gltf::Gltf) -> Vec<usize> {
     }
     buffer_offsets
 }
-fn build_node_trees(gltf: &gltf::Gltf) -> Result<Vec<GltfNode>, ModelBuilderError> {
+fn build_node_trees(gltf: &gltf::Gltf) -> Result<Vec<Arc<GltfNode>>, ModelBuilderError> {
     let scene = gltf
         .scenes()
         .next()
@@ -128,7 +120,7 @@ fn build_node_trees(gltf: &gltf::Gltf) -> Result<Vec<GltfNode>, ModelBuilderErro
 
     Ok(scene
         .nodes()
-        .map(|root_node| GltfNode::new(&root_node))
+        .map(|root_node| Arc::new(GltfNode::new(&root_node)))
         .collect())
 }
 
@@ -293,7 +285,7 @@ fn build_all_models(
 impl LoadableAsset for GltfAsset {
     fn load(&self) -> Result<Box<dyn LoadedAsset>, ModelBuilderError> {
         let buffer_offsets = get_buffer_offsets(&self.gltf);
-        let node_tree = Arc::new(build_node_trees(&self.gltf)?);
+        let node_tree = build_node_trees(&self.gltf)?;
         let binary_data = super::loader::load_binary_data_from_source(&self.bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
         let animations: Vec<Arc<GltfAnimation>> =

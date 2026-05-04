@@ -1,6 +1,8 @@
-use std::{collections::HashMap, fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData, mem::MaybeUninit, sync::Arc};
 
-use crate::asset_manager_new::gltf::GltfAttributeType;
+use crate::{
+    asset_manager_new::gltf::GltfAttributeType, world::instance_manager::AnimationInstance,
+};
 
 //#[allow(unused)]
 //pub enum AnimationTransform {
@@ -9,49 +11,24 @@ use crate::asset_manager_new::gltf::GltfAttributeType;
 //    Scale(Vec<cgmath::Vector3<f32>>),
 //}
 
-impl AnimationTransforms {
-    pub fn from_bytes(attribute_type: GltfAttributeType, bytes: Vec<u8>) -> Self {
-        let f32_vec: Vec<f32> = bytemuck::cast_vec(bytes);
-        match attribute_type {
-            GltfAttributeType::RotationT => {
-                let mut quat_vec: Vec<[f32; 4]> = Vec::new();
-                for i in 0..f32_vec.len() / 4 {
-                    let quat_slice: [f32; 4] = f32_vec[i * 4..i * 4 + 4].try_into().unwrap();
-                    quat_vec.push(quat_slice);
-                }
-                Self(quat_vec)
-            }
-            GltfAttributeType::TranslationT => {
-                let mut trans_vec: Vec<[f32; 4]> = Vec::new();
-                for i in 0..f32_vec.len() / 3 {
-                    let trans_slice: [f32; 3] = f32_vec[i * 3..i * 3 + 3].try_into().unwrap();
-                    let padded: [f32; 4] = [trans_slice[0], trans_slice[1], trans_slice[2], 0.0];
-                    trans_vec.push(padded);
-                }
-
-                Self(trans_vec)
-            }
-            GltfAttributeType::ScaleT => {
-                let mut scale_vec: Vec<[f32; 4]> = Vec::new();
-                for i in 0..f32_vec.len() / 3 {
-                    let scale_slice: &[f32; 3] = &f32_vec[i * 3..i * 3 + 3].try_into().unwrap();
-                    let padded: [f32; 4] = [scale_slice[0], scale_slice[1], scale_slice[2], 0.0];
-                    scale_vec.push(padded);
-                }
-
-                Self(scale_vec)
-            }
-            _ => panic!("unable to create a transform from this attribute type"),
-        }
-    }
-}
-
 #[repr(C)]
-pub struct AnimationTransforms(Vec<[f32; 4]>);
+pub struct AnimationTransforms(pub Vec<f32>);
+
 pub enum AnimationTransformType {
     Rotation,
     Translation,
     Scale,
+}
+
+impl AnimationTransformType {
+    pub fn from_gltf_prop(prop: &gltf::animation::Property) -> Self {
+        match prop {
+            gltf::animation::Property::Translation => Self::Translation,
+            gltf::animation::Property::Scale => Self::Scale,
+            gltf::animation::Property::Rotation => Self::Rotation,
+            _ => todo!(),
+        }
+    }
 }
 
 #[allow(unused)]
@@ -85,9 +62,9 @@ impl From<gltf::animation::Interpolation> for InterpolationType {
 }
 #[allow(unused)]
 pub struct AnimationSampler {
-    interp: InterpolationType,
-    times: Vec<f32>,
-    transforms: AnimationTransforms,
+    pub interp: InterpolationType,
+    pub times: Vec<f32>,
+    pub transforms: AnimationTransforms,
 }
 
 impl AnimationSampler {
@@ -122,34 +99,36 @@ struct AnimationNode {
     node_id: usize,
 }
 
+pub type AnimationChannels = HashMap<usize, Vec<(usize, AnimationTransformType)>>;
+
+pub struct AnimationSample {
+    pub complete: bool,
+    next_time: f32,
+    end_time: f32,
+    pub cursor: usize,
+}
+
+pub enum SampleResult {
+    Done,
+    Active(usize),
+}
+impl AnimationSample {
+    pub fn sample(&mut self, time_delta: f32) -> SampleResult {
+        if self.complete {
+            return SampleResult::Done;
+        }
+        if time_delta >= self.end_time {
+            self.complete = true;
+        } else if time_delta >= self.next_time {
+            self.cursor += 1;
+        }
+        SampleResult::Active(self.cursor)
+    }
+}
+
 pub trait Animation
 where
     Self: Debug,
 {
-    // TODO: get_animation_frame
-}
-
-pub struct AnimationChannel {
-    target: u32,
-    transform_type: AnimationTransformType,
-}
-
-impl AnimationChannel {
-    pub fn from_gltf_channel(channel: &gltf::animation::Channel) -> Self {
-        let transform_type = match channel.target().property() {
-            gltf::animation::Property::Translation => AnimationTransformType::Translation,
-            gltf::animation::Property::Scale => AnimationTransformType::Scale,
-            gltf::animation::Property::Rotation => AnimationTransformType::Rotation,
-            _ => todo!(),
-        };
-        Self {
-            target: channel.target().node().index() as u32,
-            transform_type,
-        }
-    }
-}
-
-pub struct AnimationSample {
-    end_time: f32,
-    transform_index: i32,
+    fn get_animation_frame(&self, time_delta: f32, instance: &mut AnimationInstance);
 }
