@@ -44,8 +44,8 @@ fn get_animations(
     buffer_offsets: &Vec<usize>,
     binary_data: &Vec<u8>,
     node_tree: &Arc<Vec<GltfNode>>,
-) -> Result<Vec<GltfAnimation>, GltfValidationError> {
-    let mut animations = Vec::<GltfAnimation>::with_capacity(gltf.animations().count());
+) -> Result<Vec<Arc<GltfAnimation>>, GltfValidationError> {
+    let mut animations = Vec::<Arc<GltfAnimation>>::with_capacity(gltf.animations().count());
     for animation in gltf.animations() {
         let mut root_node_ids = Vec::<usize>::new();
         let mut gltf_channels = animation.channels();
@@ -99,11 +99,11 @@ fn get_animations(
         for channel in animation.channels() {
             channels.push(AnimationChannel::from_gltf_channel(&channel));
         }
-        animations.push(GltfAnimation {
+        animations.push(Arc::new(GltfAnimation {
             samplers,
             channels,
             root_nodes: root_node_ids,
-        });
+        }));
     }
     Ok(animations)
 }
@@ -296,7 +296,8 @@ impl LoadableAsset for GltfAsset {
         let node_tree = Arc::new(build_node_trees(&self.gltf)?);
         let binary_data = super::loader::load_binary_data_from_source(&self.bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
-        let animations = get_animations(&self.gltf, &buffer_offsets, &binary_data, &node_tree)?;
+        let animations: Vec<Arc<GltfAnimation>> =
+            get_animations(&self.gltf, &buffer_offsets, &binary_data, &node_tree)?;
         let primitive_data = get_primitive_data_map(&self.gltf)?;
         let index_range_vec = get_index_range_vec(&primitive_data, &buffer_offsets)?;
         let (pnujw, pnu, indices, meshes) = build_all_models(

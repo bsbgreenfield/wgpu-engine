@@ -152,13 +152,13 @@ impl AssetManagerNew {
 
     pub fn get_renderables_for(
         &self,
-        mesh_collection_component: &MeshCollectionComponent,
+        asset_handle: &AssetHandle,
         renderables: &mut Renderables,
         query: &InstanceUploadQuery,
     ) -> Result<(), AssetLoadError> {
         match &self
             .registered_assets
-            .get(&mesh_collection_component.resource_backing)
+            .get(asset_handle)
             .unwrap()
             .residency_level
         {

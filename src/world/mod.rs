@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     asset_manager_new::{AssetHandle, AssetLoadError},
     world::{
-        components::{MeshAcessor, RigidAnimationMode},
+        components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
         entity_manager::{EntityHandle, EntityManagerError},
     },
 };
@@ -94,8 +94,10 @@ impl From<EntityManagerError> for WorldInitError {
 pub struct InstanceUploadQuery<'a> {
     pub needs_meshes: bool,
     pub needs_local_transforms: bool,
+    pub needs_animations: bool,
     pub mesh_accesor: Option<&'a MeshAcessor>,
     pub rigid_animation_mode: Option<&'a RigidAnimationMode>,
+    pub animation_accessor: Option<&'a AnimationAccessor>,
 }
 
 pub trait RenderKey {

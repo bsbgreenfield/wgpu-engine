@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData, sync::Arc};
 
 use crate::asset_manager_new::gltf::GltfAttributeType;
 
@@ -122,7 +122,10 @@ struct AnimationNode {
     node_id: usize,
 }
 
-pub trait Animation {
+pub trait Animation
+where
+    Self: Debug,
+{
     // TODO: get_animation_frame
 }
 
@@ -149,9 +152,4 @@ impl AnimationChannel {
 pub struct AnimationSample {
     end_time: f32,
     transform_index: i32,
-}
-
-pub struct AnimationInstance<A: Animation> {
-    animation: A,
-    samples: Vec<AnimationSample>,
 }

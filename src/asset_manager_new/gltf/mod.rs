@@ -1,4 +1,9 @@
-use std::{any::TypeId, collections::HashMap, fmt::Display, path::PathBuf, sync::Arc};
+use std::{
+    any::TypeId,
+    fmt::{Debug, Display},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use crate::{
     animation::animation::{Animation, AnimationChannel, AnimationSampler},
@@ -9,7 +14,7 @@ use crate::{
     util::types::{LocalTransform, MAT4_IDENTITY, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
         InstanceUploadQuery,
-        components::{MeshAcessor, RigidAnimationMode},
+        components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
         entity_manager::{RenderData, Renderables},
         world::{InstanceUploadData, LocalTransformData},
     },
@@ -56,7 +61,7 @@ pub(super) struct LoadedGltfAsset {
     pnujw_vertices: Vec<PNUJWVertex>,
     pnu_vertices: Vec<PNUVertex>,
     indices: Option<Vec<VIndex>>,
-    animations: Vec<GltfAnimation>,
+    animations: Vec<Arc<GltfAnimation>>,
 }
 
 fn get_root_node(nodes: &[GltfNode], node_id: usize) -> Option<&GltfNode> {
@@ -253,7 +258,7 @@ impl LoadedAsset for LoadedGltfAsset {
                 });
             }
         } else {
-            // the instance spawned, but it does NOT require local transforms, interesting!
+            // the instance spawned, but it does NOT require local transforms, must be shared
             assert!(
                 matches!(query.rigid_animation_mode, Some(RigidAnimationMode::Shared)),
                 "the instance DOESNT need local transforms but ISNT shared?"
@@ -265,6 +270,35 @@ impl LoadedAsset for LoadedGltfAsset {
                     instance_handle: renderables.instance_handle.clone(),
                     local_transforms: LocalTransformData::NeedsDonor,
                 });
+            }
+        }
+
+        // GET ANIMATIONS
+        if query.needs_animations {
+            match query.animation_accessor.unwrap() {
+                AnimationAccessor::Index(idx) => {
+                    renderables
+                        .common
+                        .as_mut()
+                        .unwrap()
+                        .push(RenderData::AnimationData {
+                            animation: vec![self.animations[*idx].clone()],
+                        });
+                }
+                AnimationAccessor::All => {
+                    let mut animation_refs =
+                        Vec::<Arc<dyn Animation>>::with_capacity(self.animations.len());
+                    for anim in self.animations.iter() {
+                        animation_refs.push(anim.clone());
+                    }
+                    renderables
+                        .common
+                        .as_mut()
+                        .unwrap()
+                        .push(RenderData::AnimationData {
+                            animation: animation_refs,
+                        });
+                }
             }
         }
         Ok(())
@@ -316,11 +350,11 @@ impl GltfAttributeType {
 impl Display for GltfLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IOErr(err) => err.fmt(f),
+            Self::IOErr(err) => Display::fmt(err, f),
             Self::InvalidFileError => f.write_str("Gltf load failed due to an invald file type"),
             Self::MultipleFileTypes => f.write_str("Gltf load failed due to there being multiple file types to choose from in the provided asset source file"),
             Self::GltfNeedsBinFile => f.write_str("Gltf load failed due to a missing bin file for the associated gltf file"),
-            Self::GltfPackageError(err) => err.fmt(f),
+            Self::GltfPackageError(err) => Display::fmt(err, f),
             Self::BadFile(str) => f.write_str(str),
             Self::ModelBuilderError(_) => f.write_str("Gltf load failed internally"),
             Self::Unimplemented => f.write_str("This type of gltf loading has not been implemented"),
@@ -345,6 +379,16 @@ pub struct GltfAnimation {
     pub root_nodes: Vec<usize>,
     pub samplers: Vec<AnimationSampler>,
     pub channels: Vec<AnimationChannel>,
+}
+
+impl Debug for GltfAnimation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GltfAnimation")
+            .field("root_nodes", &self.root_nodes)
+            .field("samplers", &self.samplers.len())
+            .field("channels", &self.channels.len())
+            .finish()
+    }
 }
 
 impl Animation for GltfAnimation {}

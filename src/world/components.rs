@@ -79,8 +79,8 @@ pub enum AnimationAccessor {
 }
 
 pub struct AnimationComponent {
-    resource_backing: AssetHandle,
-    animation_accessor: AnimationAccessor,
+    pub resource_backing: AssetHandle,
+    pub animation_accessor: AnimationAccessor,
 }
 
 pub struct AnimationComponentDescriptor {
@@ -99,6 +99,7 @@ impl AnimationComponent {
 
 impl Component for AnimationComponent {
     fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool) {
-        todo!()
+        query.needs_animations = true;
+        query.animation_accessor = Some(&self.animation_accessor);
     }
 }

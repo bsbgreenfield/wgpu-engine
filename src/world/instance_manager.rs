@@ -1,7 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData, ops::Range, sync::Arc};
 
 use crate::{
+    animation::animation::{Animation, AnimationSample},
     app::renderer::{DrawItem, DrawPacket},
+    asset_manager_new::gltf::GltfAnimation,
     util::types::{GlobalTransform, LocalTransform},
     world::{
         RenderKey, WorldUpdateError,
@@ -226,7 +228,50 @@ impl InstanceHandle {
 pub struct InstanceGPUBindings {
     pub lt_offset: u32,
 }
+struct AnimationInstance {
+    samples: Vec<AnimationSample>,
+    animation_idx: usize,
+    delta_time: f32,
+}
 
+#[derive(Default)]
+pub struct AnimationController {
+    registered_animations: HashMap<EntityHandle, Vec<Arc<dyn Animation>>>,
+    // TODO: faster to iterate if this is a flat list?
+    // TODO: support other types of aniamations
+    active_animations: Vec<AnimationInstance>,
+}
+
+impl AnimationController {
+    fn insert_animation_refs(
+        &mut self,
+        animation_refs: Vec<Arc<dyn Animation>>,
+        instance_handle: InstanceHandle,
+    ) {
+        self.registered_animations
+            .entry(instance_handle.entity_handle)
+            .or_insert(animation_refs);
+    }
+
+    /// time offset is unsafe: only use if you are sure the offset is a valid value for the animation, or if
+    /// the animation is repeating
+    fn activate_animations(
+        &mut self,
+        instance_handle: &InstanceHandle,
+        anim_idx: usize,
+        time_offset: Option<f32>,
+    ) -> Option<()> {
+        self.registered_animations
+            .get(&instance_handle.entity_handle)?
+            .get(anim_idx)?;
+        self.active_animations.push(AnimationInstance {
+            samples: vec![],
+            animation_idx: anim_idx,
+            delta_time: time_offset.unwrap_or(0.0),
+        });
+        Some(())
+    }
+}
 pub struct InstanceManager {
     pub(super) next_id: u16,
     gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
@@ -234,6 +279,7 @@ pub struct InstanceManager {
     pub posAnim: APositionAnimatedTable,
     render_groups: Vec<RenderGroup>,
     pub(super) entity_group_index: HashMap<EntityHandle, usize>,
+    animation_controller: AnimationController,
 }
 
 impl InstanceManager {
@@ -263,6 +309,7 @@ impl InstanceManager {
             gpu_bindings: HashMap::new(),
             render_groups: Vec::new(),
             entity_group_index: HashMap::new(),
+            animation_controller: AnimationController::default(),
         }
     }
 
@@ -349,6 +396,10 @@ impl InstanceManager {
                         };
                         views.push(view);
                     }
+                    RenderData::AnimationData { animation } => {
+                        self.animation_controller
+                            .insert_animation_refs(animation, instance_handle.clone());
+                    }
                 }
             }
             // ADD GROUP
@@ -368,6 +419,7 @@ impl InstanceManager {
     pub fn despawn(&mut self, handle: InstanceHandle) {
         match handle.archetype {
             ArchetypeId::Position => self.pos.remove(handle),
+            ArchetypeId::PositionAnimated => self.posAnim.remove(handle),
         }
         // TODO: other tables
     }
@@ -377,6 +429,7 @@ impl InstanceManager {
     pub fn offset_of(&self, archetype: ArchetypeId) -> usize {
         match archetype {
             ArchetypeId::Position => 0,
+            ArchetypeId::PositionAnimated => self.pos.positions.len() - 1,
         }
     }
 

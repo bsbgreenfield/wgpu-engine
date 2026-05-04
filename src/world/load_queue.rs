@@ -231,7 +231,7 @@ mod load_queue_tests {
         let asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
         let entity = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity,
+            &entity,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: asset,
                 allocation_handle: None,
@@ -320,7 +320,7 @@ mod load_queue_tests {
         let asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
         let shared_entity = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            shared_entity,
+            &shared_entity,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: asset,
                 allocation_handle: None,
@@ -411,7 +411,7 @@ mod load_queue_tests {
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_a,
+            &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
@@ -422,7 +422,7 @@ mod load_queue_tests {
 
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_b,
+            &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
@@ -474,7 +474,7 @@ mod load_queue_tests {
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_a,
+            &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
@@ -484,7 +484,7 @@ mod load_queue_tests {
         );
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_b,
+            &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
@@ -558,7 +558,7 @@ mod load_queue_tests {
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_a,
+            &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
@@ -568,7 +568,7 @@ mod load_queue_tests {
         );
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_b,
+            &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
@@ -617,7 +617,7 @@ mod load_queue_tests {
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_a,
+            &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,
@@ -627,7 +627,7 @@ mod load_queue_tests {
         );
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
-            entity_b,
+            &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
                 resource_backing: shared_asset,
                 allocation_handle: None,

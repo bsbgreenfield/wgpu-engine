@@ -1,6 +1,11 @@
-use std::{collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit, ops::Range};
+use std::{
+    collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit, ops::Range, sync::Arc,
+};
+
+use gltf::json::asset;
 
 use crate::{
+    animation::animation::Animation,
     app::renderer::GPUAllocationHandle,
     asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
     util::types::LocalTransform,
@@ -48,6 +53,9 @@ pub enum RenderData {
         pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
         index_ranges: Option<Vec<Range<u32>>>,
     },
+    AnimationData {
+        animation: Vec<Arc<dyn Animation>>,
+    },
 }
 
 #[derive(Debug)]
@@ -89,16 +97,34 @@ impl EntityManager {
             common: None,
             instance_data: None,
         };
+        let mut assets = HashSet::<AssetHandle>::new();
         let mesh_collection = self
             .mesh_collections
             .get(instance_handle.entity_handle.0 as usize);
         if let Some(mesh_collection) = mesh_collection {
             mesh_collection.modify_query(&mut query, is_instanced);
+            assets.insert(mesh_collection.resource_backing.clone());
+            //self.asset_manager
+            //    .get_renderables_for(mesh_collection, &mut renderables, &query)
+            //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
+        }
+        if let Some(animation) = self
+            .animations
+            .get(instance_handle.entity_handle.0 as usize)
+        {
+            animation.modify_query(&mut query, is_instanced);
+            assets.insert(animation.resource_backing);
+        }
+
+        // TODO: collect other instance render data
+
+        // for each unique asset handle that makes up the entity, fetch renderable data
+        for asset in assets.iter() {
             self.asset_manager
-                .get_renderables_for(mesh_collection, &mut renderables, &query)
+                .get_renderables_for(asset, &mut renderables, &query)
                 .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
         }
-        // TODO: collect other instance render data
+
         Ok(renderables)
     }
 
