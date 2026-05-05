@@ -113,7 +113,7 @@ impl AnimationSample {
         Self {
             complete: false,
             next_time: times[1],
-            end_time: times[times.len()],
+            end_time: times[times.len() - 1],
             cursor: 0,
         }
     }
@@ -125,7 +125,7 @@ pub enum SampleResult {
     End,
 }
 impl AnimationSample {
-    pub fn sample(&mut self, time_delta: f32) -> SampleResult {
+    pub fn sample(&mut self, time_delta: f32, times: &[f32]) -> SampleResult {
         if self.complete {
             return SampleResult::Done;
         } else if time_delta >= self.end_time {
@@ -133,6 +133,7 @@ impl AnimationSample {
             return SampleResult::Done;
         } else if time_delta >= self.next_time {
             self.cursor += 1;
+            self.next_time = times[self.cursor + 1]
         }
         SampleResult::Active(self.cursor)
     }

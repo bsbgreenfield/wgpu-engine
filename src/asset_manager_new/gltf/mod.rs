@@ -59,7 +59,7 @@ impl Asset for GltfAsset {
 }
 
 #[derive(Debug)]
-pub(super) enum NodeTransforms {
+pub(crate) enum NodeTransforms {
     Translation(cgmath::Vector3<f32>),
     Rotation(cgmath::Quaternion<f32>),
     Scale(cgmath::Vector3<f32>),
@@ -90,11 +90,28 @@ pub enum NodeType {
 }
 
 #[derive(Debug)]
-struct GltfNode {
+pub(crate) struct GltfNode {
     node_type: NodeType,
     node_id: usize,
     children: Vec<GltfNode>,
     transform_components: [NodeTransforms; 3],
+}
+
+#[cfg(test)]
+impl GltfNode {
+    pub fn mock(
+        node_type: NodeType,
+        id: usize,
+        children: Vec<GltfNode>,
+        transforms: [NodeTransforms; 3],
+    ) -> Self {
+        Self {
+            node_type,
+            node_id: id,
+            children,
+            transform_components: transforms,
+        }
+    }
 }
 
 impl PartialEq for GltfNode {
@@ -485,6 +502,23 @@ pub struct GltfAnimation {
     pub channels: AnimationChannels,
 }
 
+#[cfg(test)]
+impl GltfAnimation {
+    pub fn new_for_test(
+        nodes: Vec<Arc<GltfNode>>,
+        buffer_slot_map: HashMap<usize, usize>,
+        samplers: Vec<AnimationSampler>,
+        channels: AnimationChannels,
+    ) -> Self {
+        Self {
+            root_nodes: nodes,
+            buffer_slot_map,
+            samplers,
+            channels,
+        }
+    }
+}
+
 impl Debug for GltfAnimation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GltfAnimation")
@@ -507,30 +541,27 @@ fn get_animation_data_for_node(
     let mut scale: Option<Vector3<f32>> = None;
     if let Some(node_channels) = animation.channels.get(&node.node_id) {
         for (sampler_idx, anim_type) in node_channels {
+            let sampler = &animation.samplers[*sampler_idx];
             let sample_result = animation_instance
                 .samples
                 .get_mut(sampler_idx)
                 .unwrap()
-                .sample(time_delta);
+                .sample(time_delta, &sampler.times);
 
             match sample_result {
                 SampleResult::Done => return,
-                SampleResult::End => {
-                    let sampler = &animation.samplers[*sampler_idx];
-                    match anim_type {
-                        AnimationTransformType::Rotation => {
-                            rotation = Some(last_quat(&sampler.transforms.0));
-                        }
-                        AnimationTransformType::Translation => {
-                            translation = Some(last_vec3(&sampler.transforms.0));
-                        }
-                        AnimationTransformType::Scale => {
-                            scale = Some(last_vec3(&sampler.transforms.0));
-                        }
+                SampleResult::End => match anim_type {
+                    AnimationTransformType::Rotation => {
+                        rotation = Some(last_quat(&sampler.transforms.0));
                     }
-                }
+                    AnimationTransformType::Translation => {
+                        translation = Some(last_vec3(&sampler.transforms.0));
+                    }
+                    AnimationTransformType::Scale => {
+                        scale = Some(last_vec3(&sampler.transforms.0));
+                    }
+                },
                 SampleResult::Active(i) => {
-                    let sampler = &animation.samplers[*sampler_idx];
                     let ratio =
                         (time_delta - sampler.times[i]) / (sampler.times[i + 1] - sampler.times[i]);
                     match anim_type {
@@ -724,12 +755,13 @@ impl Animation for GltfAnimation {
 
     fn init_samples(&self) -> HashMap<usize, crate::animation::animation::AnimationSample> {
         let mut res = HashMap::new();
-        for (sampler_idx, _) in self.channels.iter() {
-            let times = &self.samplers.get(*sampler_idx).unwrap().times;
-            res.insert(sampler_idx, AnimationSample::init(times));
+        for node_channel in self.channels.values() {
+            for (sampler_idx, _) in node_channel.iter() {
+                let times = &self.samplers.get(*sampler_idx).unwrap().times;
+                res.insert(*sampler_idx, AnimationSample::init(times));
+            }
         }
-
-        todo!()
+        res
     }
 }
 

@@ -239,6 +239,21 @@ pub struct AnimationInstance {
     instance_handle: InstanceHandle,
 }
 
+#[cfg(test)]
+impl AnimationInstance {
+    pub fn new_for_test(samples: HashMap<usize, AnimationSample>, count: usize) -> Self {
+        use std::time::Instant;
+
+        Self {
+            samples,
+            animation_idx: 0,
+            start_time: Instant::now(),
+            buffer: Vec::with_capacity(count),
+            instance_handle: InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct AnimationController {
     registered_animations: HashMap<EntityHandle, Vec<Arc<dyn Animation>>>,
