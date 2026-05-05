@@ -1,17 +1,18 @@
 use std::{
     any::TypeId,
+    collections::HashMap,
     fmt::{Debug, Display},
     hash::Hash,
-    ops::Deref,
     path::PathBuf,
     sync::Arc,
 };
 
-use cgmath::{Matrix4, Quaternion};
+use cgmath::{Matrix4, Quaternion, SquareMatrix, Vector3};
+use rand::rand_core::le;
 
 use crate::{
     animation::animation::{
-        Animation, AnimationChannel, AnimationChannels, AnimationSampler, AnimationTransformType,
+        Animation, AnimationChannels, AnimationSample, AnimationSampler, AnimationTransformType,
         SampleResult,
     },
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
@@ -23,6 +24,7 @@ use crate::{
         InstanceUploadQuery,
         components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
         entity_manager::{RenderData, Renderables},
+        instance_manager::AnimationInstance,
         world::{InstanceUploadData, LocalTransformData},
     },
 };
@@ -55,17 +57,49 @@ impl Asset for GltfAsset {
         })
     }
 }
+
+#[derive(Debug)]
+pub(super) enum NodeTransforms {
+    Translation(cgmath::Vector3<f32>),
+    Rotation(cgmath::Quaternion<f32>),
+    Scale(cgmath::Vector3<f32>),
+}
+
+impl NodeTransforms {
+    pub fn to_matrix(components: &[NodeTransforms; 3]) -> cgmath::Matrix4<f32> {
+        let mut t = cgmath::Matrix4::from_translation(cgmath::Vector3::new(0.0, 0.0, 0.0));
+        let mut r = cgmath::Matrix4::from(cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0));
+        let mut s = cgmath::Matrix4::from_scale(1.0);
+        for component in components {
+            match component {
+                NodeTransforms::Translation(v) => t = cgmath::Matrix4::from_translation(*v),
+                NodeTransforms::Rotation(q) => r = cgmath::Matrix4::from(*q),
+                NodeTransforms::Scale(v) => {
+                    s = cgmath::Matrix4::from_nonuniform_scale(v.x, v.y, v.z)
+                }
+            }
+        }
+        t * r * s
+    }
+}
+
+#[derive(Debug)]
+pub enum NodeType {
+    Mesh(usize),
+    Node,
+}
+
 #[derive(Debug)]
 struct GltfNode {
-    mesh_id: Option<usize>,
+    node_type: NodeType,
     node_id: usize,
     children: Vec<GltfNode>,
-    transform: Mat4F32,
+    transform_components: [NodeTransforms; 3],
 }
 
 impl PartialEq for GltfNode {
     fn eq(&self, other: &Self) -> bool {
-        self.mesh_id == other.mesh_id
+        self.node_id == other.node_id
     }
 }
 
@@ -129,22 +163,32 @@ pub(super) fn get_root_node_from_child_id(
         if root.node_id == child_id {
             return Some(root.clone());
         }
-        if get_root_node(&root.children, child_id).is_some() {
+        if find_in_children(&root.children, child_id).is_some() {
             return Some(root.clone());
         }
     }
     None
 }
 
+fn collect_mesh_ids(node: &GltfNode, mesh_list: &mut Vec<usize>) {
+    if let NodeType::Mesh(mesh_id) = node.node_type {
+        mesh_list.push(mesh_id);
+    }
+    for child in node.children.iter() {
+        collect_mesh_ids(child, mesh_list);
+    }
+}
+
 fn collect_mesh_instances(
     node: &GltfNode,
-    parent_transform: Mat4F32,
+    parent_transform: cgmath::Matrix4<f32>,
 ) -> Vec<(u32, LocalTransform)> {
     let mut result = Vec::<(u32, LocalTransform)>::new();
     use cgmath::Matrix4;
-    let accumulated: Mat4F32 =
-        (Matrix4::from(parent_transform) * Matrix4::from(node.transform)).into();
-    if let Some(mesh_id) = node.mesh_id {
+    let accumulated: cgmath::Matrix4<f32> =
+        Matrix4::from(parent_transform) * NodeTransforms::to_matrix(&node.transform_components);
+
+    if let NodeType::Mesh(mesh_id) = node.node_type {
         result.push((mesh_id as u32, accumulated.into()));
     }
     for child in &node.children {
@@ -152,13 +196,16 @@ fn collect_mesh_instances(
     }
     result
 }
-fn collect_local_transforms(node: &GltfNode, parent_transform: Mat4F32) -> Vec<LocalTransform> {
+fn collect_local_transforms(
+    node: &GltfNode,
+    parent_transform: cgmath::Matrix4<f32>,
+) -> Vec<LocalTransform> {
     use cgmath::Matrix4;
-    let accumulated: Mat4F32 =
-        (Matrix4::from(parent_transform) * Matrix4::from(node.transform)).into();
+    let accumulated: cgmath::Matrix4<f32> =
+        Matrix4::from(parent_transform) * NodeTransforms::to_matrix(&node.transform_components);
 
     let mut result = Vec::new();
-    if node.mesh_id.is_some() {
+    if let NodeType::Mesh(_) = node.node_type {
         result.push(accumulated.into());
     }
     for child in &node.children {
@@ -216,11 +263,15 @@ impl LoadedAsset for LoadedGltfAsset {
                 MeshAcessor::All => self
                     .node_tree
                     .iter()
-                    .flat_map(|node| collect_mesh_instances(node, MAT4_IDENTITY))
+                    .flat_map(|node| {
+                        collect_mesh_instances(node, cgmath::Matrix4::<f32>::identity())
+                    })
                     .collect(),
                 MeshAcessor::GltfRootNode(root) => {
                     match get_root_node(&self.node_tree, *root as usize) {
-                        Some(root_node) => collect_mesh_instances(root_node, MAT4_IDENTITY),
+                        Some(root_node) => {
+                            collect_mesh_instances(root_node, cgmath::Matrix4::<f32>::identity())
+                        }
                         None => {
                             return Err(AssetLoadError::InstanceUploadFailure(String::from(
                                 "The root node defined for this entity is not valid for the asset",
@@ -282,11 +333,15 @@ impl LoadedAsset for LoadedGltfAsset {
                 MeshAcessor::All => self
                     .node_tree
                     .iter()
-                    .flat_map(|node| collect_local_transforms(node, MAT4_IDENTITY))
+                    .flat_map(|node| {
+                        collect_local_transforms(node, cgmath::Matrix4::<f32>::identity())
+                    })
                     .collect(),
                 MeshAcessor::GltfRootNode(root) => {
                     match get_root_node(&self.node_tree, *root as usize) {
-                        Some(root_node) => collect_local_transforms(root_node, MAT4_IDENTITY),
+                        Some(root_node) => {
+                            collect_local_transforms(root_node, cgmath::Matrix4::<f32>::identity())
+                        }
                         None => {
                             return Err(AssetLoadError::InstanceUploadFailure(String::from(
                                 "The root node defined for this entity is not valid for the asset",
@@ -424,7 +479,8 @@ impl From<gltf::Error> for GltfLoadError {
 }
 
 pub struct GltfAnimation {
-    pub root_nodes: Vec<Arc<GltfNode>>,
+    root_nodes: Vec<Arc<GltfNode>>,
+    buffer_slot_map: HashMap<usize, usize>,
     pub samplers: Vec<AnimationSampler>,
     pub channels: AnimationChannels,
 }
@@ -439,56 +495,245 @@ impl Debug for GltfAnimation {
     }
 }
 
-impl Animation for GltfAnimation {
-    fn get_animation_frame(
-        &self,
-        time_delta: f32,
-        instance: &mut crate::world::instance_manager::AnimationInstance,
-    ) {
-        for node in self.root_nodes.iter() {
-            let mut rotation: Option<Quaternion<f32>> = None;
-            let mut translation: Option<Matrix4<f32>> = None;
-            let mut scale: Option<Matrix4<f32>> = None;
-            if let Some(samplers) = self.channels.get(&node.node_id) {
-                let sample_result = instance
-                    .samples
-                    .get_mut(&node.node_id)
-                    .unwrap()
-                    .sample(time_delta);
+fn get_animation_data_for_node(
+    node: &GltfNode,
+    base_transform: &cgmath::Matrix4<f32>,
+    time_delta: f32,
+    animation: &GltfAnimation,
+    animation_instance: &mut AnimationInstance,
+) {
+    let mut rotation: Option<Quaternion<f32>> = None;
+    let mut translation: Option<Vector3<f32>> = None;
+    let mut scale: Option<Vector3<f32>> = None;
+    if let Some(node_channels) = animation.channels.get(&node.node_id) {
+        for (sampler_idx, anim_type) in node_channels {
+            let sample_result = animation_instance
+                .samples
+                .get_mut(sampler_idx)
+                .unwrap()
+                .sample(time_delta);
 
-                match sample_result {
-                    SampleResult::Done => continue,
-                    SampleResult::Active(i) => {
-                        for (sampler_idx, anim_type) in samplers {
-                            let sampler = &self.samplers[*sampler_idx];
-                            let ratio =
-                                (time_delta - instance.start_time.as_secs_f32() - sampler.times[i])
-                                    / (sampler.times[i + 1] - sampler.times[i]);
-                            match anim_type {
-                                AnimationTransformType::Rotation => {
-                                    rotation =
-                                        Some(interpolate_as_quats(i, ratio, &sampler.transforms.0));
-                                }
-                                AnimationTransformType::Translation => {
-                                    translation = Some(cgmath::Matrix4::from_translation(
-                                        interpolate_as_vec3(i, ratio, &sampler.transforms.0),
-                                    ));
-                                }
-                                AnimationTransformType::Scale => {
-                                    let s = interpolate_as_vec3(i, ratio, &sampler.transforms.0);
-                                    scale =
-                                        Some(cgmath::Matrix4::from_nonuniform_scale(s.x, s.y, s.z));
-                                }
-                            }
+            match sample_result {
+                SampleResult::Done => return,
+                SampleResult::End => {
+                    let sampler = &animation.samplers[*sampler_idx];
+                    match anim_type {
+                        AnimationTransformType::Rotation => {
+                            rotation = Some(last_quat(&sampler.transforms.0));
+                        }
+                        AnimationTransformType::Translation => {
+                            translation = Some(last_vec3(&sampler.transforms.0));
+                        }
+                        AnimationTransformType::Scale => {
+                            scale = Some(last_vec3(&sampler.transforms.0));
+                        }
+                    }
+                }
+                SampleResult::Active(i) => {
+                    let sampler = &animation.samplers[*sampler_idx];
+                    let ratio =
+                        (time_delta - sampler.times[i]) / (sampler.times[i + 1] - sampler.times[i]);
+                    match anim_type {
+                        AnimationTransformType::Rotation => {
+                            rotation = Some(interpolate_as_quats(i, ratio, &sampler.transforms.0));
+                        }
+                        AnimationTransformType::Translation => {
+                            translation =
+                                Some(interpolate_as_vec3(i, ratio, &sampler.transforms.0));
+                        }
+                        AnimationTransformType::Scale => {
+                            scale = Some(interpolate_as_vec3(i, ratio, &sampler.transforms.0));
                         }
                     }
                 }
             }
         }
     }
+    let node_transform = {
+        let translation: Vector3<f32> = translation.unwrap_or_else(|| {
+            let NodeTransforms::Translation(t) = node.transform_components[0] else {
+                unreachable!()
+            };
+            t
+        });
+        let rotation: Quaternion<f32> = rotation.unwrap_or_else(|| {
+            let NodeTransforms::Rotation(r) = node.transform_components[1] else {
+                unreachable!()
+            };
+            r
+        });
+        let scale: Vector3<f32> = scale.unwrap_or_else(|| {
+            let NodeTransforms::Scale(s) = node.transform_components[2] else {
+                unreachable!()
+            };
+            s
+        });
+        cgmath::Matrix4::from_translation(translation)
+            * cgmath::Matrix4::from(rotation)
+            * cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
+    };
+
+    let global = base_transform * node_transform;
+
+    match node.node_type {
+        NodeType::Mesh(mesh_id) => {
+            animation_instance.buffer[animation.buffer_slot_map[&mesh_id]] = global.into();
+        }
+        NodeType::Node => {
+            //
+        }
+    }
+
+    for child_node in node.children.iter() {
+        get_animation_data_for_node(
+            child_node,
+            &global,
+            time_delta,
+            animation,
+            animation_instance,
+        );
+    }
 }
 
-fn interpolate_as_quats(cursor: usize, ratio: f32, floats: &Vec<f32>) -> cgmath::Quaternion<f32> {
+//fn get_animation_data_for_node(
+//    node: &GltfNode,
+//    base_transform: &cgmath::Matrix4<f32>,
+//    time_delta: f32,
+//    animation: &GltfAnimation,
+//    animation_instance: &mut AnimationInstance,
+//) {
+//    let mut rotation: Option<Quaternion<f32>> = None;
+//    let mut translation: Option<Vector3<f32>> = None;
+//    let mut scale: Option<Vector3<f32>> = None;
+//    if let Some(node_channels) = animation.channels.get(&node.node_id) {
+//        let sample_result = animation_instance
+//            .samples
+//            .get_mut(&node.node_id)
+//            .unwrap()
+//            .sample(time_delta);
+//
+//        match sample_result {
+//            SampleResult::Done => return,
+//            SampleResult::End => {
+//                for (sampler_idx, anim_type) in node_channels {
+//                    let sampler = &animation.samplers[*sampler_idx];
+//                    match anim_type {
+//                        AnimationTransformType::Rotation => {
+//                            rotation = Some(last_quat(&sampler.transforms.0));
+//                        }
+//                        AnimationTransformType::Translation => {
+//                            translation = Some(last_vec3(&sampler.transforms.0));
+//                        }
+//                        AnimationTransformType::Scale => {
+//                            scale = Some(last_vec3(&sampler.transforms.0));
+//                        }
+//                    }
+//                }
+//            }
+//            SampleResult::Active(i) => {
+//                for (sampler_idx, anim_type) in node_channels {
+//                    let sampler = &animation.samplers[*sampler_idx];
+//                    let ratio =
+//                        (time_delta - sampler.times[i]) / (sampler.times[i + 1] - sampler.times[i]);
+//                    match anim_type {
+//                        AnimationTransformType::Rotation => {
+//                            rotation = Some(interpolate_as_quats(i, ratio, &sampler.transforms.0));
+//                        }
+//                        AnimationTransformType::Translation => {
+//                            translation =
+//                                Some(interpolate_as_vec3(i, ratio, &sampler.transforms.0));
+//                        }
+//                        AnimationTransformType::Scale => {
+//                            scale = Some(interpolate_as_vec3(i, ratio, &sampler.transforms.0));
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//    }
+//    let node_transform = {
+//        let translation: Vector3<f32> = translation.unwrap_or_else(|| {
+//            let NodeTransforms::Translation(t) = node.transform_components[0] else {
+//                unreachable!()
+//            };
+//            t
+//        });
+//        let rotation: Quaternion<f32> = rotation.unwrap_or_else(|| {
+//            let NodeTransforms::Rotation(r) = node.transform_components[1] else {
+//                unreachable!()
+//            };
+//            r
+//        });
+//        let scale: Vector3<f32> = scale.unwrap_or_else(|| {
+//            let NodeTransforms::Scale(s) = node.transform_components[2] else {
+//                unreachable!()
+//            };
+//            s
+//        });
+//        cgmath::Matrix4::from_translation(translation)
+//            * cgmath::Matrix4::from(rotation)
+//            * cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
+//    };
+//
+//    let global = base_transform * node_transform;
+//
+//    match node.node_type {
+//        NodeType::Mesh(mesh_id) => {
+//            animation_instance.buffer[animation.buffer_slot_map[&mesh_id]] = global.into();
+//        }
+//        NodeType::Node => {
+//            //
+//        }
+//    }
+//
+//    for child_node in node.children.iter() {
+//        get_animation_data_for_node(
+//            child_node,
+//            &global,
+//            time_delta,
+//            animation,
+//            animation_instance,
+//        );
+//    }
+//}
+
+impl Animation for GltfAnimation {
+    fn count(&self) -> usize {
+        self.buffer_slot_map.len()
+    }
+    fn get_animation_frame(
+        &self,
+        time_delta: f32,
+        animation_instance: &mut crate::world::instance_manager::AnimationInstance,
+        base_transform: &cgmath::Matrix4<f32>,
+    ) {
+        for node in self.root_nodes.iter() {
+            get_animation_data_for_node(
+                node,
+                base_transform,
+                time_delta,
+                &self,
+                animation_instance,
+            );
+        }
+    }
+
+    fn get_buffer_slot(&self, id: usize) -> usize {
+        self.buffer_slot_map[&id]
+    }
+
+    fn init_samples(&self) -> HashMap<usize, crate::animation::animation::AnimationSample> {
+        let mut res = HashMap::new();
+        for (sampler_idx, _) in self.channels.iter() {
+            let times = &self.samplers.get(*sampler_idx).unwrap().times;
+            res.insert(sampler_idx, AnimationSample::init(times));
+        }
+
+        todo!()
+    }
+}
+
+fn interpolate_as_quats(cursor: usize, ratio: f32, floats: &[f32]) -> cgmath::Quaternion<f32> {
     let quats: &[[f32; 4]] = bytemuck::cast_slice(floats);
     let q0 = quats[cursor];
     let q1 = quats[cursor + 1];
@@ -516,4 +761,13 @@ fn interpolate_as_vec3(cursor: usize, ratio: f32, floats: &[f32]) -> cgmath::Vec
         v0[1] + ratio * (v1[1] - v0[1]),
         v0[2] + ratio * (v1[2] - v0[2]),
     )
+}
+
+fn last_quat(floats: &[f32]) -> cgmath::Quaternion<f32> {
+    let last: &[f32] = &floats[floats.len() - 4..floats.len()];
+    cgmath::Quaternion::new(last[3], last[0], last[1], last[2])
+}
+fn last_vec3(floats: &[f32]) -> cgmath::Vector3<f32> {
+    let last: &[f32] = &floats[floats.len() - 3..floats.len()];
+    cgmath::Vector3::new(last[0], last[1], last[2])
 }

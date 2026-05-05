@@ -202,6 +202,7 @@ impl World {
     ) -> InstanceUploadData {
         self.instance_manager
             .spawn(entity_handle, &self.entity_manager, archetype)
+            .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e))
     }
 
     pub fn update<'frame>(
@@ -220,6 +221,8 @@ impl World {
                 .get_upload_job_for(handle)?;
             deltas.push(WorldUpdateDelta::AssetDidLoad(job));
         }
+
+        self.instance_manager.update();
 
         Ok(deltas)
     }

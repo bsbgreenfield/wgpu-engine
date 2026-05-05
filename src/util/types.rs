@@ -81,6 +81,11 @@ impl From<Mat4F32> for LocalTransform {
         Self(value)
     }
 }
+impl From<cgmath::Matrix4<f32>> for LocalTransform {
+    fn from(value: cgmath::Matrix4<f32>) -> Self {
+        Self(mat4_from_cgmath(value))
+    }
+}
 
 pub fn mat4_from_cgmath(value: cgmath::Matrix4<f32>) -> Mat4F32 {
     let x: [f32; 4] = value.x.into();

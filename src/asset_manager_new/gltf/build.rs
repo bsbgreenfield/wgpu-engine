@@ -7,7 +7,9 @@ use crate::animation::animation::{
     InterpolationType,
 };
 use crate::asset_manager_new::gltf::mesh::copy_binary_data_from_gltf;
-use crate::asset_manager_new::gltf::{GltfAnimation, get_root_node_from_child_id};
+use crate::asset_manager_new::gltf::{
+    GltfAnimation, NodeTransforms, NodeType, collect_mesh_ids, get_root_node_from_child_id,
+};
 use crate::asset_manager_new::{GltfValidationError, LoadedAsset, ModelBuilderError};
 use crate::util::types::{ModelVertex, VIndex};
 use crate::{
@@ -25,15 +27,25 @@ use crate::{
 impl GltfNode {
     fn new(node: &gltf::Node) -> Self {
         let node_id = node.index();
-        let mesh_id = node.mesh().map(|m| m.index());
         let children: Vec<GltfNode> = node.children().map(|c| GltfNode::new(&c)).collect();
         Self {
-            mesh_id,
+            node_type: match node.mesh() {
+                Some(m) => NodeType::Mesh(m.index()),
+                None => NodeType::Node,
+            },
             node_id,
             children,
-            transform: node.transform().matrix(),
+            transform_components: gltf_mat_to_transforms(node.transform().decomposed()),
         }
     }
+}
+
+fn gltf_mat_to_transforms(transforms: ([f32; 3], [f32; 4], [f32; 3])) -> [NodeTransforms; 3] {
+    return [
+        NodeTransforms::Translation(transforms.0.into()),
+        NodeTransforms::Rotation(transforms.1.into()),
+        NodeTransforms::Scale(transforms.2.into()),
+    ];
 }
 
 fn get_animations(
@@ -91,10 +103,21 @@ fn get_animations(
             ));
         }
 
+        // build buffer slot map
+        let mut ordered_mesh_id_list = Vec::new();
+        for root_node in root_nodes.iter() {
+            collect_mesh_ids(root_node, &mut ordered_mesh_id_list);
+        }
+        let mut buffer_slot_map = HashMap::new();
+        for (slot, mesh_id) in ordered_mesh_id_list.iter().enumerate() {
+            buffer_slot_map.insert(*mesh_id, slot);
+        }
+
         animations.push(Arc::new(GltfAnimation {
             samplers,
             channels,
             root_nodes,
+            buffer_slot_map,
         }));
     }
     Ok(animations)

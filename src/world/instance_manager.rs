@@ -1,12 +1,12 @@
-use std::{collections::HashMap, marker::PhantomData, ops::Range, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
+use cgmath::SquareMatrix;
 use time::{Duration, ext::InstantExt};
 
 use crate::{
     animation::animation::{Animation, AnimationSample},
     app::renderer::{DrawItem, DrawPacket},
-    asset_manager_new::gltf::GltfAnimation,
-    util::types::{GlobalTransform, LocalTransform},
+    util::types::{GlobalTransform, LocalTransform, Mat4F32},
     world::{
         RenderKey, WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager, RenderData},
@@ -234,7 +234,8 @@ pub struct InstanceGPUBindings {
 pub struct AnimationInstance {
     pub samples: HashMap<usize, AnimationSample>,
     animation_idx: usize,
-    pub start_time: std::time::Duration,
+    pub start_time: std::time::Instant,
+    pub buffer: Vec<Mat4F32>,
     instance_handle: InstanceHandle,
 }
 
@@ -265,11 +266,13 @@ impl AnimationController {
         anim_idx: usize,
         time_offset: Option<f32>,
     ) -> Option<()> {
-        self.registered_animations
+        let animation = self
+            .registered_animations
             .get(&instance_handle.entity_handle)?
             .get(anim_idx)?;
         self.active_animations.push(AnimationInstance {
             samples: HashMap::new(),
+            buffer: Vec::with_capacity(animation.count()),
             animation_idx: anim_idx,
             start_time: std::time::Instant::now()
                 .add_signed(Duration::milliseconds(time_offset.unwrap_or(0.0) as i64)),
@@ -335,22 +338,32 @@ impl InstanceManager {
         }
     }
 
-    pub(super) fn spawn<'a>(
+    pub(super) fn update(&mut self) {
+        // DO ANIMATIONS
+        for active_animation in self.animation_controller.active_animations.iter_mut() {
+            let animation = &self
+                .animation_controller
+                .registered_animations
+                .get(&active_animation.instance_handle.entity_handle)
+                .unwrap()[active_animation.animation_idx];
+
+            let now = std::time::Instant::now();
+            let time_delta: f32 = (now - active_animation.start_time).as_secs_f32();
+            animation.get_animation_frame(
+                time_delta,
+                active_animation,
+                &cgmath::Matrix4::<f32>::identity(),
+            );
+        }
+    }
+
+    pub(super) fn spawn(
         &mut self,
         entity_handle: &EntityHandle,
         entity_manager: &EntityManager,
         data: Box<dyn Archetype>,
-    ) -> InstanceUploadData {
-        let instance_handle = data.insert_self(self, entity_handle);
-        self.update_render_state(&instance_handle, entity_manager)
-            .unwrap_or_else(|e| panic!("could not spawn: {e:?}"))
-    }
-
-    fn update_render_state(
-        &mut self,
-        instance_handle: &InstanceHandle,
-        entity_manager: &EntityManager,
     ) -> Result<InstanceUploadData, WorldUpdateError> {
+        let instance_handle = &data.insert_self(self, entity_handle);
         let is_instanced = self
             .entity_group_index
             .contains_key(&instance_handle.entity_handle);
@@ -507,22 +520,31 @@ impl InstanceManager {
         let mut render_frame = RenderFrame::default();
         self.pos.collect(&mut render_frame);
 
-        for active_animation in self.animation_controller.active_animations.iter() {
+        for animation_instance in self.animation_controller.active_animations.iter() {
             let lt_offset = self
                 .gpu_bindings
-                .get(&active_animation.instance_handle)
+                .get(&animation_instance.instance_handle)
                 .unwrap()
                 .lt_offset;
 
-            let now = std::time::Instant::now();
+            render_frame.rigid_animation_data.push(AnimationUpdate {
+                buffer_offset: lt_offset,
+                transforms: bytemuck::cast_slice(&animation_instance.buffer),
+            });
         }
-
         render_frame
     }
+}
+
+#[derive(Debug)]
+pub struct AnimationUpdate<'frame> {
+    pub buffer_offset: u32,
+    pub transforms: &'frame [u8],
 }
 
 #[derive(Debug, Default)]
 pub struct RenderFrame<'frame> {
     pub global_transforms: Vec<&'frame [u8]>,
     pub local_transforms: Vec<&'frame [u8]>,
+    rigid_animation_data: Vec<AnimationUpdate<'frame>>,
 }

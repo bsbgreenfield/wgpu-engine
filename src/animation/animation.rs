@@ -108,17 +108,29 @@ pub struct AnimationSample {
     pub cursor: usize,
 }
 
+impl AnimationSample {
+    pub fn init(times: &[f32]) -> Self {
+        Self {
+            complete: false,
+            next_time: times[1],
+            end_time: times[times.len()],
+            cursor: 0,
+        }
+    }
+}
+
 pub enum SampleResult {
     Done,
     Active(usize),
+    End,
 }
 impl AnimationSample {
     pub fn sample(&mut self, time_delta: f32) -> SampleResult {
         if self.complete {
             return SampleResult::Done;
-        }
-        if time_delta >= self.end_time {
+        } else if time_delta >= self.end_time {
             self.complete = true;
+            return SampleResult::Done;
         } else if time_delta >= self.next_time {
             self.cursor += 1;
         }
@@ -130,5 +142,16 @@ pub trait Animation
 where
     Self: Debug,
 {
-    fn get_animation_frame(&self, time_delta: f32, instance: &mut AnimationInstance);
+    fn get_animation_frame(
+        &self,
+        time_delta: f32,
+        animation_instance: &mut AnimationInstance,
+        base_translation: &cgmath::Matrix4<f32>,
+    );
+
+    fn count(&self) -> usize;
+
+    fn get_buffer_slot(&self, id: usize) -> usize;
+
+    fn init_samples(&self) -> HashMap<usize, AnimationSample>;
 }
