@@ -308,6 +308,24 @@ pub struct InstanceManager {
 
 impl InstanceManager {
     #[cfg(test)]
+    pub fn get_active_animations(&self) -> &[AnimationInstance] {
+        &self.animation_controller.active_animations
+    }
+
+    #[cfg(test)]
+    pub fn get_animation_ref(
+        &self,
+        entity_handle: &EntityHandle,
+        index: usize,
+    ) -> &Arc<dyn Animation> {
+        &self
+            .animation_controller
+            .registered_animations
+            .get(entity_handle)
+            .unwrap()[index]
+    }
+
+    #[cfg(test)]
     pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
         self.gpu_bindings.keys().cloned().collect()
     }

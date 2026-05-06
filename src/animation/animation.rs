@@ -14,6 +14,7 @@ use crate::{
 #[repr(C)]
 pub struct AnimationTransforms(pub Vec<f32>);
 
+#[derive(Debug)]
 pub enum AnimationTransformType {
     Rotation,
     Translation,
@@ -157,4 +158,7 @@ where
     fn get_buffer_slot(&self, id: usize) -> usize;
 
     fn init_samples(&self) -> Vec<AnimationSample>;
+
+    #[cfg(test)]
+    fn get_channels_and_samplers(&self) -> (&AnimationChannels, &Vec<AnimationSampler>);
 }

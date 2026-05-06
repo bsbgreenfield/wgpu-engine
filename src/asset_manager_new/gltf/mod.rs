@@ -625,7 +625,9 @@ fn get_animation_data_for_node(
 
     match node.node_type {
         NodeType::Mesh(mesh_id) => {
-            animation_instance.buffer[animation.buffer_slot_map[&mesh_id]] = global.into();
+            animation_instance
+                .buffer
+                .insert(animation.buffer_slot_map[&mesh_id], global.into());
         }
         NodeType::Node => {
             //
@@ -674,6 +676,11 @@ impl Animation for GltfAnimation {
             samples.push(AnimationSample::init(&sampler.times));
         }
         samples
+    }
+
+    #[cfg(test)]
+    fn get_channels_and_samplers(&self) -> (&AnimationChannels, &Vec<AnimationSampler>) {
+        (&self.channels, &self.samplers)
     }
 }
 

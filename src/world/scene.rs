@@ -166,6 +166,54 @@ impl Scene {
     }
 
     #[cfg(test)]
+    pub fn box_animated(world: &mut World) -> Result<Self, WorldInitError> {
+        use cgmath::SquareMatrix;
+
+        use crate::{
+            asset_manager_new::gltf::GltfAsset,
+            world::{
+                components::{
+                    AnimationAccessor, AnimationComponent, AnimationComponentDescriptor,
+                    MeshCollectionComponent, MeshCollectionDescriptor,
+                },
+                instance_manager::APosition,
+            },
+        };
+
+        let box_anim_asset = world.register_asset::<GltfAsset>("box_animated")?;
+        let box_anim_entity = world.entity_manager.new_entity()?;
+        let box_anim_mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
+            resource_backing: box_anim_asset,
+            allocation_handle: None,
+            mesh_accessor: MeshAcessor::All,
+            rigid_animation_mode: RigidAnimationMode::Independent,
+        });
+        let box_anim_animation = AnimationComponent::new(AnimationComponentDescriptor {
+            resource_backing: box_anim_asset,
+            accessor: AnimationAccessor::All,
+        });
+
+        world
+            .entity_manager
+            .add_mesh_collection_for_entity(&box_anim_entity, box_anim_mesh);
+        world
+            .entity_manager
+            .add_animation_for_entity(&box_anim_entity, box_anim_animation);
+
+        let mut scene = Scene::new();
+        scene.add_entity(box_anim_entity);
+
+        scene.spawn(vec![(
+            box_anim_entity.clone(),
+            Box::new(APosition {
+                position: cgmath::Matrix4::<f32>::identity().into(),
+            }),
+        )]);
+
+        Ok(scene)
+    }
+
+    #[cfg(test)]
     pub fn box_scene(world: &mut World) -> Result<Self, WorldInitError> {
         use cgmath::SquareMatrix;
 

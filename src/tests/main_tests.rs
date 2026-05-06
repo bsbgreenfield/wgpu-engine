@@ -2,6 +2,7 @@
 mod integration_tests {
 
     use crate::{
+        animation::animation::AnimationTransformType,
         app::{
             app::App,
             app_config::AppConfig,
@@ -22,6 +23,7 @@ mod integration_tests {
         Box,
         Fox,
         BoxFox,
+        BoxAnimated,
     }
 
     /// Variant-only mirrors of WorldUpdateDelta — use these to declare what a frame should produce.
@@ -105,6 +107,7 @@ mod integration_tests {
             TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
             TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),
             TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
+            TestCases::BoxAnimated => Scene::box_animated(&mut world).expect("box animated init"),
         };
         world.add_scene(scene);
         app.world = Some(world);
@@ -618,6 +621,111 @@ mod integration_tests {
             assert_eq!(
                 world.instance_manager.get_pos_table().get_positions().len(),
                 2
+            );
+        })
+    }
+
+    #[test]
+    fn box_animated() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::BoxAnimated).await;
+
+            // Frame 1: asset loads to GPU
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+
+            // Frame 2: entity spawns
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityDidSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
+
+            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            assert_eq!(instance_manager.get_all_instances().len(), 1);
+
+            let instance_handle =
+                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
+
+            // Activate animation 0; this registers an AnimationInstance for the entity
+            app.world
+                .as_mut()
+                .unwrap()
+                .instance_manager
+                .activate_animation(&instance_handle, 0, None);
+
+            // Verify one animation is now active
+            let anim_instances = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_active_animations(); // ERROR: add this getter to InstanceManager
+            assert_eq!(
+                anim_instances.len(),
+                1,
+                "one animation should be active after activate_animation"
+            );
+            assert_eq!(anim_instances[0].samples.len(), 2);
+
+            let anim = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_animation_ref(&instance_handle.entity_handle, 0);
+
+            let (channels, samplers) = anim.get_channels_and_samplers();
+            assert_eq!(channels.len(), 2);
+            assert_eq!(samplers.len(), 2);
+            assert!(
+                matches!(
+                    channels.get(&0).unwrap()[0].1,
+                    AnimationTransformType::Translation
+                ),
+                "{:?} --- {:?}",
+                channels.get(&0).unwrap()[0],
+                channels.get(&2).unwrap()[0]
+            );
+            assert!(matches!(
+                channels.get(&2).unwrap()[0].1,
+                AnimationTransformType::Rotation
+            ),);
+
+            assert_eq!(samplers[0].times.len(), 2);
+            assert_eq!(samplers[0].transforms.0.len(), 8);
+            assert_eq!(samplers[1].times.len(), 4);
+            assert_eq!(samplers[1].transforms.0.len(), 12);
+
+            // Frame 3: world.update() calls instance_manager.update(), which drives
+            // get_animation_frame and populates the per-instance local-transform buffer
+            run_frame_unchecked(&mut app);
+
+            let im = &app.world.as_ref().unwrap().instance_manager;
+            let render_frame = im.prepare_render_frame();
+
+            assert_eq!(
+                render_frame.rigid_animation_data.len(),
+                1,
+                "one active animation should produce one AnimationUpdate in the render frame"
+            );
+
+            let anim_update = &render_frame.rigid_animation_data[0];
+            assert!(
+                !anim_update.transforms.is_empty(),
+                "animation transforms buffer must be non-empty after the first update tick"
+            );
+
+            // The transforms slice is tightly packed Mat4<f32> values (64 bytes each).
+            // Verify the byte count is a valid multiple of the matrix size so the GPU
+            // upload won't produce partial matrices.
+            assert_eq!(
+                anim_update.transforms.len() % std::mem::size_of::<crate::util::types::Mat4F32>(),
+                0,
+                "transforms byte length must be a multiple of Mat4F32 size"
             );
         })
     }
