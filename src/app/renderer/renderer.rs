@@ -137,6 +137,20 @@ impl Renderer {
                 }
             }
         }
+        'rigid_animations: {
+            let animations = &render_frame.rigid_animation_data;
+            if animations.is_empty() {
+                break 'rigid_animations;
+            }
+            let buffer_ref = self.instance_arena.get_first_buffer();
+            for animation in animations {
+                queue.write_buffer(
+                    buffer_ref,
+                    animation.buffer_offset.into(),
+                    animation.transforms,
+                );
+            }
+        }
     }
 
     pub(super) fn upload_indices<'frame>(

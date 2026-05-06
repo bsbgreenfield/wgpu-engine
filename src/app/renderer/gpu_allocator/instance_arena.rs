@@ -22,6 +22,12 @@ pub struct InstanceArena<T: bytemuck::Pod + Debug> {
     label: Option<String>,
 }
 
+impl InstanceArena<LocalTransform> {
+    pub fn get_first_buffer(&self) -> &wgpu::Buffer {
+        &self.chunks[0].buffer
+    }
+}
+
 impl InstanceChunk<LocalTransform> {
     fn new(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> Self {
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -101,6 +107,11 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
         let meta = self.alloc_table.get(&handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         range.start / size_of::<LocalTransform>() as u32
+    }
+
+    fn resolve_buffer(&self, instance_handle: &InstanceHandle) -> &wgpu::Buffer {
+        //TODO: if we add more chunks, then this will have to actually resolve
+        &self.chunks[0].buffer
     }
 
     #[inline]

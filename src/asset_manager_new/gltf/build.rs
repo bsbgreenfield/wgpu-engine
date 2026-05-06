@@ -6,7 +6,9 @@ use crate::animation::animation::{
     AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
     InterpolationType,
 };
-use crate::asset_manager_new::gltf::mesh::copy_binary_data_from_gltf;
+use crate::asset_manager_new::gltf::mesh::{
+    copy_and_cast_gltf_binary_data_f32, copy_binary_data_from_gltf,
+};
 use crate::asset_manager_new::gltf::{
     GltfAnimation, NodeTransforms, NodeType, collect_mesh_ids, get_root_node_from_child_id,
 };
@@ -60,12 +62,12 @@ fn get_animations(
         let mut samplers: Vec<AnimationSampler> = Vec::with_capacity(animation.samplers().count());
         let mut channels = AnimationChannels::new();
         for sampler in animation.samplers() {
-            let times_bytes = copy_binary_data_from_gltf(
+            let times_bytes = copy_and_cast_gltf_binary_data_f32(
                 &GLTFDataAccessor::from_accessor(&sampler.input())?,
                 buffer_offsets,
                 binary_data,
             )?;
-            let transforms_bytes = copy_binary_data_from_gltf(
+            let transforms_bytes = copy_and_cast_gltf_binary_data_f32(
                 &GLTFDataAccessor::from_accessor(&sampler.output())?,
                 buffer_offsets,
                 binary_data,
@@ -98,8 +100,8 @@ fn get_animations(
 
             samplers.push(AnimationSampler::new(
                 InterpolationType::from(sampler.interpolation()),
-                bytemuck::cast_vec(times_bytes),
-                AnimationTransforms(bytemuck::cast_vec(transforms_bytes)),
+                times_bytes,
+                AnimationTransforms(transforms_bytes),
             ));
         }
 

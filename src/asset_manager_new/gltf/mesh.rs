@@ -1,4 +1,7 @@
-use std::{any::TypeId, ops::Range};
+use std::{
+    any::{TypeId, type_name},
+    ops::Range,
+};
 
 use gltf::accessor::{DataType, Dimensions};
 
@@ -213,6 +216,44 @@ impl Primitive {
             count: primitive_data.positions.count as usize,
         })
     }
+}
+
+pub(super) fn copy_and_cast_gltf_binary_data_f32(
+    accessor: &GLTFDataAccessor,
+    buffer_offsets: &Vec<usize>,
+    binary_data: &Vec<u8>,
+) -> Result<Vec<f32>, GltfValidationError> {
+    assert!(accessor.byte_size == 4);
+
+    let byte_offset =
+        accessor.byte_offset as usize + buffer_offsets[accessor.buffer_index as usize];
+    let mut copy_dest: Vec<f32> =
+        Vec::with_capacity(accessor.num_elements as usize * accessor.count as usize);
+    let mut byte_loc = byte_offset;
+
+    let extra_stride = if let Some(stride) = accessor.stride {
+        stride as usize - (accessor.byte_size as usize * accessor.num_elements as usize)
+    } else {
+        0
+    };
+
+    for _ in 0..accessor.count as usize {
+        for _ in 0..accessor.num_elements as usize {
+            let slice: [u8; 4] = binary_data[byte_loc..byte_loc + 4]
+                .try_into()
+                .map_err(|_| GltfValidationError::UnsupportedScheme)?;
+            copy_dest.push(f32::from_le_bytes(slice));
+            byte_loc += 4;
+        }
+        byte_loc += extra_stride;
+    }
+
+    assert_eq!(
+        copy_dest.len(),
+        accessor.num_elements as usize * accessor.count as usize
+    );
+
+    Ok(copy_dest)
 }
 pub(super) fn copy_binary_data_from_gltf(
     accessor: &GLTFDataAccessor,

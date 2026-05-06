@@ -539,14 +539,15 @@ fn get_animation_data_for_node(
     let mut rotation: Option<Quaternion<f32>> = None;
     let mut translation: Option<Vector3<f32>> = None;
     let mut scale: Option<Vector3<f32>> = None;
+
     if let Some(node_channels) = animation.channels.get(&node.node_id) {
-        for (sampler_idx, anim_type) in node_channels {
+        for (sampler_count, (sampler_idx, anim_type)) in node_channels.iter().enumerate() {
             let sampler = &animation.samplers[*sampler_idx];
-            let sample_result = animation_instance
-                .samples
-                .get_mut(sampler_idx)
-                .unwrap()
-                .sample(time_delta, &sampler.times);
+            let sample_result = animation_instance.samples[*sampler_idx].sample(
+                time_delta,
+                &sampler.times,
+                sampler_count + 1 == node_channels.len(),
+            );
 
             match sample_result {
                 SampleResult::Done => return,
@@ -599,9 +600,25 @@ fn get_animation_data_for_node(
             };
             s
         });
-        cgmath::Matrix4::from_translation(translation)
-            * cgmath::Matrix4::from(rotation)
-            * cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
+        let r: cgmath::Matrix3<f32> = rotation.into();
+        cgmath::Matrix4::new(
+            r.x.x * scale.x,
+            r.x.y * scale.x,
+            r.x.z * scale.x,
+            0.0,
+            r.y.x * scale.y,
+            r.y.y * scale.y,
+            r.y.z * scale.y,
+            0.0,
+            r.z.x * scale.z,
+            r.z.y * scale.z,
+            r.z.z * scale.z,
+            0.0,
+            translation.x,
+            translation.y,
+            translation.z,
+            1.0,
+        )
     };
 
     let global = base_transform * node_transform;
@@ -625,108 +642,6 @@ fn get_animation_data_for_node(
         );
     }
 }
-
-//fn get_animation_data_for_node(
-//    node: &GltfNode,
-//    base_transform: &cgmath::Matrix4<f32>,
-//    time_delta: f32,
-//    animation: &GltfAnimation,
-//    animation_instance: &mut AnimationInstance,
-//) {
-//    let mut rotation: Option<Quaternion<f32>> = None;
-//    let mut translation: Option<Vector3<f32>> = None;
-//    let mut scale: Option<Vector3<f32>> = None;
-//    if let Some(node_channels) = animation.channels.get(&node.node_id) {
-//        let sample_result = animation_instance
-//            .samples
-//            .get_mut(&node.node_id)
-//            .unwrap()
-//            .sample(time_delta);
-//
-//        match sample_result {
-//            SampleResult::Done => return,
-//            SampleResult::End => {
-//                for (sampler_idx, anim_type) in node_channels {
-//                    let sampler = &animation.samplers[*sampler_idx];
-//                    match anim_type {
-//                        AnimationTransformType::Rotation => {
-//                            rotation = Some(last_quat(&sampler.transforms.0));
-//                        }
-//                        AnimationTransformType::Translation => {
-//                            translation = Some(last_vec3(&sampler.transforms.0));
-//                        }
-//                        AnimationTransformType::Scale => {
-//                            scale = Some(last_vec3(&sampler.transforms.0));
-//                        }
-//                    }
-//                }
-//            }
-//            SampleResult::Active(i) => {
-//                for (sampler_idx, anim_type) in node_channels {
-//                    let sampler = &animation.samplers[*sampler_idx];
-//                    let ratio =
-//                        (time_delta - sampler.times[i]) / (sampler.times[i + 1] - sampler.times[i]);
-//                    match anim_type {
-//                        AnimationTransformType::Rotation => {
-//                            rotation = Some(interpolate_as_quats(i, ratio, &sampler.transforms.0));
-//                        }
-//                        AnimationTransformType::Translation => {
-//                            translation =
-//                                Some(interpolate_as_vec3(i, ratio, &sampler.transforms.0));
-//                        }
-//                        AnimationTransformType::Scale => {
-//                            scale = Some(interpolate_as_vec3(i, ratio, &sampler.transforms.0));
-//                        }
-//                    }
-//                }
-//            }
-//        }
-//    }
-//    let node_transform = {
-//        let translation: Vector3<f32> = translation.unwrap_or_else(|| {
-//            let NodeTransforms::Translation(t) = node.transform_components[0] else {
-//                unreachable!()
-//            };
-//            t
-//        });
-//        let rotation: Quaternion<f32> = rotation.unwrap_or_else(|| {
-//            let NodeTransforms::Rotation(r) = node.transform_components[1] else {
-//                unreachable!()
-//            };
-//            r
-//        });
-//        let scale: Vector3<f32> = scale.unwrap_or_else(|| {
-//            let NodeTransforms::Scale(s) = node.transform_components[2] else {
-//                unreachable!()
-//            };
-//            s
-//        });
-//        cgmath::Matrix4::from_translation(translation)
-//            * cgmath::Matrix4::from(rotation)
-//            * cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
-//    };
-//
-//    let global = base_transform * node_transform;
-//
-//    match node.node_type {
-//        NodeType::Mesh(mesh_id) => {
-//            animation_instance.buffer[animation.buffer_slot_map[&mesh_id]] = global.into();
-//        }
-//        NodeType::Node => {
-//            //
-//        }
-//    }
-//
-//    for child_node in node.children.iter() {
-//        get_animation_data_for_node(
-//            child_node,
-//            &global,
-//            time_delta,
-//            animation,
-//            animation_instance,
-//        );
-//    }
-//}
 
 impl Animation for GltfAnimation {
     fn count(&self) -> usize {
@@ -753,15 +668,12 @@ impl Animation for GltfAnimation {
         self.buffer_slot_map[&id]
     }
 
-    fn init_samples(&self) -> HashMap<usize, crate::animation::animation::AnimationSample> {
-        let mut res = HashMap::new();
-        for node_channel in self.channels.values() {
-            for (sampler_idx, _) in node_channel.iter() {
-                let times = &self.samplers.get(*sampler_idx).unwrap().times;
-                res.insert(*sampler_idx, AnimationSample::init(times));
-            }
+    fn init_samples(&self) -> Vec<crate::animation::animation::AnimationSample> {
+        let mut samples = Vec::with_capacity(self.samplers.len());
+        for sampler in &self.samplers {
+            samples.push(AnimationSample::init(&sampler.times));
         }
-        res
+        samples
     }
 }
 

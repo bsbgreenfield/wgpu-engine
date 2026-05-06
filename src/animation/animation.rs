@@ -125,12 +125,14 @@ pub enum SampleResult {
     End,
 }
 impl AnimationSample {
-    pub fn sample(&mut self, time_delta: f32, times: &[f32]) -> SampleResult {
+    pub fn sample(&mut self, time_delta: f32, times: &[f32], last_for_node: bool) -> SampleResult {
         if self.complete {
             return SampleResult::Done;
         } else if time_delta >= self.end_time {
-            self.complete = true;
-            return SampleResult::Done;
+            if last_for_node {
+                self.complete = true;
+            }
+            return SampleResult::End;
         } else if time_delta >= self.next_time {
             self.cursor += 1;
             self.next_time = times[self.cursor + 1]
@@ -154,5 +156,5 @@ where
 
     fn get_buffer_slot(&self, id: usize) -> usize;
 
-    fn init_samples(&self) -> HashMap<usize, AnimationSample>;
+    fn init_samples(&self) -> Vec<AnimationSample>;
 }

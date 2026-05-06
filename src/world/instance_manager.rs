@@ -232,7 +232,7 @@ pub struct InstanceGPUBindings {
 }
 
 pub struct AnimationInstance {
-    pub samples: HashMap<usize, AnimationSample>,
+    pub samples: Vec<AnimationSample>,
     animation_idx: usize,
     pub start_time: std::time::Instant,
     pub buffer: Vec<Mat4F32>,
@@ -241,14 +241,14 @@ pub struct AnimationInstance {
 
 #[cfg(test)]
 impl AnimationInstance {
-    pub fn new_for_test(samples: HashMap<usize, AnimationSample>, count: usize) -> Self {
+    pub fn new_for_test(samples: Vec<AnimationSample>, count: usize) -> Self {
         use std::time::Instant;
 
         Self {
             samples,
             animation_idx: 0,
             start_time: Instant::now(),
-            buffer: Vec::with_capacity(count),
+            buffer: vec![[[0f32; 4]; 4]; count],
             instance_handle: InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0),
         }
     }
@@ -286,7 +286,7 @@ impl AnimationController {
             .get(&instance_handle.entity_handle)?
             .get(anim_idx)?;
         self.active_animations.push(AnimationInstance {
-            samples: HashMap::new(),
+            samples: animation.init_samples(),
             buffer: Vec::with_capacity(animation.count()),
             animation_idx: anim_idx,
             start_time: std::time::Instant::now()
@@ -561,5 +561,5 @@ pub struct AnimationUpdate<'frame> {
 pub struct RenderFrame<'frame> {
     pub global_transforms: Vec<&'frame [u8]>,
     pub local_transforms: Vec<&'frame [u8]>,
-    rigid_animation_data: Vec<AnimationUpdate<'frame>>,
+    pub rigid_animation_data: Vec<AnimationUpdate<'frame>>,
 }

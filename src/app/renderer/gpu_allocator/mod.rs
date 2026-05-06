@@ -122,6 +122,8 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
         donor: &InstanceHandle,
         new_handle: &InstanceHandle,
     ) -> Result<u32, Self::AllocationError>;
+
+    fn resolve_buffer(&self, instance_handle: &InstanceHandle) -> &wgpu::Buffer;
 }
 #[derive(Debug)]
 pub enum FreeListAllocError {
