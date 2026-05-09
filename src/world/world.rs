@@ -4,6 +4,7 @@ use super::scene::Scene;
 use crate::{
     app::{
         GPUAssetUploadJob,
+        app::AppCommand,
         renderer::{
             GPUAllocationHandle, Instruction, Operations, RenderConstant, RenderUpdateDelta,
         },
@@ -21,6 +22,9 @@ use crate::{
 };
 
 pub struct DrawSet {
+    /// for use while iterating over primitives
+    /// mesh_map[primitive_slot_index] = mesh_slot_index
+    pub mesh_map: Vec<u32>,
     pub primtitive_ranges: Vec<Range<u32>>,
     pub index_ranges: Option<Vec<Range<u32>>>,
 }
@@ -30,19 +34,6 @@ impl DrawSet {
     pub const fn within(prim_range: &Range<u32>, range: &Range<u32>) -> Range<u32> {
         let start = range.start + prim_range.start;
         start..(start + (prim_range.end - prim_range.start) as u32)
-    }
-
-    pub fn from_ids_and_prims(
-        data: Option<(Vec<u32>, Vec<Range<u32>>, Option<Vec<Range<u32>>>)>,
-    ) -> Option<Self> {
-        if let Some((_ids, prims, indices)) = data {
-            Some(Self {
-                primtitive_ranges: prims,
-                index_ranges: indices,
-            })
-        } else {
-            None
-        }
     }
 }
 
@@ -69,8 +60,14 @@ impl RenderGroup {
 pub enum LocalTransformData {
     None,
     NeedsDonor,
-    FromShared { donor: InstanceHandle },
-    FromVec(Vec<LocalTransform>),
+    FromShared {
+        donor: InstanceHandle,
+    },
+    New {
+        local_transforms: Vec<LocalTransform>,
+        buffer_slot_map: Vec<usize>,
+    },
+    Copy(Vec<LocalTransform>),
 }
 
 #[derive(Debug)]
@@ -136,7 +133,7 @@ impl World {
                     ));
                     instructions.push(Self::const_last(constants));
                     match instance_upload_data.local_transforms {
-                        LocalTransformData::FromVec(mut local_transforms) => {
+                        LocalTransformData::Copy(mut local_transforms) => {
                             instructions.push(Instruction::Op(Operations::LocalTransformUpload));
                             let lt_bytes: Vec<u8> = {
                                 let ptr = local_transforms.as_mut_ptr() as *mut u8;
@@ -159,6 +156,7 @@ impl World {
                             "instance manager is responsible for providing the instance upload data with a donor handle"
                         ),
                         LocalTransformData::None => panic!("not supported yet"),
+                        _ => panic!(),
                     }
                     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
                 }
@@ -207,6 +205,7 @@ impl World {
 
     pub fn update<'frame>(
         &'frame mut self,
+        commands: &mut Vec<AppCommand>,
     ) -> Result<Vec<WorldUpdateDelta<'frame>>, WorldUpdateError> {
         let mut deltas = Vec::<WorldUpdateDelta>::new();
         // check scenes
@@ -222,7 +221,7 @@ impl World {
             deltas.push(WorldUpdateDelta::AssetDidLoad(job));
         }
 
-        self.instance_manager.update();
+        self.instance_manager.update(commands);
 
         Ok(deltas)
     }

@@ -382,3 +382,48 @@ The vertex arenas keep their own cache of alloc handle -> alloc range. If this h
 5. instance manager creates  and stores a RenderGroup and RenderViews that holds the relative primitive ranges for every instance for this entity
 6. instance manager generates bytecode for the renderer to update its gpu buffers
 7. using the render groups and the archetype table data, instance manager populates the DrawPacket with draw calls
+
+
+
+
+
+### What i was doing last time
+To create new animation data for spawning instances we need to do a similar thing to waht we are already doing with 
+the mesh data. If its a brand new instance we need the Vec<Arc<Animation>> and a buffer_slot_map to map the mesh ids to their offsets within the GPU local transform buffer.
+
+If its not a new instance, there should be an entry in the AnimationController that contains the needed data for that entity already.
+So when generating Renderables for an entity spawn, we need to figure out what data is actaully needed for the animation.
+
+NOTE: the buffer_slot_map can only be known at SPAWN time because the entity will define a subset of all the root nodes in a gltf, so what order the local transforms will be in in the GPU will depend on that.
+
+To this end i started to think of better ways to gather data requirements for entity uploads than the current system
+
+basically they are this:
+
+1. Mesh + Animation + new instance
+needs:
+    - mesh renderable data
+    - local transform data
+    - animation refs
+    - buffer slot map
+
+2. Mesh + animation + rigid shared mode + old instance
+needs:
+    - nothing
+
+3. Mesh + animation + independant mode + old instance
+needs: 
+    - local transform data (can we just copy this in the gpu?)
+
+4. Mesh new instance
+needs: 
+    - mesh renderable data
+    - local transform data
+
+5. mesh old instance shared mode
+needs: 
+    - nothing
+
+6. mesh old instance independant mode
+needs:
+    - local transform data 

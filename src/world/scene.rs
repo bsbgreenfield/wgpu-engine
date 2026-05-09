@@ -165,8 +165,9 @@ impl Scene {
         Ok(scene)
     }
 
-    #[cfg(test)]
-    pub fn box_animated(world: &mut World) -> Result<Self, WorldInitError> {
+    pub fn box_animated(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
         use cgmath::SquareMatrix;
 
         use crate::{

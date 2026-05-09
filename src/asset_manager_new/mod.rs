@@ -1,9 +1,17 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
+    animation::animation::EntityAnimation,
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
-    world::{InstanceUploadQuery, RenderKey, entity_manager::Renderables, scene::SceneLoadLevel},
+    world::{
+        InstanceUploadQuery, RenderKey,
+        components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
+        entity_manager::Renderables,
+        entity_upload_query::{DataRequirement, InstanceUploadQueryNew},
+        scene::SceneLoadLevel,
+        world::RenderView,
+    },
 };
 
 pub mod asset_manager_new;
@@ -138,7 +146,7 @@ pub trait LoadedAsset {
         &self,
         alloc_handle: GPUAllocationHandle,
         renderables: &mut Renderables,
-        query: &InstanceUploadQuery,
+        query: &InstanceUploadQueryNew,
     ) -> Result<(), AssetLoadError>;
 
     //    fn get_instance_upload_data<'a>(
@@ -174,4 +182,20 @@ impl From<GltfValidationError> for ModelBuilderError {
     fn from(value: GltfValidationError) -> Self {
         Self::ValidationError(value)
     }
+}
+
+pub trait ProvidesMeshData: LoadedAsset {
+    fn render_view<'a>(
+        &self,
+        mesh_accessor: &'a MeshAcessor,
+        mode: &'a RigidAnimationMode,
+    ) -> Vec<RenderView>;
+}
+
+pub trait ProvidesAnimationData: LoadedAsset {
+    fn entity_animation<'a>(
+        &self,
+        animation_accessor: &AnimationAccessor,
+        mesh_accessor: &MeshAcessor,
+    ) -> Vec<EntityAnimation>;
 }

@@ -1,21 +1,13 @@
+use std::marker::PhantomData;
+
 use crate::{
-    app::renderer::GPUAllocationHandle, asset_manager_new::AssetHandle, world::InstanceUploadQuery,
+    app::renderer::GPUAllocationHandle,
+    asset_manager_new::{AssetHandle, LoadedAsset, ProvidesMeshData},
+    world::{
+        InstanceUploadQuery,
+        entity_upload_query::{DataRequirement, InstanceUploadQueryNew},
+    },
 };
-
-#[derive(Debug)]
-pub struct ResourceBacking {
-    pub asset_handle: AssetHandle,
-    pub resource_index: u8,
-}
-
-impl ResourceBacking {
-    pub fn new(asset_handle: AssetHandle, resource_index: u8) -> Self {
-        Self {
-            asset_handle,
-            resource_index,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum MeshAcessor {
@@ -55,6 +47,7 @@ impl MeshCollectionComponent {
 
 pub trait Component {
     fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool);
+    fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>>;
 }
 
 impl Component for MeshCollectionComponent {
@@ -71,8 +64,23 @@ impl Component for MeshCollectionComponent {
         }
         query.rigid_animation_mode = Some(&self.rigid_animation_mode)
     }
+
+    fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>> {
+        let mut res = Vec::new();
+        if !is_instanced {
+            res.push(DataRequirement::MeshData(&self.mesh_accessor));
+        }
+        if !is_instanced || matches!(self.rigid_animation_mode, RigidAnimationMode::Independent) {
+            res.push(DataRequirement::LocalTransformData {
+                accessor: &self.mesh_accessor,
+                mode: &self.rigid_animation_mode,
+            });
+        }
+        res
+    }
 }
 
+#[derive(Debug)]
 pub enum AnimationAccessor {
     All,
     Index(usize),
@@ -102,4 +110,23 @@ impl Component for AnimationComponent {
         query.needs_animations = true;
         query.animation_accessor = Some(&self.animation_accessor);
     }
+    fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>> {
+        vec![DataRequirement::AnimationData {
+            anim_accessor: &self.animation_accessor,
+        }]
+    }
+}
+struct ResourceBacking<A: LoadedAsset + ?Sized> {
+    asset_handle: AssetHandle,
+    _t: PhantomData<A>,
+}
+
+pub struct TestMeshComponent<A: ProvidesMeshData + ?Sized> {
+    resource_backing: ResourceBacking<A>,
+    mesh_accessor: MeshAcessor,
+    rigid_mode: RigidAnimationMode,
+}
+
+pub struct TestEntityManager {
+    meshes: Vec<TestMeshComponent<dyn ProvidesMeshData>>,
 }

@@ -1,7 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, mem::MaybeUninit, sync::Arc};
 
 use crate::{
-    asset_manager_new::gltf::GltfAttributeType, world::instance_manager::AnimationInstance,
+    asset_manager_new::gltf::GltfAttributeType, util::types::LocalTransform,
+    world::instance_manager::AnimationInstance,
 };
 
 //#[allow(unused)]
@@ -161,4 +162,11 @@ where
 
     #[cfg(test)]
     fn get_channels_and_samplers(&self) -> (&AnimationChannels, &Vec<AnimationSampler>);
+}
+
+#[derive(Debug)]
+pub struct EntityAnimation {
+    pub animation: Vec<Arc<dyn Animation>>,
+    pub local_transforms: Vec<LocalTransform>,
+    pub buffer_slot_map: Vec<usize>,
 }

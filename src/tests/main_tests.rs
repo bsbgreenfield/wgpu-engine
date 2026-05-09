@@ -113,7 +113,7 @@ mod integration_tests {
         app.world = Some(world);
         app.app_config = Some(config);
         app.renderer = Some(renderer);
-        app.app_state = AppState {};
+        app.app_state = AppState::new();
         app.surface_ready = true;
 
         app
@@ -128,7 +128,7 @@ mod integration_tests {
             .world
             .as_mut()
             .unwrap()
-            .update()
+            .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
         assert_world_deltas(&deltas, expected_world_deltas);
 
@@ -154,7 +154,7 @@ mod integration_tests {
             .world
             .as_mut()
             .unwrap()
-            .update()
+            .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
         let (constants, instructions) = get_bytecode(deltas);
 
@@ -644,6 +644,26 @@ mod integration_tests {
                 &[RenderDeltaKind::EntitySpawn],
             );
 
+            app.world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .assert_local_transforms_exist(&InstanceHandle::mock(
+                    ArchetypeId::Position,
+                    EntityHandle(0),
+                    0,
+                    0,
+                ));
+
+            gen_draw_calls(&mut app);
+
+            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
+            assert_eq!(pnu_items.len(), 2);
+            println!("{:?}", pnu_items[0]);
+            println!("{:?}", pnu_items[1]);
+            assert_eq!(pnu_items[0].get_lt_idx(), 0);
+            assert_eq!(pnu_items[1].get_lt_idx(), 1);
+
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
 
@@ -670,6 +690,7 @@ mod integration_tests {
                 "one animation should be active after activate_animation"
             );
             assert_eq!(anim_instances[0].samples.len(), 2);
+            assert_eq!(anim_instances[0].buffer.len(), 2);
 
             let anim = app
                 .world
@@ -712,6 +733,8 @@ mod integration_tests {
                 1,
                 "one active animation should produce one AnimationUpdate in the render frame"
             );
+
+            assert_eq!(render_frame.rigid_animation_data[0].transforms.len(), 128);
 
             let anim_update = &render_frame.rigid_animation_data[0];
             assert!(

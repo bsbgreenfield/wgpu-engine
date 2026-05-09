@@ -5,13 +5,14 @@ use std::{
 use gltf::json::asset;
 
 use crate::{
-    animation::animation::Animation,
+    animation::animation::{Animation, EntityAnimation},
     app::renderer::GPUAllocationHandle,
     asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
     util::types::LocalTransform,
     world::{
         InstanceUploadQuery,
         components::{AnimationComponent, Component, MeshCollectionComponent, RigidAnimationMode},
+        entity_upload_query::InstanceUploadQueryNew,
         instance_manager::InstanceHandle,
         world::InstanceUploadData,
     },
@@ -40,21 +41,17 @@ pub struct EntityManager {
 }
 
 #[derive(Debug)]
-pub struct LocalTransformData {
-    pub lt: Vec<LocalTransform>,
-    pub mode: RigidAnimationMode,
-}
-
-#[derive(Debug)]
 pub enum RenderData {
     MeshRenderable {
         gpu_alloc_handle: GPUAllocationHandle,
         pnu_vertex_ranges: Option<Vec<Range<u32>>>,
+        pnu_mesh_map: Vec<u32>,
         pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
+        pnujw_mesh_map: Vec<u32>,
         index_ranges: Option<Vec<Range<u32>>>,
     },
     AnimationData {
-        animation: Vec<Arc<dyn Animation>>,
+        animations: Vec<Arc<dyn Animation>>,
     },
 }
 
@@ -79,6 +76,39 @@ impl EntityManager {
     //         mesh_accessor,
     //     )
     // }
+
+    pub fn get_entity_renderables_new<'frame>(
+        &'frame self,
+        instance_handle: &InstanceHandle,
+        is_instanced: bool,
+    ) {
+        // TODO: the way this function works is that it expects ALL components to have an asset backing
+        // this could be enforced in a different way, like creating some kind of "component data
+        // source" trait
+        let mut query = InstanceUploadQueryNew::default();
+
+        // **** components ****
+        let mesh_collection = self
+            .mesh_collections
+            .get(instance_handle.entity_handle.0 as usize);
+        if let Some(mesh_collection) = mesh_collection {
+            query.modify(
+                mesh_collection.resource_backing,
+                mesh_collection.get_data_requirements(is_instanced),
+            );
+        }
+        if let Some(animation) = self
+            .animations
+            .get(instance_handle.entity_handle.0 as usize)
+        {
+            query.modify(
+                animation.resource_backing,
+                animation.get_data_requirements(is_instanced),
+            );
+        }
+
+        todo!()
+    }
 
     /// For each component that might contribute Renderable data to that is needed for the Renderer
     /// modify the InstanceUploadQuery, and then get the appropriate renderables
@@ -120,9 +150,10 @@ impl EntityManager {
 
         // for each unique asset handle that makes up the entity, fetch renderable data
         for asset in assets.iter() {
-            self.asset_manager
-                .get_renderables_for(asset, &mut renderables, &query)
-                .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
+            todo!()
+            //self.asset_manager
+            //    .get_renderables_for(asset, &mut renderables, &query)
+            //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
         }
 
         Ok(renderables)

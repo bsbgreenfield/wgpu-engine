@@ -24,6 +24,7 @@ use crate::{
         InstanceUploadQuery,
         components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
         entity_manager::{RenderData, Renderables},
+        entity_upload_query::InstanceUploadQueryNew,
         instance_manager::AnimationInstance,
         world::{InstanceUploadData, LocalTransformData},
     },
@@ -244,184 +245,189 @@ impl LoadedAsset for LoadedGltfAsset {
         )
     }
 
-    // fn get_instance_upload_data<'a>(
-    //     &'a self,
-    //     instance_handle: InstanceHandle,
-    //     mesh_accessor: &MeshAcessor,
-    // ) -> crate::world::world::InstanceUploadData {
-    //     let local_transforms = match mesh_accessor {
-    //         MeshAcessor::All => self
-    //             .node_tree
-    //             .iter()
-    //             .flat_map(|node| collect_local_transforms(node, MAT4_IDENTITY))
-    //             .collect(),
-    //         MeshAcessor::GltfRootNode(root) => {
-    //             match get_root_node(&self.node_tree, *root as usize) {
-    //                 Some(root_node) => collect_local_transforms(root_node, MAT4_IDENTITY),
-    //                 None => {
-    //                     panic!()
-    //                 }
-    //             }
-    //         }
-    //     };
-    //     InstanceUploadData {
-    //         instance_handle,
-    //         local_transforms: Some(local_transforms),
-    //     }
-    // }
     fn get_renderables(
         &self,
         alloc_handle: GPUAllocationHandle,
         renderables: &mut Renderables,
-        query: &InstanceUploadQuery,
+        query: &InstanceUploadQueryNew,
     ) -> Result<(), AssetLoadError> {
-        if query.needs_meshes && query.needs_local_transforms {
-            let mesh_instances: Vec<(u32, LocalTransform)> = match query.mesh_accesor.unwrap() {
-                MeshAcessor::All => self
-                    .node_tree
-                    .iter()
-                    .flat_map(|node| {
-                        collect_mesh_instances(node, cgmath::Matrix4::<f32>::identity())
-                    })
-                    .collect(),
-                MeshAcessor::GltfRootNode(root) => {
-                    match get_root_node(&self.node_tree, *root as usize) {
-                        Some(root_node) => {
-                            collect_mesh_instances(root_node, cgmath::Matrix4::<f32>::identity())
-                        }
-                        None => {
-                            return Err(AssetLoadError::InstanceUploadFailure(String::from(
-                                "The root node defined for this entity is not valid for the asset",
-                            )));
-                        }
-                    }
-                }
-            };
-            let mut pnu_ranges = Vec::new();
-            let mut pnujw_ranges = Vec::new();
-            let mut index_ranges = Vec::new();
-            let mut local_transforms = Vec::new();
-            let has_indices = self.meshes[0].primitives[0].indices.is_some();
-            for (mesh_id, local_transform) in mesh_instances {
-                let mesh = self.meshes.iter().find(|m| m.id == mesh_id).ok_or(
-                    AssetLoadError::InstanceUploadFailure(
-                        "could not find mesh instance".to_string(),
-                    ),
-                )?;
-                for primitive in mesh.primitives.iter() {
-                    if primitive.vertex_type == TypeId::of::<PNUVertex>() {
-                        pnu_ranges.push(primitive.vertices.clone());
-                    } else if primitive.vertex_type == TypeId::of::<PNUJWVertex>() {
-                        pnujw_ranges.push(primitive.vertices.clone());
-                    } else {
-                        panic!("vertex type not specified {:?}", primitive.vertex_type);
-                    }
-                    if has_indices {
-                        let i = primitive.indices.clone().unwrap();
-                        index_ranges.push(i)
-                    }
-                    local_transforms.push(local_transform);
-                }
-            }
+        todo!()
+        // if query.needs_meshes && query.needs_local_transforms {
+        //     let mesh_instances: Vec<(u32, LocalTransform)> = match query.mesh_accesor.unwrap() {
+        //         MeshAcessor::All => self
+        //             .node_tree
+        //             .iter()
+        //             .flat_map(|node| {
+        //                 collect_mesh_instances(node, cgmath::Matrix4::<f32>::identity())
+        //             })
+        //             .collect(),
+        //         MeshAcessor::GltfRootNode(root) => {
+        //             match get_root_node(&self.node_tree, *root as usize) {
+        //                 Some(root_node) => {
+        //                     collect_mesh_instances(root_node, cgmath::Matrix4::<f32>::identity())
+        //                 }
+        //                 None => {
+        //                     return Err(AssetLoadError::InstanceUploadFailure(String::from(
+        //                         "The root node defined for this entity is not valid for the asset",
+        //                     )));
+        //                 }
+        //             }
+        //         }
+        //     };
+        //     let mut pnu_ranges = Vec::new();
+        //     let mut pnu_mesh_map = Vec::new();
+        //     let mut pnujw_mesh_map = Vec::new();
+        //     let mut pnujw_ranges = Vec::new();
+        //     let mut index_ranges = Vec::new();
+        //     let mut local_transforms = Vec::new();
+        //     let has_indices = self.meshes[0].primitives[0].indices.is_some();
+        //     let mut mesh_count = 0;
+        //     for (mesh_id, local_transform) in mesh_instances {
+        //         let mesh = self.meshes.iter().find(|m| m.id == mesh_id).ok_or(
+        //             AssetLoadError::InstanceUploadFailure(
+        //                 "could not find mesh instance".to_string(),
+        //             ),
+        //         )?;
+        //         for primitive in mesh.primitives.iter() {
+        //             if primitive.vertex_type == TypeId::of::<PNUVertex>() {
+        //                 pnu_mesh_map.push(mesh_count);
+        //                 pnu_ranges.push(primitive.vertices.clone());
+        //             } else if primitive.vertex_type == TypeId::of::<PNUJWVertex>() {
+        //                 pnujw_mesh_map.push(mesh_count);
+        //                 pnujw_ranges.push(primitive.vertices.clone());
+        //             } else {
+        //                 panic!("vertex type not specified {:?}", primitive.vertex_type);
+        //             }
+        //             if has_indices {
+        //                 let i = primitive.indices.clone().unwrap();
+        //                 index_ranges.push(i)
+        //             }
+        //             local_transforms.push(local_transform);
+        //         }
+        //         mesh_count += 1;
+        //     }
 
-            let mesh_render_data = RenderData::MeshRenderable {
-                gpu_alloc_handle: alloc_handle,
-                pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),
-                pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
-                index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
-            };
-            // INSERT COMMON MESH DATA
-            if let Some(common) = renderables.common.as_mut() {
-                common.push(mesh_render_data);
-            } else {
-                let _ = renderables.common.insert(vec![mesh_render_data]);
-            }
-            // INSERT LOCAL TRANSFORMS
-            if let Some(instance_data) = renderables.instance_data.as_mut() {
-                instance_data.local_transforms = LocalTransformData::FromVec(local_transforms);
-            } else {
-                renderables.instance_data = Some(InstanceUploadData {
-                    instance_handle: renderables.instance_handle.clone(),
-                    local_transforms: LocalTransformData::FromVec(local_transforms),
-                })
-            }
-        } else if query.needs_local_transforms {
-            let local_transforms = match query.mesh_accesor.unwrap() {
-                MeshAcessor::All => self
-                    .node_tree
-                    .iter()
-                    .flat_map(|node| {
-                        collect_local_transforms(node, cgmath::Matrix4::<f32>::identity())
-                    })
-                    .collect(),
-                MeshAcessor::GltfRootNode(root) => {
-                    match get_root_node(&self.node_tree, *root as usize) {
-                        Some(root_node) => {
-                            collect_local_transforms(root_node, cgmath::Matrix4::<f32>::identity())
-                        }
-                        None => {
-                            return Err(AssetLoadError::InstanceUploadFailure(String::from(
-                                "The root node defined for this entity is not valid for the asset",
-                            )));
-                        }
-                    }
-                }
-            };
+        //     let mesh_render_data = RenderData::MeshRenderable {
+        //         gpu_alloc_handle: alloc_handle,
+        //         pnu_mesh_map,
+        //         pnujw_mesh_map,
+        //         pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),
+        //         pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
+        //         index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
+        //     };
+        //     // INSERT COMMON MESH DATA
+        //     if let Some(common) = renderables.common.as_mut() {
+        //         common.push(mesh_render_data);
+        //     } else {
+        //         let _ = renderables.common.insert(vec![mesh_render_data]);
+        //     }
+        //     // INSERT LOCAL TRANSFORMS
+        //     if let Some(instance_data) = renderables.instance_data.as_mut() {
+        //         instance_data.local_transforms = LocalTransformData::Copy(local_transforms);
+        //     } else {
+        //         renderables.instance_data = Some(InstanceUploadData {
+        //             instance_handle: renderables.instance_handle.clone(),
+        //             local_transforms: LocalTransformData::Copy(local_transforms),
+        //         })
+        //     }
 
-            // INSERT LOCAL TRANSFORMS
-            if let Some(instance_data) = renderables.instance_data.as_mut() {
-                instance_data.local_transforms = LocalTransformData::FromVec(local_transforms);
-            } else {
-                renderables.instance_data = Some(InstanceUploadData {
-                    instance_handle: renderables.instance_handle.clone(),
-                    local_transforms: LocalTransformData::FromVec(local_transforms),
-                });
-            }
-        } else {
-            // the instance spawned, but it does NOT require local transforms, must be shared
-            assert!(
-                matches!(query.rigid_animation_mode, Some(RigidAnimationMode::Shared)),
-                "the instance DOESNT need local transforms but ISNT shared?"
-            );
-            if let Some(instance_data) = renderables.instance_data.as_mut() {
-                instance_data.local_transforms = LocalTransformData::NeedsDonor;
-            } else {
-                renderables.instance_data = Some(InstanceUploadData {
-                    instance_handle: renderables.instance_handle.clone(),
-                    local_transforms: LocalTransformData::NeedsDonor,
-                });
-            }
-        }
+        //     //if query.needs_animations {
+        //     //    let max_id = mesh_instances.iter().map(|m_id| m_id.0).max().unwrap();
+        //     //    let mut buffer_slot_map = vec![usize::MAX; max_id as usize];
+        //     //    for (slot, &id) in mesh_instances.iter().enumerate() {
+        //     //        buffer_slot_map[id.0 as usize] = slot;
+        //     //    }
+        //     //    match query.animation_accessor.unwrap() {
+        //     //        AnimationAccessor::All => {
+        //     //            let mut animation_refs =
+        //     //                Vec::<Arc<dyn Animation>>::with_capacity(self.animations.len());
+        //     //            for anim in self.animations.iter() {
+        //     //                animation_refs.push(anim.clone());
+        //     //            }
+        //     //            renderables.common.unwrap().push(RenderData::AnimationData {
+        //     //                animations: animation_refs,
+        //     //                buffer_slot_map,
+        //     //            });
+        //     //        }
+        //     //    }
+        //     //}
+        // } else if query.needs_local_transforms {
+        //     let local_transforms = match query.mesh_accesor.unwrap() {
+        //         MeshAcessor::All => self
+        //             .node_tree
+        //             .iter()
+        //             .flat_map(|node| {
+        //                 collect_local_transforms(node, cgmath::Matrix4::<f32>::identity())
+        //             })
+        //             .collect(),
+        //         MeshAcessor::GltfRootNode(root) => {
+        //             match get_root_node(&self.node_tree, *root as usize) {
+        //                 Some(root_node) => {
+        //                     collect_local_transforms(root_node, cgmath::Matrix4::<f32>::identity())
+        //                 }
+        //                 None => {
+        //                     return Err(AssetLoadError::InstanceUploadFailure(String::from(
+        //                         "The root node defined for this entity is not valid for the asset",
+        //                     )));
+        //                 }
+        //             }
+        //         }
+        //     };
 
-        // GET ANIMATIONS
-        if query.needs_animations {
-            match query.animation_accessor.unwrap() {
-                AnimationAccessor::Index(idx) => {
-                    renderables
-                        .common
-                        .as_mut()
-                        .unwrap()
-                        .push(RenderData::AnimationData {
-                            animation: vec![self.animations[*idx].clone()],
-                        });
-                }
-                AnimationAccessor::All => {
-                    let mut animation_refs =
-                        Vec::<Arc<dyn Animation>>::with_capacity(self.animations.len());
-                    for anim in self.animations.iter() {
-                        animation_refs.push(anim.clone());
-                    }
-                    renderables
-                        .common
-                        .as_mut()
-                        .unwrap()
-                        .push(RenderData::AnimationData {
-                            animation: animation_refs,
-                        });
-                }
-            }
-        }
-        Ok(())
+        //     // INSERT LOCAL TRANSFORMS
+        //     if let Some(instance_data) = renderables.instance_data.as_mut() {
+        //         instance_data.local_transforms = LocalTransformData::Copy(local_transforms);
+        //     } else {
+        //         renderables.instance_data = Some(InstanceUploadData {
+        //             instance_handle: renderables.instance_handle.clone(),
+        //             local_transforms: LocalTransformData::Copy(local_transforms),
+        //         });
+        //     }
+        // } else {
+        //     // the instance spawned, but it does NOT require local transforms, must be shared
+        //     assert!(
+        //         matches!(query.rigid_animation_mode, Some(RigidAnimationMode::Shared)),
+        //         "the instance DOESNT need local transforms but ISNT shared?"
+        //     );
+        //     if let Some(instance_data) = renderables.instance_data.as_mut() {
+        //         instance_data.local_transforms = LocalTransformData::NeedsDonor;
+        //     } else {
+        //         renderables.instance_data = Some(InstanceUploadData {
+        //             instance_handle: renderables.instance_handle.clone(),
+        //             local_transforms: LocalTransformData::NeedsDonor,
+        //         });
+        //     }
+        // }
+
+        // // GET ANIMATIONS
+        // if query.needs_animations {
+        //     match query.animation_accessor.unwrap() {
+        //         AnimationAccessor::Index(idx) => {
+        //             renderables
+        //                 .common
+        //                 .as_mut()
+        //                 .unwrap()
+        //                 .push(RenderData::AnimationData {
+        //                     animations: vec![self.animations[*idx].clone()],
+        //                 });
+        //         }
+        //         AnimationAccessor::All => {
+        //             let mut animation_refs =
+        //                 Vec::<Arc<dyn Animation>>::with_capacity(self.animations.len());
+        //             for anim in self.animations.iter() {
+        //                 animation_refs.push(anim.clone());
+        //             }
+        //             renderables
+        //                 .common
+        //                 .as_mut()
+        //                 .unwrap()
+        //                 .push(RenderData::AnimationData {
+        //                     animations: animation_refs,
+        //                 });
+        //         }
+        //     }
+        // }
+        // Ok(())
     }
 }
 
@@ -496,25 +502,22 @@ impl From<gltf::Error> for GltfLoadError {
 }
 
 pub struct GltfAnimation {
-    root_nodes: Vec<Arc<GltfNode>>,
-    buffer_slot_map: HashMap<usize, usize>,
     pub samplers: Vec<AnimationSampler>,
     pub channels: AnimationChannels,
+    pub root_nodes: Vec<Arc<GltfNode>>,
 }
 
 #[cfg(test)]
 impl GltfAnimation {
     pub fn new_for_test(
-        nodes: Vec<Arc<GltfNode>>,
-        buffer_slot_map: HashMap<usize, usize>,
         samplers: Vec<AnimationSampler>,
         channels: AnimationChannels,
+        roots: &[Arc<GltfNode>],
     ) -> Self {
         Self {
-            root_nodes: nodes,
-            buffer_slot_map,
             samplers,
             channels,
+            root_nodes: roots.to_vec(),
         }
     }
 }
@@ -522,7 +525,6 @@ impl GltfAnimation {
 impl Debug for GltfAnimation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GltfAnimation")
-            .field("root_nodes", &self.root_nodes)
             .field("samplers", &self.samplers.len())
             .field("channels", &self.channels.len())
             .finish()
@@ -625,9 +627,7 @@ fn get_animation_data_for_node(
 
     match node.node_type {
         NodeType::Mesh(mesh_id) => {
-            animation_instance
-                .buffer
-                .insert(animation.buffer_slot_map[&mesh_id], global.into());
+            todo!()
         }
         NodeType::Node => {
             //
@@ -647,7 +647,7 @@ fn get_animation_data_for_node(
 
 impl Animation for GltfAnimation {
     fn count(&self) -> usize {
-        self.buffer_slot_map.len()
+        todo!()
     }
     fn get_animation_frame(
         &self,
@@ -667,7 +667,7 @@ impl Animation for GltfAnimation {
     }
 
     fn get_buffer_slot(&self, id: usize) -> usize {
-        self.buffer_slot_map[&id]
+        todo!()
     }
 
     fn init_samples(&self) -> Vec<crate::animation::animation::AnimationSample> {

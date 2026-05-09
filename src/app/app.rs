@@ -26,6 +26,11 @@ pub struct App<'a> {
     pub app_state: AppState,
     pub surface_ready: bool,
     pub draw_packet: DrawPacket,
+    pub app_commands: Vec<AppCommand>,
+}
+
+pub enum AppCommand {
+    DoSomething,
 }
 
 impl App<'_> {
@@ -33,16 +38,25 @@ impl App<'_> {
         Self {
             window: None,
             app_config: None,
-            app_state: AppState,
+            app_state: AppState::new(),
             surface_ready: false,
             renderer: None,
             world: None,
             draw_packet: DrawPacket::default(),
+            app_commands: Vec::with_capacity(100),
         }
     }
 
     pub fn run_frame(&mut self) -> Result<(), FrameError> {
-        let deltas = self.world.as_mut().unwrap().update()?;
+        if self.app_state.input_controller.key_a_down {
+            self.app_commands.push(AppCommand::DoSomething);
+            self.app_state.input_controller.key_a_down = false;
+        }
+        let deltas = self
+            .world
+            .as_mut()
+            .unwrap()
+            .update(&mut self.app_commands)?;
 
         let mut constants = Vec::<RenderConstant>::new();
         let mut instructions = Vec::<Instruction>::new();
@@ -128,7 +142,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                     )
                     .unwrap(),
                 );
-                let scene = Scene::fox_box(self.world.as_mut().unwrap()).unwrap();
+                let scene = Scene::box_animated(self.world.as_mut().unwrap()).unwrap();
                 self.world.as_mut().unwrap().add_scene(scene);
                 //  #[cfg(test)]
                 //  {

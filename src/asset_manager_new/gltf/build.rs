@@ -50,6 +50,15 @@ fn gltf_mat_to_transforms(transforms: ([f32; 3], [f32; 4], [f32; 3])) -> [NodeTr
     ];
 }
 
+fn node_subtree_has_channels(node: &GltfNode, channels: &AnimationChannels) -> bool {
+    if channels.contains_key(&node.node_id) {
+        return true;
+    }
+    node.children
+        .iter()
+        .any(|child| node_subtree_has_channels(child, channels))
+}
+
 fn get_animations(
     gltf: &gltf::Gltf,
     buffer_offsets: &Vec<usize>,
@@ -58,7 +67,6 @@ fn get_animations(
 ) -> Result<Vec<Arc<GltfAnimation>>, GltfValidationError> {
     let mut animations = Vec::<Arc<GltfAnimation>>::with_capacity(gltf.animations().count());
     for animation in gltf.animations() {
-        let mut root_nodes = Vec::<Arc<GltfNode>>::new();
         let mut samplers: Vec<AnimationSampler> = Vec::with_capacity(animation.samplers().count());
         let mut channels = AnimationChannels::new();
         for sampler in animation.samplers() {
@@ -78,18 +86,6 @@ fn get_animations(
                 .filter(|c| c.sampler().index() == sampler.index());
 
             for relevant_channel in relevant_channels {
-                if let Some(node) = get_root_node_from_child_id(
-                    &node_tree,
-                    relevant_channel.target().node().index(),
-                ) {
-                    if !root_nodes.iter().any(|rn| rn.node_id == node.node_id) {
-                        root_nodes.push(node);
-                    }
-                } else {
-                    // channel specified an invalid node
-                    return Err(GltfValidationError::UnsupportedScheme);
-                }
-
                 let ty =
                     AnimationTransformType::from_gltf_prop(&relevant_channel.target().property());
                 channels
@@ -104,22 +100,16 @@ fn get_animations(
                 AnimationTransforms(transforms_bytes),
             ));
         }
-
-        // build buffer slot map
-        let mut ordered_mesh_id_list = Vec::new();
-        for root_node in root_nodes.iter() {
-            collect_mesh_ids(root_node, &mut ordered_mesh_id_list);
-        }
-        let mut buffer_slot_map = HashMap::new();
-        for (slot, mesh_id) in ordered_mesh_id_list.iter().enumerate() {
-            buffer_slot_map.insert(*mesh_id, slot);
-        }
+        let root_nodes = node_tree
+            .iter()
+            .filter(|n| node_subtree_has_channels(n, &channels))
+            .cloned()
+            .collect();
 
         animations.push(Arc::new(GltfAnimation {
             samplers,
             channels,
             root_nodes,
-            buffer_slot_map,
         }));
     }
     Ok(animations)
@@ -149,9 +139,11 @@ fn build_node_trees(gltf: &gltf::Gltf) -> Result<Vec<Arc<GltfNode>>, ModelBuilde
         .collect())
 }
 
+/// return a Vec<Vec<PrimitiveData>> that is sorted into DFS order
 fn get_primitive_data_map(
     gltf: &gltf::Gltf,
-) -> Result<HashMap<usize, Vec<PrimitiveData>>, ModelBuilderError> {
+    node_tree: &[Arc<GltfNode>],
+) -> Result<Vec<(usize, Vec<PrimitiveData>)>, ModelBuilderError> {
     let mut mesh_id_to_prim_data = HashMap::<usize, Vec<PrimitiveData>>::new();
     for mesh in gltf.meshes() {
         let mut prim_data_list: Vec<PrimitiveData> = Vec::with_capacity(mesh.primitives().len());
@@ -163,16 +155,23 @@ fn get_primitive_data_map(
         }
         mesh_id_to_prim_data.insert(mesh.index(), prim_data_list);
     }
-    Ok(mesh_id_to_prim_data)
+    let mut dfs_mesh_ids: Vec<usize> = Vec::new();
+    for node in node_tree {
+        collect_mesh_ids(node, &mut dfs_mesh_ids);
+    }
+    Ok(dfs_mesh_ids
+        .into_iter()
+        .filter_map(|id| mesh_id_to_prim_data.remove(&id).map(|data| (id, data)))
+        .collect())
 }
 
 fn get_index_range_vec(
-    primitive_data: &HashMap<usize, Vec<PrimitiveData>>,
+    primitive_data: &Vec<(usize, Vec<PrimitiveData>)>,
     buffer_offsets: &Vec<usize>,
 ) -> Result<Vec<Range<usize>>, ModelBuilderError> {
     let mut index_range_vec: Vec<Range<usize>> = Vec::new();
-    for mesh_prim_data in primitive_data.iter() {
-        for prim_data in mesh_prim_data.1.iter() {
+    for (_mesh_id, mesh_primitives) in primitive_data.iter() {
+        for prim_data in mesh_primitives.iter() {
             let maybe_index_ranges =
                 &Primitive::get_index_range(prim_data.indices.as_ref(), buffer_offsets)
                     .map_err(|e| ModelBuilderError::ValidationError(e))?;
@@ -247,7 +246,7 @@ fn build_all_models(
     binary_data: &Vec<u8>,
     index_ranges: &Vec<Range<usize>>,
     buffer_offsets: &Vec<usize>,
-    primitive_data: &HashMap<usize, Vec<PrimitiveData>>,
+    primitive_data: &Vec<(usize, Vec<PrimitiveData>)>,
 ) -> Result<
     (
         Vec<PNUJWVertex>,
@@ -313,9 +312,7 @@ impl LoadableAsset for GltfAsset {
         let node_tree = build_node_trees(&self.gltf)?;
         let binary_data = super::loader::load_binary_data_from_source(&self.bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
-        let animations: Vec<Arc<GltfAnimation>> =
-            get_animations(&self.gltf, &buffer_offsets, &binary_data, &node_tree)?;
-        let primitive_data = get_primitive_data_map(&self.gltf)?;
+        let primitive_data = get_primitive_data_map(&self.gltf, &node_tree)?;
         let index_range_vec = get_index_range_vec(&primitive_data, &buffer_offsets)?;
         let (pnujw, pnu, indices, meshes) = build_all_models(
             &binary_data,
@@ -323,6 +320,8 @@ impl LoadableAsset for GltfAsset {
             &buffer_offsets,
             &primitive_data,
         )?;
+        let animations: Vec<Arc<GltfAnimation>> =
+            get_animations(&self.gltf, &buffer_offsets, &binary_data, &node_tree)?;
         Ok(Box::new(LoadedGltfAsset {
             pnujw_vertices: pnujw,
             pnu_vertices: pnu,

@@ -7,7 +7,11 @@ use crate::{
         LoadedAsset,
     },
     world::{
-        InstanceUploadQuery, components::MeshCollectionComponent, entity_manager::Renderables,
+        InstanceUploadQuery,
+        components::MeshCollectionComponent,
+        entity_manager::{EntityHandle, Renderables},
+        entity_upload_query::InstanceUploadQueryNew,
+        instance_manager::{ArchetypeId, InstanceHandle},
         scene::SceneLoadLevel,
     },
 };
@@ -152,29 +156,26 @@ impl AssetManagerNew {
 
     pub fn get_renderables_for(
         &self,
-        asset_handle: &AssetHandle,
         renderables: &mut Renderables,
-        query: &InstanceUploadQuery,
+        query: &InstanceUploadQueryNew,
     ) -> Result<(), AssetLoadError> {
-        match &self
-            .registered_assets
-            .get(asset_handle)
-            .unwrap()
-            .residency_level
-        {
-            AssetResidency::GPU(aloc_handle, la_index) => {
-                let la = &self.loaded_assets[*la_index];
-                la.get_renderables(aloc_handle.clone(), renderables, query)
-            }
-            AssetResidency::Registered => {
-                panic!("this mesh_collection_component is not yet loaded")
-            }
-            AssetResidency::CPU(_) => {
-                panic!(
-                    "this mesh_collection_component is not GPU resident, so its not ready to spawn!"
-                )
+        for (asset, reqs) in query.requirements.iter() {
+            match &self.registered_assets.get(asset).unwrap().residency_level {
+                AssetResidency::GPU(aloc_handle, la_index) => {
+                    let la = &self.loaded_assets[*la_index];
+                    la.get_renderables(aloc_handle.clone(), renderables, query);
+                }
+                AssetResidency::Registered => {
+                    panic!("this mesh_collection_component is not yet loaded")
+                }
+                AssetResidency::CPU(_) => {
+                    panic!(
+                        "this mesh_collection_component is not GPU resident, so its not ready to spawn!"
+                    )
+                }
             }
         }
+        Ok(())
     }
 
     fn unwrap_la(&self, asset_handle: &AssetHandle) -> &Box<dyn LoadedAsset> {

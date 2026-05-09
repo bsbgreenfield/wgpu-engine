@@ -11,7 +11,7 @@ mod rigid_tests {
         },
         asset_manager_new::gltf::{GltfAnimation, GltfNode, NodeTransforms, NodeType},
         util::types::Mat4F32,
-        world::instance_manager::AnimationInstance,
+        world::instance_manager::{AnimationController, AnimationInstance},
     };
 
     // buffer is column-major [[f32;4];4]: translation is column 3, so [3][0]=x, [3][1]=y, [3][2]=z
@@ -48,13 +48,9 @@ mod rigid_tests {
         let mut channels = AnimationChannels::new();
         channels.insert(0usize, vec![(0usize, AnimationTransformType::Translation)]);
 
-        let mut buffer_slot_map = HashMap::new();
-        buffer_slot_map.insert(0usize, 0usize);
-
         let node = Arc::new(GltfNode::mock(NodeType::Mesh(0), 0, vec![], identity_trs()));
 
-        let animation =
-            GltfAnimation::new_for_test(vec![node], buffer_slot_map, vec![sampler], channels);
+        let animation = GltfAnimation::new_for_test(vec![sampler], channels, &vec![node]);
 
         let samples = animation.init_samples();
 
@@ -134,12 +130,8 @@ mod rigid_tests {
         let mut channels = AnimationChannels::new();
         channels.insert(0usize, vec![(0usize, AnimationTransformType::Translation)]);
 
-        let mut buffer_slot_map = HashMap::new();
-        buffer_slot_map.insert(0usize, 0usize);
-
         let node = Arc::new(GltfNode::mock(NodeType::Mesh(0), 0, vec![], identity_trs()));
-        let animation =
-            GltfAnimation::new_for_test(vec![node], buffer_slot_map, vec![sampler], channels);
+        let animation = GltfAnimation::new_for_test(vec![sampler], channels, &vec![node]);
 
         let samples = animation.init_samples();
         let mut instance = AnimationInstance::new_for_test(samples, 1);
@@ -164,12 +156,7 @@ mod rigid_tests {
         let mut buffer_slot_map = HashMap::new();
         buffer_slot_map.insert(0usize, 0usize);
 
-        let animation = GltfAnimation::new_for_test(
-            vec![node],
-            buffer_slot_map,
-            vec![],
-            AnimationChannels::new(),
-        );
+        let animation = GltfAnimation::new_for_test(vec![], AnimationChannels::new(), &vec![node]);
 
         let mut instance = AnimationInstance::new_for_test(vec![], 1);
         animation.get_animation_frame(0.5, &mut instance, &Matrix4::identity());
@@ -191,18 +178,13 @@ mod rigid_tests {
         channels.insert(0usize, vec![(0usize, AnimationTransformType::Translation)]);
         channels.insert(1usize, vec![(1usize, AnimationTransformType::Translation)]);
 
-        let mut buffer_slot_map = HashMap::new();
-        buffer_slot_map.insert(0usize, 0usize);
-        buffer_slot_map.insert(1usize, 1usize);
-
         let node_0 = Arc::new(GltfNode::mock(NodeType::Mesh(0), 0, vec![], identity_trs()));
         let node_1 = Arc::new(GltfNode::mock(NodeType::Mesh(1), 1, vec![], identity_trs()));
 
         let animation = GltfAnimation::new_for_test(
-            vec![node_0, node_1],
-            buffer_slot_map,
             vec![sampler_0, sampler_1],
             channels,
+            &vec![node_0, node_1],
         );
         let samples = animation.init_samples();
         let instance = AnimationInstance::new_for_test(samples, 2);
@@ -238,15 +220,8 @@ mod rigid_tests {
             translation_trs(5.0, 0.0, 0.0),
         ));
 
-        let mut buffer_slot_map = HashMap::new();
-        buffer_slot_map.insert(0usize, 0usize);
-
-        let animation = GltfAnimation::new_for_test(
-            vec![parent],
-            buffer_slot_map,
-            vec![],
-            AnimationChannels::new(),
-        );
+        let animation =
+            GltfAnimation::new_for_test(vec![], AnimationChannels::new(), &vec![parent]);
 
         let instance = AnimationInstance::new_for_test(vec![], 1);
         (animation, instance)
@@ -265,15 +240,8 @@ mod rigid_tests {
             translation_trs(5.0, 0.0, 0.0),
         ));
 
-        let mut buffer_slot_map = HashMap::new();
-        buffer_slot_map.insert(0usize, 0usize);
-
-        let animation = GltfAnimation::new_for_test(
-            vec![parent],
-            buffer_slot_map,
-            vec![],
-            AnimationChannels::new(),
-        );
+        let animation =
+            GltfAnimation::new_for_test(vec![], AnimationChannels::new(), &vec![parent]);
 
         let mut instance = AnimationInstance::new_for_test(vec![], 1);
         animation.get_animation_frame(0.0, &mut instance, &Matrix4::identity());
@@ -318,16 +286,8 @@ mod rigid_tests {
             identity_trs(),
         ));
 
-        let mut buffer_slot_map = HashMap::new();
-        buffer_slot_map.insert(0usize, 0usize); //mesh0 -> buffer slot 0
-        buffer_slot_map.insert(1usize, 1usize); //mesh1 -> buffer slot 1
-
-        let animation = GltfAnimation::new_for_test(
-            vec![root],
-            buffer_slot_map,
-            vec![sampler_root, sampler_child1],
-            channels,
-        );
+        let animation =
+            GltfAnimation::new_for_test(vec![sampler_root, sampler_child1], channels, &vec![root]);
 
         let samples = animation.init_samples();
         let instance = AnimationInstance::new_for_test(samples, 2);
@@ -409,12 +369,7 @@ mod rigid_tests {
         let node_0 = Arc::new(GltfNode::mock(NodeType::Mesh(0), 0, vec![], identity_trs()));
         let node_1 = Arc::new(GltfNode::mock(NodeType::Mesh(1), 1, vec![], identity_trs()));
 
-        let animation = GltfAnimation::new_for_test(
-            vec![node_0, node_1],
-            buffer_slot_map,
-            vec![sampler],
-            channels,
-        );
+        let animation = GltfAnimation::new_for_test(vec![sampler], channels, &vec![node_0, node_1]);
 
         let samples = vec![AnimationSample::init(&times)];
         let instance = AnimationInstance::new_for_test(samples, 2);
@@ -495,17 +450,10 @@ mod rigid_tests {
             ],
         );
 
-        let mut buffer_slot_map = HashMap::new();
-        buffer_slot_map.insert(0usize, 0usize);
-
         let node = Arc::new(GltfNode::mock(NodeType::Mesh(0), 0, vec![], identity_trs()));
 
-        let animation = GltfAnimation::new_for_test(
-            vec![node],
-            buffer_slot_map,
-            vec![sampler_t, sampler_s],
-            channels,
-        );
+        let animation =
+            GltfAnimation::new_for_test(vec![sampler_t, sampler_s], channels, &vec![node]);
 
         let samples = animation.init_samples();
         let mut instance = AnimationInstance::new_for_test(samples, 1);

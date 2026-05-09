@@ -4,8 +4,11 @@ use cgmath::SquareMatrix;
 use time::{Duration, ext::InstantExt};
 
 use crate::{
-    animation::animation::{Animation, AnimationSample},
-    app::renderer::{DrawItem, DrawPacket},
+    animation::animation::{Animation, AnimationSample, EntityAnimation},
+    app::{
+        app::AppCommand,
+        renderer::{DrawItem, DrawPacket},
+    },
     util::types::{GlobalTransform, LocalTransform, Mat4F32},
     world::{
         RenderKey, WorldUpdateError,
@@ -256,9 +259,7 @@ impl AnimationInstance {
 
 #[derive(Default)]
 pub struct AnimationController {
-    registered_animations: HashMap<EntityHandle, Vec<Arc<dyn Animation>>>,
-    // TODO: faster to iterate if this is a flat list?
-    // TODO: support other types of aniamations
+    registered_animations: HashMap<EntityHandle, EntityAnimation>,
     active_animations: Vec<AnimationInstance>,
 }
 
@@ -267,10 +268,27 @@ impl AnimationController {
         &mut self,
         animation_refs: Vec<Arc<dyn Animation>>,
         instance_handle: InstanceHandle,
+        local_transform_data: &LocalTransformData,
     ) {
-        self.registered_animations
-            .entry(instance_handle.entity_handle)
-            .or_insert(animation_refs);
+        match local_transform_data {
+            LocalTransformData::Copy(local_transforms) => {
+                self.registered_animations.insert(
+                    instance_handle.entity_handle.clone(),
+                    EntityAnimation {
+                        animation: animation_refs.clone(),
+                        local_transforms: local_transforms.clone(),
+                        buffer_slot_map: vec![],
+                    },
+                );
+            }
+            LocalTransformData::FromShared { donor } => {
+                assert!(
+                    self.registered_animations
+                        .contains_key(&donor.entity_handle)
+                );
+            }
+            _ => panic!("cant determine local transforms for the animation buffer"),
+        }
     }
 
     /// time offset is unsafe: only use if you are sure the offset is a valid value for the animation, or if
@@ -281,13 +299,18 @@ impl AnimationController {
         anim_idx: usize,
         time_offset: Option<f32>,
     ) -> Option<()> {
-        let animation = self
+        let entity_animation = self
             .registered_animations
-            .get(&instance_handle.entity_handle)?
-            .get(anim_idx)?;
+            .get(&instance_handle.entity_handle)?;
+
+        let buffer: Vec<Mat4F32> = entity_animation
+            .local_transforms
+            .iter()
+            .map(|lt| **lt)
+            .collect();
         self.active_animations.push(AnimationInstance {
-            samples: animation.init_samples(),
-            buffer: Vec::with_capacity(animation.count()),
+            samples: entity_animation.animation[anim_idx].init_samples(),
+            buffer,
             animation_idx: anim_idx,
             start_time: std::time::Instant::now()
                 .add_signed(Duration::milliseconds(time_offset.unwrap_or(0.0) as i64)),
@@ -308,6 +331,15 @@ pub struct InstanceManager {
 
 impl InstanceManager {
     #[cfg(test)]
+    pub fn assert_local_transforms_exist(&self, instance_handle: &InstanceHandle) {
+        assert!(
+            self.animation_controller
+                .registered_animations
+                .contains_key(&instance_handle.entity_handle)
+        )
+    }
+
+    #[cfg(test)]
     pub fn get_active_animations(&self) -> &[AnimationInstance] {
         &self.animation_controller.active_animations
     }
@@ -322,7 +354,8 @@ impl InstanceManager {
             .animation_controller
             .registered_animations
             .get(entity_handle)
-            .unwrap()[index]
+            .unwrap()
+            .animation[index]
     }
 
     #[cfg(test)]
@@ -371,14 +404,30 @@ impl InstanceManager {
         }
     }
 
-    pub(super) fn update(&mut self) {
+    pub(super) fn update(&mut self, commands: &mut Vec<AppCommand>) {
+        if let Some(command) = commands.pop() {
+            let mut handle = None;
+            match command {
+                AppCommand::DoSomething => {
+                    for (found, _) in self.gpu_bindings.iter() {
+                        handle = Some(found.clone());
+                    }
+                }
+            }
+            if handle.is_none() {
+                commands.push(command);
+            } else {
+                self.activate_animation(handle.as_ref().unwrap(), 0, None);
+            }
+        }
         // DO ANIMATIONS
         for active_animation in self.animation_controller.active_animations.iter_mut() {
             let animation = &self
                 .animation_controller
                 .registered_animations
                 .get(&active_animation.instance_handle.entity_handle)
-                .unwrap()[active_animation.animation_idx];
+                .unwrap()
+                .animation[active_animation.animation_idx];
 
             let now = std::time::Instant::now();
             let time_delta: f32 = (now - active_animation.start_time).as_secs_f32();
@@ -441,25 +490,32 @@ impl InstanceManager {
                     RenderData::MeshRenderable {
                         gpu_alloc_handle,
                         pnu_vertex_ranges,
+                        pnu_mesh_map,
+                        pnujw_mesh_map,
                         pnujw_vertex_ranges,
                         index_ranges,
                     } => {
                         let view = RenderView {
                             gpu_handle: gpu_alloc_handle,
                             pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
+                                mesh_map: pnu_mesh_map,
                                 primtitive_ranges: pnu,
                                 index_ranges: index_ranges.clone(),
                             }),
                             pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
+                                mesh_map: pnujw_mesh_map,
                                 primtitive_ranges: pnujw,
                                 index_ranges: index_ranges,
                             }),
                         };
                         views.push(view);
                     }
-                    RenderData::AnimationData { animation } => {
-                        self.animation_controller
-                            .insert_animation_refs(animation, instance_handle.clone());
+                    RenderData::AnimationData { animations } => {
+                        self.animation_controller.insert_animation_refs(
+                            animations,
+                            instance_handle.clone(),
+                            &renderables.instance_data.as_ref().unwrap().local_transforms,
+                        );
                     }
                 }
             }
@@ -511,7 +567,7 @@ impl InstanceManager {
                         if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
                             for (i, pr) in pnu.primtitive_ranges.iter().enumerate() {
                                 entry.push(DrawItem::new(
-                                    bindings.lt_offset,
+                                    bindings.lt_offset + pnu.mesh_map[i],
                                     instance_idx..instance_idx + 1,
                                     pr.clone(),
                                     pnu.index_ranges.as_ref().map(|x| x[i].clone()),
@@ -534,7 +590,7 @@ impl InstanceManager {
                         if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
                             for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
                                 entry.push(DrawItem::new(
-                                    bindings.lt_offset,
+                                    bindings.lt_offset + pnujw.mesh_map[i],
                                     instance_idx..instance_idx + 1,
                                     pr.clone(),
                                     pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
