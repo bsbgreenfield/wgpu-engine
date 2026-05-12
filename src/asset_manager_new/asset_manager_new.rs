@@ -1,38 +1,36 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 
 use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
-        Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, LoadableAsset,
-        LoadedAsset,
+        Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, UnloadedAssetData,
     },
-    world::{
-        InstanceUploadQuery,
-        components::MeshCollectionComponent,
-        entity_manager::{EntityHandle, Renderables},
-        entity_upload_query::InstanceUploadQueryNew,
-        instance_manager::{ArchetypeId, InstanceHandle},
-        scene::SceneLoadLevel,
-    },
+    world::scene::SceneLoadLevel,
 };
 
-struct RegisteredAsset {
-    residency_level: AssetResidency,
-    asset: Box<dyn LoadableAsset>,
+enum RegisteredAssetNew<A: Asset + ?Sized> {
+    Unloaded {
+        data: UnloadedAssetData,
+        _t: PhantomData<A>,
+    },
+    Loaded(AssetResidency),
 }
 
-impl RegisteredAsset {
-    fn new<A: Asset + LoadableAsset + 'static>(asset: A) -> Self {
-        Self {
-            residency_level: AssetResidency::Registered,
-            asset: Box::new(asset),
-        }
+impl<A: Asset + ?Sized> RegisteredAssetNew<A> {
+    fn set_as_gpu_loaded(&mut self, alloc_handle: GPUAllocationHandle) {
+        let Self::Loaded(res) = self else {
+            panic!("set gpu called on unloaded asset");
+        };
+        let AssetResidency::CPU(la_index) = res else {
+            panic!("asset residency must be cpu to set loaded");
+        };
+        *res = AssetResidency::GPU(alloc_handle, *la_index);
     }
 }
 
 pub struct AssetManagerNew {
-    registered_assets: HashMap<AssetHandle, RegisteredAsset>,
-    loaded_assets: Vec<Box<dyn LoadedAsset>>,
+    registered_assets: HashMap<AssetHandle, RegisteredAssetNew<dyn Asset>>,
+    loaded_assets: Vec<Box<dyn Asset>>,
 }
 
 impl AssetManagerNew {
@@ -47,50 +45,67 @@ impl AssetManagerNew {
     }
 
     fn res_level_of(&self, asset_handle: &AssetHandle) -> Result<&AssetResidency, AssetLoadError> {
-        Ok(&self
+        let registered = self
             .registered_assets
             .get(asset_handle)
-            .ok_or(AssetLoadError::AssetNotFound)?
-            .residency_level)
+            .ok_or(AssetLoadError::AssetNotFound)?;
+        match registered {
+            RegisteredAssetNew::Unloaded { data: _data, _t } => Ok(&AssetResidency::Registered),
+            RegisteredAssetNew::Loaded(res) => Ok(res),
+        }
     }
 
     fn load(&mut self, asset_handle: &AssetHandle) -> Result<usize, AssetLoadError> {
-        let mut registered_asset = self.registered_assets.remove(asset_handle).unwrap();
-
-        let loaded_asset: Box<dyn LoadedAsset> = registered_asset.asset.load()?;
-        let la_index = self.loaded_assets.len().clone();
-        self.loaded_assets.push(loaded_asset);
-        registered_asset.residency_level = AssetResidency::CPU(la_index);
-        self.registered_assets
-            .insert(*asset_handle, registered_asset);
-        Ok(la_index)
+        let registered_asset = self.registered_assets.remove(asset_handle).unwrap();
+        match registered_asset {
+            RegisteredAssetNew::Unloaded { data, _t } => {
+                let loaded = data.load()?;
+                let la_index = self.loaded_assets.len().clone();
+                self.loaded_assets.push(loaded);
+                self.registered_assets.insert(
+                    *asset_handle,
+                    RegisteredAssetNew::Loaded(AssetResidency::CPU(la_index)),
+                );
+                return Ok(la_index);
+            }
+            RegisteredAssetNew::Loaded(res) => match res {
+                AssetResidency::CPU(la_index) => return Ok(la_index),
+                AssetResidency::GPU(_alloc, la_index) => return Ok(la_index),
+                _ => panic!(),
+            },
+        }
     }
 
     pub fn get_upload_job_for<'a>(
         &'a self,
         asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError> {
-        match self
-            .registered_assets
-            .get(&asset_handle)
-            .unwrap()
-            .residency_level
-        {
-            AssetResidency::CPU(la_index) => {
-                let la = &self.loaded_assets[la_index];
-                return la.upload_job(asset_handle);
-            }
-            _ => return Err(AssetLoadError::AssetNotFound),
+        match self.registered_assets.get(&asset_handle).unwrap() {
+            RegisteredAssetNew::Unloaded { data: _data, _t } => Err(
+                AssetLoadError::AssetNotLoaded(String::from("this asset is not yet loaded!")),
+            ),
+            RegisteredAssetNew::Loaded(res) => match res {
+                AssetResidency::CPU(la_index) => {
+                    let asset = &self.loaded_assets[*la_index];
+                    return asset.get_upload_job(asset_handle);
+                }
+                _ => return Err(AssetLoadError::AssetNotFound),
+            },
         }
     }
     pub fn register_asset<A>(&mut self, source: &str) -> Result<AssetHandle, AssetLoadError>
     where
-        A: Asset + LoadableAsset + 'static,
+        A: Asset + 'static,
     {
         let asset = A::new(source)?;
         let handle = self.gen_handle();
-        self.registered_assets
-            .insert(handle, RegisteredAsset::new(asset));
+        self.registered_assets.insert(
+            handle,
+            RegisteredAssetNew::Unloaded {
+                data: asset,
+                _t: PhantomData,
+            },
+        );
         Ok(handle)
     }
 
@@ -100,18 +115,8 @@ impl AssetManagerNew {
         allocation_handle: GPUAllocationHandle,
     ) -> Result<(), AssetLoadError> {
         if let Some(registered_asset) = self.registered_assets.get_mut(asset_handle) {
-            match registered_asset.residency_level {
-                AssetResidency::CPU(la_index) => {
-                    registered_asset.residency_level =
-                        AssetResidency::GPU(allocation_handle, la_index);
-                    return Ok(());
-                }
-                _ => {
-                    return Err(AssetLoadError::AssetNotLoaded(String::from(
-                        "tried to register asset GPU resident but it was not CPU resident",
-                    )));
-                }
-            }
+            registered_asset.set_as_gpu_loaded(allocation_handle);
+            return Ok(());
         } else {
             return Err(AssetLoadError::AssetNotFound);
         }
@@ -154,49 +159,19 @@ impl AssetManagerNew {
         }
     }
 
-    pub fn get_renderables_for(
-        &self,
-        renderables: &mut Renderables,
-        query: &InstanceUploadQueryNew,
-    ) -> Result<(), AssetLoadError> {
-        for (asset, reqs) in query.requirements.iter() {
-            match &self.registered_assets.get(asset).unwrap().residency_level {
-                AssetResidency::GPU(aloc_handle, la_index) => {
-                    let la = &self.loaded_assets[*la_index];
-                    la.get_renderables(aloc_handle.clone(), renderables, query);
-                }
-                AssetResidency::Registered => {
-                    panic!("this mesh_collection_component is not yet loaded")
-                }
-                AssetResidency::CPU(_) => {
-                    panic!(
-                        "this mesh_collection_component is not GPU resident, so its not ready to spawn!"
-                    )
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn unwrap_la(&self, asset_handle: &AssetHandle) -> &Box<dyn LoadedAsset> {
-        match self
+    pub fn get_loaded_asset(&self, asset_handle: &AssetHandle) -> &Box<dyn Asset> {
+        let a = self
             .registered_assets
             .get(asset_handle)
-            .unwrap()
-            .residency_level
-        {
-            AssetResidency::GPU(_, la_index) => &self.loaded_assets[la_index],
-            _ => panic!("asset is not gpu resident"),
-        }
+            .expect("asset is not registered!");
+        let RegisteredAssetNew::Loaded(res) = a else {
+            panic!("asset is not loaded!")
+        };
+        let AssetResidency::GPU(_alloc_handle, la_index) = res else {
+            panic!("asset is not gpu resident!")
+        };
+        self.loaded_assets
+            .get(*la_index)
+            .expect("loaded asset not found at specified index!")
     }
-
-    // pub fn get_instanced_upload_data_for(
-    //     &self,
-    //     asset_handle: &AssetHandle,
-    //     instance_handle: InstanceHandle,
-    //     mesh_accessor: &MeshAcessor,
-    // ) -> InstanceUploadData {
-    //     let la = self.unwrap_la(asset_handle);
-    //     la.get_instance_upload_data(instance_handle, mesh_accessor)
-    // }
 }

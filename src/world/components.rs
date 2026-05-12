@@ -1,12 +1,12 @@
 use std::marker::PhantomData;
 
+use gltf::json::extensions::mesh::Mesh;
+
 use crate::{
+    animation::animation::EntityAnimation,
     app::renderer::GPUAllocationHandle,
-    asset_manager_new::{AssetHandle, LoadedAsset, ProvidesMeshData},
-    world::{
-        InstanceUploadQuery,
-        entity_upload_query::{DataRequirement, InstanceUploadQueryNew},
-    },
+    asset_manager_new::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
+    world::{entity_upload_query::DataRequirement, world::RenderView},
 };
 
 #[derive(Debug)]
@@ -22,21 +22,26 @@ pub enum RigidAnimationMode {
 }
 
 #[derive(Debug)]
-pub struct MeshCollectionComponent {
-    pub resource_backing: AssetHandle,
+pub struct ResourceBacking<A: Asset + ?Sized> {
+    pub asset_handle: AssetHandle,
+    _t: PhantomData<A>,
+}
+#[derive(Debug)]
+pub struct MeshCollectionComponent<A: ProvidesMeshData + ?Sized> {
+    pub resource_backing: ResourceBacking<A>,
     pub mesh_accessor: MeshAcessor,
     pub rigid_animation_mode: RigidAnimationMode,
 }
 
-pub struct MeshCollectionDescriptor {
-    pub resource_backing: AssetHandle,
+pub struct MeshCollectionDescriptor<T: ProvidesMeshData> {
+    pub resource_backing: ResourceBacking<T>,
     pub allocation_handle: Option<GPUAllocationHandle>,
     pub mesh_accessor: MeshAcessor,
     pub rigid_animation_mode: RigidAnimationMode,
 }
 
-impl MeshCollectionComponent {
-    pub fn new(descriptor: MeshCollectionDescriptor) -> Self {
+impl<T: ProvidesMeshData> MeshCollectionComponent<T> {
+    pub fn new(descriptor: MeshCollectionDescriptor<T>) -> Self {
         Self {
             resource_backing: descriptor.resource_backing,
             mesh_accessor: descriptor.mesh_accessor,
@@ -46,25 +51,16 @@ impl MeshCollectionComponent {
 }
 
 pub trait Component {
-    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool);
+    type AssetType: Asset + ?Sized;
+    type Output;
+
     fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>>;
+    fn get_output_data(&self, asset: &Self::AssetType, is_instanced: bool) -> Self::Output;
 }
 
-impl Component for MeshCollectionComponent {
-    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool) {
-        if is_instanced {
-            if matches!(self.rigid_animation_mode, RigidAnimationMode::Independent) {
-                query.needs_local_transforms = true;
-                query.mesh_accesor = Some(&self.mesh_accessor);
-            }
-        } else {
-            query.needs_meshes = true;
-            query.needs_local_transforms = true;
-            query.mesh_accesor = Some(&self.mesh_accessor);
-        }
-        query.rigid_animation_mode = Some(&self.rigid_animation_mode)
-    }
-
+impl<A: ProvidesMeshData + ?Sized> Component for MeshCollectionComponent<A> {
+    type AssetType = A;
+    type Output = Vec<RenderView>;
     fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>> {
         let mut res = Vec::new();
         if !is_instanced {
@@ -78,6 +74,13 @@ impl Component for MeshCollectionComponent {
         }
         res
     }
+
+    fn get_output_data(&self, asset: &A, is_instanced: bool) -> Self::Output {
+        if is_instanced {
+            return vec![];
+        }
+        asset.render_view(&self.mesh_accessor, &self.rigid_animation_mode)
+    }
 }
 
 #[derive(Debug)]
@@ -86,47 +89,38 @@ pub enum AnimationAccessor {
     Index(usize),
 }
 
-pub struct AnimationComponent {
-    pub resource_backing: AssetHandle,
+pub struct AnimationComponent<T: ProvidesAnimationData + ?Sized> {
+    pub resource_backing: ResourceBacking<T>,
     pub animation_accessor: AnimationAccessor,
+    mesh_accessor: MeshAcessor,
 }
 
-pub struct AnimationComponentDescriptor {
-    pub resource_backing: AssetHandle,
+pub struct AnimationComponentDescriptor<A: ProvidesAnimationData> {
+    pub resource_backing: ResourceBacking<A>,
     pub accessor: AnimationAccessor,
+    pub mesh_accessor: MeshAcessor,
 }
 
-impl AnimationComponent {
-    pub fn new(desciptor: AnimationComponentDescriptor) -> Self {
+impl<A: ProvidesAnimationData> AnimationComponent<A> {
+    pub fn new(desciptor: AnimationComponentDescriptor<A>) -> Self {
         Self {
             resource_backing: desciptor.resource_backing,
             animation_accessor: desciptor.accessor,
+            mesh_accessor: desciptor.mesh_accessor,
         }
     }
 }
 
-impl Component for AnimationComponent {
-    fn modify_query<'a>(&'a self, query: &mut InstanceUploadQuery<'a>, is_instanced: bool) {
-        query.needs_animations = true;
-        query.animation_accessor = Some(&self.animation_accessor);
-    }
+impl<A: ProvidesAnimationData> Component for AnimationComponent<A> {
+    type AssetType = A;
+    type Output = Vec<EntityAnimation>;
     fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>> {
         vec![DataRequirement::AnimationData {
             anim_accessor: &self.animation_accessor,
         }]
     }
-}
-struct ResourceBacking<A: LoadedAsset + ?Sized> {
-    asset_handle: AssetHandle,
-    _t: PhantomData<A>,
-}
 
-pub struct TestMeshComponent<A: ProvidesMeshData + ?Sized> {
-    resource_backing: ResourceBacking<A>,
-    mesh_accessor: MeshAcessor,
-    rigid_mode: RigidAnimationMode,
-}
-
-pub struct TestEntityManager {
-    meshes: Vec<TestMeshComponent<dyn ProvidesMeshData>>,
+    fn get_output_data(&self, asset: &Self::AssetType, is_instanced: bool) -> Self::Output {
+        asset.entity_animation(&self.animation_accessor, &self.mesh_accessor)
+    }
 }

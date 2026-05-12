@@ -1,21 +1,25 @@
 use std::fmt::{Debug, Display};
 
+mod test_refactor;
+
 use crate::{
     animation::animation::EntityAnimation,
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
-    asset_manager_new::gltf::{GltfLoadError, GltfValidationError},
+    asset_manager_new::gltf_asset::{
+        BinarySource, GltfLoadError, GltfValidationError, LoadedGltfAsset,
+    },
     world::{
-        InstanceUploadQuery, RenderKey,
+        RenderKey,
         components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
-        entity_manager::Renderables,
-        entity_upload_query::{DataRequirement, InstanceUploadQueryNew},
+        entity_manager::{MeshRenderables, Renderables},
+        entity_upload_query::InstanceUploadQueryNew,
         scene::SceneLoadLevel,
         world::RenderView,
     },
 };
 
 pub mod asset_manager_new;
-pub mod gltf;
+pub mod gltf_asset;
 mod range_splicer;
 #[derive(Debug)]
 pub enum AssetLoadError {
@@ -77,10 +81,30 @@ impl RenderKey for AssetHandle {
     }
 }
 
+enum UnloadedAssetData {
+    Gltf(gltf::Gltf, BinarySource),
+}
+
+impl UnloadedAssetData {
+    fn load(self) -> Result<Box<dyn Asset>, ModelBuilderError> {
+        match self {
+            Self::Gltf(gltf, bin) => LoadedGltfAsset::load(gltf, bin),
+        }
+    }
+}
+
 pub trait Asset {
-    fn new(dir_name: &str) -> Result<Self, AssetLoadError>
+    fn new(dir_name: &str) -> Result<UnloadedAssetData, AssetLoadError>
     where
         Self: Sized;
+
+    fn get_upload_job(
+        &self,
+        asset_handle: AssetHandle,
+    ) -> Result<GPUAssetUploadJob, AssetLoadError>;
+
+    fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
+    fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
 }
 #[derive(Clone)]
 pub enum AssetResidency {
@@ -148,12 +172,6 @@ pub trait LoadedAsset {
         renderables: &mut Renderables,
         query: &InstanceUploadQueryNew,
     ) -> Result<(), AssetLoadError>;
-
-    //    fn get_instance_upload_data<'a>(
-    //        &'a self,
-    //        instance_handle: InstanceHandle,
-    //        mesh_accessor: &MeshAcessor,
-    //    ) -> InstanceUploadData;
 }
 #[derive(Debug)]
 pub enum ModelBuilderError {
@@ -184,15 +202,15 @@ impl From<GltfValidationError> for ModelBuilderError {
     }
 }
 
-pub trait ProvidesMeshData: LoadedAsset {
-    fn render_view<'a>(
+pub trait ProvidesMeshData: Asset {
+    fn render_mesh_data<'a>(
         &self,
         mesh_accessor: &'a MeshAcessor,
         mode: &'a RigidAnimationMode,
-    ) -> Vec<RenderView>;
+    ) -> Vec<MeshRenderables>;
 }
 
-pub trait ProvidesAnimationData: LoadedAsset {
+pub trait ProvidesAnimationData: Asset {
     fn entity_animation<'a>(
         &self,
         animation_accessor: &AnimationAccessor,

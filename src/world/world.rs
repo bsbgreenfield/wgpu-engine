@@ -56,6 +56,18 @@ impl RenderGroup {
     }
 }
 
+pub enum LocalTransformsNew {
+    Uninit,
+    NeedsDonor,
+    FromShared {
+        donor: InstanceHandle,
+    },
+    Owned {
+        data: Vec<LocalTransform>,
+        buffer_slot_map: Vec<usize>,
+    },
+}
+
 #[derive(Debug)]
 pub enum LocalTransformData {
     None,

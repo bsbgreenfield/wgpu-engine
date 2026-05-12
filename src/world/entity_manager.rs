@@ -2,19 +2,20 @@ use std::{
     collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit, ops::Range, sync::Arc,
 };
 
-use gltf::json::asset;
+use gltf::json::serialize::to_string;
 
 use crate::{
-    animation::animation::{Animation, EntityAnimation},
+    animation::animation::Animation,
     app::renderer::GPUAllocationHandle,
-    asset_manager_new::{AssetHandle, asset_manager_new::AssetManagerNew},
-    util::types::LocalTransform,
+    asset_manager_new::{
+        AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManagerNew,
+    },
     world::{
         InstanceUploadQuery,
-        components::{AnimationComponent, Component, MeshCollectionComponent, RigidAnimationMode},
+        components::{AnimationComponent, Component, MeshCollectionComponent},
         entity_upload_query::InstanceUploadQueryNew,
         instance_manager::InstanceHandle,
-        world::InstanceUploadData,
+        world::{InstanceUploadData, LocalTransformsNew},
     },
 };
 
@@ -35,8 +36,8 @@ impl Error for EntityManagerError {}
 
 pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
-    mesh_collections: SparseSet<MeshCollectionComponent, 100>,
-    animations: SparseSet<AnimationComponent, 100>,
+    mesh_collections: SparseSet<MeshCollectionComponent<dyn ProvidesMeshData>, 100>,
+    animations: SparseSet<AnimationComponent<dyn ProvidesAnimationData>, 100>,
     pub(super) asset_manager: AssetManagerNew,
 }
 
@@ -55,6 +56,21 @@ pub enum RenderData {
     },
 }
 
+pub struct MeshRenderables {
+    gpu_alloc_handle: GPUAllocationHandle,
+    pnu_vertex_ranges: Option<Vec<Range<u32>>>,
+    pnu_mesh_map: Vec<u32>,
+    pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
+    pnujw_mesh_map: Vec<u32>,
+    index_ranges: Option<Vec<Range<u32>>>,
+}
+
+pub struct RenderablesNew {
+    pub instance_handle: InstanceHandle,
+    mesh_renderables: Option<MeshRenderables>,
+    local_transforms: LocalTransformsNew,
+}
+
 #[derive(Debug)]
 pub struct Renderables {
     pub instance_handle: InstanceHandle,
@@ -63,51 +79,30 @@ pub struct Renderables {
 }
 
 impl EntityManager {
-    // pub fn get_instance_gpu_data(&self, instance_handle: &InstanceHandle) -> InstanceUploadData {
-    //     let mcc = self
-    //         .mesh_collections
-    //         .get(instance_handle.entity_handle.0 as usize)
-    //         .unwrap();
-    //     let mesh_accessor = &mcc.mesh_accessor;
-    //     let asset_handle = &mcc.resource_backing;
-    //     self.asset_manager.get_instanced_upload_data_for(
-    //         asset_handle,
-    //         instance_handle.clone(),
-    //         mesh_accessor,
-    //     )
-    // }
-
-    pub fn get_entity_renderables_new<'frame>(
+    pub fn get_entity_render_data<'frame>(
         &'frame self,
         instance_handle: &InstanceHandle,
         is_instanced: bool,
-    ) {
-        // TODO: the way this function works is that it expects ALL components to have an asset backing
-        // this could be enforced in a different way, like creating some kind of "component data
-        // source" trait
-        let mut query = InstanceUploadQueryNew::default();
-
-        // **** components ****
-        let mesh_collection = self
+    ) -> Result<(), EntityManagerError> {
+        let renderables = RenderablesNew {
+            instance_handle: instance_handle.clone(),
+            mesh_renderables: None,
+            local_transforms: LocalTransformsNew::Uninit,
+        };
+        if let Some(mesh_collection) = self
             .mesh_collections
-            .get(instance_handle.entity_handle.0 as usize);
-        if let Some(mesh_collection) = mesh_collection {
-            query.modify(
-                mesh_collection.resource_backing,
-                mesh_collection.get_data_requirements(is_instanced),
-            );
-        }
-        if let Some(animation) = self
-            .animations
             .get(instance_handle.entity_handle.0 as usize)
         {
-            query.modify(
-                animation.resource_backing,
-                animation.get_data_requirements(is_instanced),
-            );
+            let asset = self
+                .asset_manager
+                .get_loaded_asset(&mesh_collection.resource_backing.asset_handle)
+                .as_mesh_provider()
+                .unwrap();
+
+            let render_view = mesh_collection.get_output_data(asset);
         }
 
-        todo!()
+        Ok(())
     }
 
     /// For each component that might contribute Renderable data to that is needed for the Renderer
@@ -121,49 +116,50 @@ impl EntityManager {
         instance_handle: &InstanceHandle,
         is_instanced: bool,
     ) -> Result<Renderables, EntityManagerError> {
-        let mut query = InstanceUploadQuery::default();
-        let mut renderables = Renderables {
-            instance_handle: instance_handle.clone(),
-            common: None,
-            instance_data: None,
-        };
-        let mut assets = HashSet::<AssetHandle>::new();
-        let mesh_collection = self
-            .mesh_collections
-            .get(instance_handle.entity_handle.0 as usize);
-        if let Some(mesh_collection) = mesh_collection {
-            mesh_collection.modify_query(&mut query, is_instanced);
-            assets.insert(mesh_collection.resource_backing.clone());
-            //self.asset_manager
-            //    .get_renderables_for(mesh_collection, &mut renderables, &query)
-            //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
-        }
-        if let Some(animation) = self
-            .animations
-            .get(instance_handle.entity_handle.0 as usize)
-        {
-            animation.modify_query(&mut query, is_instanced);
-            assets.insert(animation.resource_backing);
-        }
+        // let mut query = InstanceUploadQuery::default();
+        // let mut renderables = Renderables {
+        //     instance_handle: instance_handle.clone(),
+        //     common: None,
+        //     instance_data: None,
+        // };
+        // let mut assets = HashSet::<AssetHandle>::new();
+        // let mesh_collection = self
+        //     .mesh_collections
+        //     .get(instance_handle.entity_handle.0 as usize);
+        // if let Some(mesh_collection) = mesh_collection {
+        //     mesh_collection.modify_query(&mut query, is_instanced);
+        //     assets.insert(mesh_collection.resource_backing.clone());
+        //     //self.asset_manager
+        //     //    .get_renderables_for(mesh_collection, &mut renderables, &query)
+        //     //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
+        // }
+        // if let Some(animation) = self
+        //     .animations
+        //     .get(instance_handle.entity_handle.0 as usize)
+        // {
+        //     animation.modify_query(&mut query, is_instanced);
+        //     assets.insert(animation.resource_backing);
+        // }
 
-        // TODO: collect other instance render data
+        // // TODO: collect other instance render data
 
-        // for each unique asset handle that makes up the entity, fetch renderable data
-        for asset in assets.iter() {
-            todo!()
-            //self.asset_manager
-            //    .get_renderables_for(asset, &mut renderables, &query)
-            //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
-        }
+        // // for each unique asset handle that makes up the entity, fetch renderable data
+        // for asset in assets.iter() {
+        //     todo!()
+        //     //self.asset_manager
+        //     //    .get_renderables_for(asset, &mut renderables, &query)
+        //     //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
+        // }
 
-        Ok(renderables)
+        // Ok(renderables)
+        todo!()
     }
 
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
         let mut result = HashSet::<AssetHandle>::new();
         if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
         {
-            result.insert(mesh_collection_component.resource_backing);
+            //     result.insert(mesh_collection_component.resource_backing);
         }
         // TODO: other RBCs
         return result;

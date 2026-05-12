@@ -6,19 +6,21 @@ use crate::animation::animation::{
     AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
     InterpolationType,
 };
-use crate::asset_manager_new::gltf::mesh::{
+use crate::asset_manager_new::gltf_asset::mesh::{
     copy_and_cast_gltf_binary_data_f32, copy_binary_data_from_gltf,
 };
-use crate::asset_manager_new::gltf::{
+use crate::asset_manager_new::gltf_asset::{
     GltfAnimation, NodeTransforms, NodeType, collect_mesh_ids, get_root_node_from_child_id,
 };
-use crate::asset_manager_new::{GltfValidationError, LoadedAsset, ModelBuilderError};
+use crate::asset_manager_new::{
+    Asset, BinarySource, GltfValidationError, LoadedAsset, ModelBuilderError,
+};
 use crate::util::types::{ModelVertex, VIndex};
 use crate::{
     asset_manager_new::{
         LoadableAsset,
-        gltf::{
-            GltfAsset, GltfNode, LoadedGltfAsset, Mesh,
+        gltf_asset::{
+            GltfNode, LoadedGltfAsset, Mesh,
             mesh::{GLTFDataAccessor, Primitive, PrimitiveData},
         },
         range_splicer,
@@ -306,13 +308,13 @@ fn build_all_models(
     Ok((pnujw_vertices, pnu_vertices, maybe_index_data, meshes))
 }
 
-impl LoadableAsset for GltfAsset {
-    fn load(&self) -> Result<Box<dyn LoadedAsset>, ModelBuilderError> {
-        let buffer_offsets = get_buffer_offsets(&self.gltf);
-        let node_tree = build_node_trees(&self.gltf)?;
-        let binary_data = super::loader::load_binary_data_from_source(&self.bin)
+impl LoadedGltfAsset {
+    pub fn load(gltf: gltf::Gltf, bin: BinarySource) -> Result<Box<dyn Asset>, ModelBuilderError> {
+        let buffer_offsets = get_buffer_offsets(&gltf);
+        let node_tree = build_node_trees(&gltf)?;
+        let binary_data = super::loader::load_binary_data_from_source(&bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
-        let primitive_data = get_primitive_data_map(&self.gltf, &node_tree)?;
+        let primitive_data = get_primitive_data_map(&gltf, &node_tree)?;
         let index_range_vec = get_index_range_vec(&primitive_data, &buffer_offsets)?;
         let (pnujw, pnu, indices, meshes) = build_all_models(
             &binary_data,
@@ -321,7 +323,7 @@ impl LoadableAsset for GltfAsset {
             &primitive_data,
         )?;
         let animations: Vec<Arc<GltfAnimation>> =
-            get_animations(&self.gltf, &buffer_offsets, &binary_data, &node_tree)?;
+            get_animations(&gltf, &buffer_offsets, &binary_data, &node_tree)?;
         Ok(Box::new(LoadedGltfAsset {
             pnujw_vertices: pnujw,
             pnu_vertices: pnu,

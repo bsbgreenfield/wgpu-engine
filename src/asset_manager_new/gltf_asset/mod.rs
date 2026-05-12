@@ -17,7 +17,8 @@ use crate::{
     },
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::{
-        Asset, AssetHandle, AssetLoadError, LoadedAsset, ModelBuilderError, gltf::mesh::Mesh,
+        Asset, AssetHandle, AssetLoadError, LoadedAsset, ModelBuilderError, ProvidesAnimationData,
+        ProvidesMeshData, gltf_asset::mesh::Mesh,
     },
     util::types::{LocalTransform, MAT4_IDENTITY, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
@@ -33,6 +34,11 @@ mod build;
 mod loader;
 mod mesh;
 
+pub(super) struct UnloadedGltfData {
+    gltf: gltf::Gltf,
+    bin: BinarySource,
+}
+
 #[allow(unused)]
 #[derive(Clone)]
 pub(in crate::asset_manager_new) enum BinarySource {
@@ -41,21 +47,55 @@ pub(in crate::asset_manager_new) enum BinarySource {
     GLTFBuffers(PathBuf),
     Undefined,
 }
-pub struct GltfAsset {
-    gltf: gltf::Gltf,
-    bin: BinarySource,
-}
 
-impl Asset for GltfAsset {
-    fn new(dir_name: &str) -> Result<Self, super::AssetLoadError>
+impl Asset for LoadedGltfAsset {
+    fn new(dir_name: &str) -> Result<super::UnloadedAssetData, AssetLoadError>
     where
         Self: Sized,
     {
-        let res = super::gltf::loader::load_gltf_from_resource(dir_name)?;
-        Ok(Self {
-            gltf: res.0,
-            bin: res.1,
-        })
+        let (gltf, bin) =
+            crate::asset_manager_new::gltf_asset::loader::load_gltf_from_resource(dir_name)?;
+        Ok(super::UnloadedAssetData::Gltf(gltf, bin))
+    }
+
+    fn get_upload_job(
+        &self,
+        asset_handle: AssetHandle,
+    ) -> Result<GPUAssetUploadJob, AssetLoadError> {
+        GPUAssetUploadJob::new(
+            asset_handle,
+            Some(&self.pnu_vertices[..]),
+            Some(&self.pnujw_vertices[..]),
+            self.indices.as_deref(),
+        )
+    }
+
+    fn as_mesh_provider(&self) -> Option<&dyn super::ProvidesMeshData> {
+        Some(self)
+    }
+
+    fn as_animation_provider(&self) -> Option<&dyn super::ProvidesAnimationData> {
+        Some(self)
+    }
+}
+
+impl ProvidesMeshData for LoadedGltfAsset {
+    fn render_mesh_data<'a>(
+        &self,
+        mesh_accessor: &'a MeshAcessor,
+        mode: &'a RigidAnimationMode,
+    ) -> Vec<crate::world::entity_manager::MeshRenderables> {
+        todo!()
+    }
+}
+
+impl ProvidesAnimationData for LoadedGltfAsset {
+    fn entity_animation<'a>(
+        &self,
+        animation_accessor: &AnimationAccessor,
+        mesh_accessor: &MeshAcessor,
+    ) -> Vec<crate::animation::animation::EntityAnimation> {
+        todo!()
     }
 }
 

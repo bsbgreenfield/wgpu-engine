@@ -7,7 +7,7 @@ use std::{
 use base64::Engine;
 use gltf::Gltf;
 
-use crate::asset_manager_new::gltf::{BinarySource, GltfLoadError};
+use crate::asset_manager_new::gltf_asset::{BinarySource, GltfLoadError};
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use base64::prelude::BASE64_STANDARD;
