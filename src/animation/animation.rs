@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, mem::MaybeUninit, sync::Arc};
 
 use crate::{
-    asset_manager_new::gltf::GltfAttributeType, util::types::LocalTransform,
+    asset_manager_new::gltf_asset::GltfAttributeType, util::types::LocalTransform,
     world::instance_manager::AnimationInstance,
 };
 
@@ -165,7 +165,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct EntityAnimation {
+pub struct EntityAnimations {
     pub animation: Vec<Arc<dyn Animation>>,
     pub local_transforms: Vec<LocalTransform>,
     pub buffer_slot_map: Vec<usize>,

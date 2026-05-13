@@ -5,7 +5,7 @@ use crate::{
     asset_manager_new::{
         Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, UnloadedAssetData,
     },
-    world::scene::SceneLoadLevel,
+    world::{components::ResourceBacking, scene::SceneLoadLevel},
 };
 
 enum RegisteredAssetNew<A: Asset + ?Sized> {
@@ -93,7 +93,7 @@ impl AssetManagerNew {
             },
         }
     }
-    pub fn register_asset<A>(&mut self, source: &str) -> Result<AssetHandle, AssetLoadError>
+    pub fn register_asset<A>(&mut self, source: &str) -> Result<ResourceBacking<A>, AssetLoadError>
     where
         A: Asset + 'static,
     {
@@ -106,7 +106,7 @@ impl AssetManagerNew {
                 _t: PhantomData,
             },
         );
-        Ok(handle)
+        Ok(ResourceBacking::new(handle))
     }
 
     pub fn register_asset_gpu_residency(
@@ -159,7 +159,10 @@ impl AssetManagerNew {
         }
     }
 
-    pub fn get_loaded_asset(&self, asset_handle: &AssetHandle) -> &Box<dyn Asset> {
+    pub fn get_loaded_asset(
+        &self,
+        asset_handle: &AssetHandle,
+    ) -> (&GPUAllocationHandle, &Box<dyn Asset>) {
         let a = self
             .registered_assets
             .get(asset_handle)
@@ -167,11 +170,14 @@ impl AssetManagerNew {
         let RegisteredAssetNew::Loaded(res) = a else {
             panic!("asset is not loaded!")
         };
-        let AssetResidency::GPU(_alloc_handle, la_index) = res else {
+        let AssetResidency::GPU(alloc_handle, la_index) = res else {
             panic!("asset is not gpu resident!")
         };
-        self.loaded_assets
-            .get(*la_index)
-            .expect("loaded asset not found at specified index!")
+        (
+            alloc_handle,
+            self.loaded_assets
+                .get(*la_index)
+                .expect("loaded asset not found at specified index!"),
+        )
     }
 }

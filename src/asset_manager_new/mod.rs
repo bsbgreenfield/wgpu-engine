@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 mod test_refactor;
 
 use crate::{
-    animation::animation::EntityAnimation,
+    animation::animation::{Animation, EntityAnimations},
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager_new::gltf_asset::{
         BinarySource, GltfLoadError, GltfValidationError, LoadedGltfAsset,
@@ -14,7 +14,6 @@ use crate::{
         entity_manager::{MeshRenderables, Renderables},
         entity_upload_query::InstanceUploadQueryNew,
         scene::SceneLoadLevel,
-        world::RenderView,
     },
 };
 
@@ -207,7 +206,7 @@ pub trait ProvidesMeshData: Asset {
         &self,
         mesh_accessor: &'a MeshAcessor,
         mode: &'a RigidAnimationMode,
-    ) -> Vec<MeshRenderables>;
+    ) -> MeshRenderables;
 }
 
 pub trait ProvidesAnimationData: Asset {
@@ -215,5 +214,5 @@ pub trait ProvidesAnimationData: Asset {
         &self,
         animation_accessor: &AnimationAccessor,
         mesh_accessor: &MeshAcessor,
-    ) -> Vec<EntityAnimation>;
+    ) -> EntityAnimations;
 }

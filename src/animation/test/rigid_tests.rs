@@ -9,7 +9,7 @@ mod rigid_tests {
             Animation, AnimationChannels, AnimationSample, AnimationSampler,
             AnimationTransformType, AnimationTransforms, InterpolationType,
         },
-        asset_manager_new::gltf::{GltfAnimation, GltfNode, NodeTransforms, NodeType},
+        asset_manager_new::gltf_asset::{GltfAnimation, GltfNode, NodeTransforms, NodeType},
         util::types::Mat4F32,
         world::instance_manager::{AnimationController, AnimationInstance},
     };

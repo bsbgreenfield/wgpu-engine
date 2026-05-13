@@ -211,7 +211,7 @@ impl EntityLoadQueue {
 mod load_queue_tests {
     use crate::{
         app::renderer::GPUAllocationHandle,
-        asset_manager_new::{asset_manager_new::AssetManagerNew, gltf::GltfAsset},
+        asset_manager_new::{asset_manager_new::AssetManagerNew, gltf_asset::LoadedGltfAsset},
         world::{
             components::{
                 MeshAcessor, MeshCollectionComponent, MeshCollectionDescriptor, RigidAnimationMode,
@@ -228,7 +228,9 @@ mod load_queue_tests {
         entity_manager: &mut EntityManager,
         load_level: SceneLoadLevel,
     ) -> Scene {
-        let asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
+        let asset = asset_manager
+            .register_asset::<LoadedGltfAsset>("box")
+            .unwrap();
         let entity = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity,
@@ -317,7 +319,9 @@ mod load_queue_tests {
         let mut entity_manager = EntityManager::new();
 
         // One asset, one entity shared by both scenes.
-        let asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
+        let asset = asset_manager
+            .register_asset::<LoadedGltfAsset>("box")
+            .unwrap();
         let shared_entity = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &shared_entity,
@@ -407,13 +411,15 @@ mod load_queue_tests {
         let mut asset_manager = AssetManagerNew::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
+        let shared_asset = asset_manager
+            .register_asset::<LoadedGltfAsset>("box")
+            .unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -424,7 +430,7 @@ mod load_queue_tests {
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -446,7 +452,7 @@ mod load_queue_tests {
         queue.new_scene_job(&scene_b, &entity_manager).unwrap();
 
         // Asset is referenced by two distinct entities — ref_count should be 2.
-        assert_eq!(queue.asset_jobs[&shared_asset].ref_count, 2);
+        assert_eq!(queue.asset_jobs[&shared_asset.asset_handle].ref_count, 2);
 
         queue.poll_scene_job(id_a, &mut asset_manager).unwrap();
         queue.poll_scene_job(id_b, &mut asset_manager).unwrap();
@@ -454,10 +460,10 @@ mod load_queue_tests {
         // Dequeue scene A — entity_a removed, but asset still referenced by entity_b.
         queue.dequeue_spawned_scene(id_a);
         assert!(
-            queue.asset_jobs.contains_key(&shared_asset),
+            queue.asset_jobs.contains_key(&shared_asset.asset_handle),
             "asset job should persist while entity_b still holds a reference"
         );
-        assert_eq!(queue.asset_jobs[&shared_asset].ref_count, 1);
+        assert_eq!(queue.asset_jobs[&shared_asset.asset_handle].ref_count, 1);
 
         // Dequeue scene B — entity_b removed, asset ref_count hits 0, fully cleaned up.
         queue.dequeue_spawned_scene(id_b);
@@ -470,13 +476,15 @@ mod load_queue_tests {
         let mut asset_manager = AssetManagerNew::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
+        let shared_asset = asset_manager
+            .register_asset::<LoadedGltfAsset>("box")
+            .unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -486,7 +494,7 @@ mod load_queue_tests {
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -509,7 +517,7 @@ mod load_queue_tests {
         queue.new_scene_job(&scene_b, &entity_manager).unwrap();
 
         // Shared asset is referenced by two entities.
-        assert_eq!(queue.asset_jobs[&shared_asset].ref_count, 2);
+        assert_eq!(queue.asset_jobs[&shared_asset.asset_handle].ref_count, 2);
 
         queue.poll_scene_job(id_a, &mut asset_manager).unwrap();
 
@@ -517,11 +525,11 @@ mod load_queue_tests {
         assert!(!queue.has_pending_scene_job(id_a));
         assert!(queue.completed_queue.contains_key(&id_a));
         assert_eq!(
-            queue.asset_jobs[&shared_asset].current_load_level,
+            queue.asset_jobs[&shared_asset.asset_handle].current_load_level,
             SceneLoadLevel::CPU
         );
         assert_eq!(
-            queue.asset_jobs[&shared_asset].max_load_level,
+            queue.asset_jobs[&shared_asset.asset_handle].max_load_level,
             SceneLoadLevel::GPU
         );
 
@@ -538,7 +546,7 @@ mod load_queue_tests {
         assert_eq!(asset_did_load_count, 1);
 
         asset_manager
-            .register_asset_gpu_residency(&shared_asset, GPUAllocationHandle::mock(0))
+            .register_asset_gpu_residency(&shared_asset.asset_handle, GPUAllocationHandle::mock(0))
             .expect("should registered with the asset manager");
 
         queue
@@ -554,13 +562,15 @@ mod load_queue_tests {
         let mut asset_manager = AssetManagerNew::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
+        let shared_asset = asset_manager
+            .register_asset::<LoadedGltfAsset>("box")
+            .unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -570,7 +580,7 @@ mod load_queue_tests {
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -594,7 +604,7 @@ mod load_queue_tests {
 
         assert!(!queue.has_pending_scene_job(id_a));
         assert_eq!(
-            queue.asset_jobs[&shared_asset].current_load_level,
+            queue.asset_jobs[&shared_asset.asset_handle].current_load_level,
             SceneLoadLevel::CPU
         );
 
@@ -613,13 +623,15 @@ mod load_queue_tests {
         let mut asset_manager = AssetManagerNew::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
+        let shared_asset = asset_manager
+            .register_asset::<LoadedGltfAsset>("box")
+            .unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -629,7 +641,7 @@ mod load_queue_tests {
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
             MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset,
+                resource_backing: shared_asset.clone(),
                 allocation_handle: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
@@ -658,7 +670,7 @@ mod load_queue_tests {
 
         assert!(!queue.has_pending_scene_job(id_a));
         assert_eq!(
-            queue.asset_jobs[&shared_asset].current_load_level,
+            queue.asset_jobs[&shared_asset.asset_handle].current_load_level,
             SceneLoadLevel::CPU
         );
 
@@ -666,6 +678,6 @@ mod load_queue_tests {
         assert!(!queue.completed_queue.contains_key(&id_b));
 
         assert_eq!(queue.pending_asset_uploads.len(), 1);
-        assert_eq!(queue.pending_asset_uploads[0], shared_asset);
+        assert_eq!(queue.pending_asset_uploads[0], shared_asset.asset_handle);
     }
 }

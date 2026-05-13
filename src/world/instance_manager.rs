@@ -4,7 +4,7 @@ use cgmath::SquareMatrix;
 use time::{Duration, ext::InstantExt};
 
 use crate::{
-    animation::animation::{Animation, AnimationSample, EntityAnimation},
+    animation::animation::{Animation, AnimationSample, EntityAnimations},
     app::{
         app::AppCommand,
         renderer::{DrawItem, DrawPacket},
@@ -14,7 +14,10 @@ use crate::{
         RenderKey, WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager, RenderData},
         index_arena::InstanceArenaNew,
-        world::{DrawSet, InstanceUploadData, LocalTransformData, RenderGroup, RenderView},
+        world::{
+            DrawSet, InstanceUploadData, LocalTransformData, LocalTransformsNew, RenderGroup,
+            RenderView,
+        },
     },
 };
 
@@ -259,38 +262,11 @@ impl AnimationInstance {
 
 #[derive(Default)]
 pub struct AnimationController {
-    registered_animations: HashMap<EntityHandle, EntityAnimation>,
+    registered_animations: HashMap<EntityHandle, EntityAnimations>,
     active_animations: Vec<AnimationInstance>,
 }
 
 impl AnimationController {
-    fn insert_animation_refs(
-        &mut self,
-        animation_refs: Vec<Arc<dyn Animation>>,
-        instance_handle: InstanceHandle,
-        local_transform_data: &LocalTransformData,
-    ) {
-        match local_transform_data {
-            LocalTransformData::Copy(local_transforms) => {
-                self.registered_animations.insert(
-                    instance_handle.entity_handle.clone(),
-                    EntityAnimation {
-                        animation: animation_refs.clone(),
-                        local_transforms: local_transforms.clone(),
-                        buffer_slot_map: vec![],
-                    },
-                );
-            }
-            LocalTransformData::FromShared { donor } => {
-                assert!(
-                    self.registered_animations
-                        .contains_key(&donor.entity_handle)
-                );
-            }
-            _ => panic!("cant determine local transforms for the animation buffer"),
-        }
-    }
-
     /// time offset is unsafe: only use if you are sure the offset is a valid value for the animation, or if
     /// the animation is repeating
     fn activate_animations(
@@ -446,92 +422,154 @@ impl InstanceManager {
         data: Box<dyn Archetype>,
     ) -> Result<InstanceUploadData, WorldUpdateError> {
         let instance_handle = &data.insert_self(self, entity_handle);
+        let mut res = InstanceUploadData {
+            instance_handle: instance_handle.clone(),
+            local_transforms: LocalTransformsNew::Uninit,
+        };
         let is_instanced = self
             .entity_group_index
             .contains_key(&instance_handle.entity_handle);
 
-        let mut renderables = entity_manager
-            .get_entity_renderables(instance_handle, is_instanced)
-            .map_err(|_| {
-                WorldUpdateError::RenderablesNotAvailable(instance_handle.entity_handle)
-            })?;
-
         if is_instanced {
-            let group_id = self
-                .entity_group_index
-                .get(&instance_handle.entity_handle)
-                .unwrap();
-            let group = self
-                .render_groups
-                .get_mut(*group_id)
-                .expect("group should exist, maybe you deleted from the value, but not the entry?");
-            group.instance_handles.push(instance_handle.clone());
-
-            if matches!(
-                renderables.instance_data.as_ref().unwrap().local_transforms,
-                LocalTransformData::NeedsDonor
-            ) {
-                renderables.instance_data.as_mut().unwrap().local_transforms =
-                    LocalTransformData::FromShared {
-                        donor: group.instance_handles[0].clone(),
-                    }
-            }
+            return Ok(entity_manager.get_entity_cloned(&instance_handle));
         } else {
-            let mut views = Vec::<RenderView>::with_capacity(
-                renderables
-                    .common
-                    .as_ref()
-                    .expect("this is the first instance, so it should have common data")
-                    .len(),
-            );
+            let mut renderables = entity_manager
+                .get_entity_render_data(&instance_handle)
+                .expect("renderables fetch fail");
 
-            for render_data in renderables.common.take().unwrap() {
-                match render_data {
-                    RenderData::MeshRenderable {
-                        gpu_alloc_handle,
-                        pnu_vertex_ranges,
-                        pnu_mesh_map,
-                        pnujw_mesh_map,
-                        pnujw_vertex_ranges,
-                        index_ranges,
-                    } => {
-                        let view = RenderView {
-                            gpu_handle: gpu_alloc_handle,
-                            pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
-                                mesh_map: pnu_mesh_map,
-                                primtitive_ranges: pnu,
-                                index_ranges: index_ranges.clone(),
-                            }),
-                            pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
-                                mesh_map: pnujw_mesh_map,
-                                primtitive_ranges: pnujw,
-                                index_ranges: index_ranges,
-                            }),
-                        };
-                        views.push(view);
+            // ******* MESH DATA ********
+            let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
+
+            for (alloc_handle, mesh_data) in renderables.mesh_renderables.drain(..) {
+                let view = RenderView {
+                    gpu_handle: alloc_handle,
+                    pnu_draws: mesh_data.pnu_vertex_ranges.map(|pnu| DrawSet {
+                        mesh_map: mesh_data.pnu_mesh_map,
+                        primtitive_ranges: pnu,
+                        index_ranges: mesh_data.index_ranges.clone(),
+                    }),
+                    pnujw_draws: mesh_data.pnujw_vertex_ranges.map(|pnujw| DrawSet {
+                        mesh_map: mesh_data.pnujw_mesh_map,
+                        primtitive_ranges: pnujw,
+                        index_ranges: mesh_data.index_ranges.clone(),
+                    }),
+                };
+
+                views.push(view);
+                match &mut res.local_transforms {
+                    LocalTransformsNew::Uninit => {
+                        res.local_transforms = LocalTransformsNew::Owned {
+                            data: mesh_data.local_transforms,
+                        }
                     }
-                    RenderData::AnimationData { animations } => {
-                        self.animation_controller.insert_animation_refs(
-                            animations,
-                            instance_handle.clone(),
-                            &renderables.instance_data.as_ref().unwrap().local_transforms,
-                        );
-                    }
+                    LocalTransformsNew::Owned { data } => data.extend(mesh_data.local_transforms),
+                    _ => panic!("unexpected local transform data val"),
                 }
             }
-            // ADD GROUP
-            self.render_groups.push(RenderGroup {
-                instance_handles: vec![instance_handle.clone()],
-                views,
-            });
-            self.entity_group_index.insert(
-                instance_handle.entity_handle.clone(),
-                self.render_groups.len() - 1,
-            );
+
+            // ******** ANIMATION DATA *********
+            if let Some(entity_animations) = renderables.animations {
+                self.animation_controller
+                    .registered_animations
+                    .insert(instance_handle.entity_handle.clone(), entity_animations);
+            }
         }
 
-        Ok(renderables.instance_data.unwrap())
+        Ok(res)
     }
+    // pub(super) fn spawn(
+    //     &mut self,
+    //     entity_handle: &EntityHandle,
+    //     entity_manager: &EntityManager,
+    //     data: Box<dyn Archetype>,
+    // ) -> Result<InstanceUploadData, WorldUpdateError> {
+    //     let instance_handle = &data.insert_self(self, entity_handle);
+    //     let is_instanced = self
+    //         .entity_group_index
+    //         .contains_key(&instance_handle.entity_handle);
+
+    //     let mut renderables = entity_manager
+    //         .get_entity_renderables(instance_handle, is_instanced)
+    //         .map_err(|_| {
+    //             WorldUpdateError::RenderablesNotAvailable(instance_handle.entity_handle)
+    //         })?;
+
+    //     if is_instanced {
+    //         let group_id = self
+    //             .entity_group_index
+    //             .get(&instance_handle.entity_handle)
+    //             .unwrap();
+    //         let group = self
+    //             .render_groups
+    //             .get_mut(*group_id)
+    //             .expect("group should exist, maybe you deleted from the value, but not the entry?");
+    //         group.instance_handles.push(instance_handle.clone());
+
+    //         if matches!(
+    //             renderables.instance_data.as_ref().unwrap().local_transforms,
+    //             LocalTransformData::NeedsDonor
+    //         ) {
+    //             renderables.instance_data.as_mut().unwrap().local_transforms =
+    //                 LocalTransformData::FromShared {
+    //                     donor: group.instance_handles[0].clone(),
+    //                 }
+    //         }
+    //     } else {
+    //         let mut views = Vec::<RenderView>::with_capacity(
+    //             renderables
+    //                 .common
+    //                 .as_ref()
+    //                 .expect("this is the first instance, so it should have common data")
+    //                 .len(),
+    //         );
+
+    //         for render_data in renderables.common.take().unwrap() {
+    //             match render_data {
+    //                 RenderData::MeshRenderable {
+    //                     gpu_alloc_handle,
+    //                     pnu_vertex_ranges,
+    //                     pnu_mesh_map,
+    //                     pnujw_mesh_map,
+    //                     pnujw_vertex_ranges,
+    //                     index_ranges,
+    //                 } => {
+    //                     let view = RenderView {
+    //                         gpu_handle: gpu_alloc_handle,
+    //                         pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
+    //                             mesh_map: pnu_mesh_map,
+    //                             primtitive_ranges: pnu,
+    //                             index_ranges: index_ranges.clone(),
+    //                         }),
+    //                         pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
+    //                             mesh_map: pnujw_mesh_map,
+    //                             primtitive_ranges: pnujw,
+    //                             index_ranges: index_ranges,
+    //                         }),
+    //                     };
+    //                     views.push(view);
+    //                 }
+    //                 RenderData::AnimationData { animations } => {
+    //                     self.animation_controller.insert_animation_refs(
+    //                         animations,
+    //                         instance_handle.clone(),
+    //                         &renderables.instance_data.as_ref().unwrap().local_transforms,
+    //                     );
+    //                 }
+    //             }
+    //         }
+    //         // ADD GROUP
+    //         self.render_groups.push(RenderGroup {
+    //             instance_handles: vec![instance_handle.clone()],
+    //             views,
+    //         });
+    //         self.entity_group_index.insert(
+    //             instance_handle.entity_handle.clone(),
+    //             self.render_groups.len() - 1,
+    //         );
+    //     }
+
+    //     Ok(renderables.instance_data.unwrap())
+    // }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {
         match handle.archetype {

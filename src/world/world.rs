@@ -14,6 +14,7 @@ use crate::{
     world::{
         RenderKey, WorldInitError, WorldUpdateError,
         camera::Camera,
+        components::ResourceBacking,
         entity_manager::{EntityHandle, EntityManager},
         instance_manager::{Archetype, InstanceHandle, InstanceManager},
         load_queue::EntityLoadQueue,
@@ -56,16 +57,14 @@ impl RenderGroup {
     }
 }
 
+#[derive(Debug)]
 pub enum LocalTransformsNew {
     Uninit,
-    NeedsDonor,
-    FromShared {
-        donor: InstanceHandle,
-    },
-    Owned {
-        data: Vec<LocalTransform>,
-        buffer_slot_map: Vec<usize>,
-    },
+    Owned { data: Vec<LocalTransform> },
+    CopiedFrom { donor: InstanceHandle },
+    NeedsCopy,
+    SharedWith { donor: InstanceHandle },
+    NeedsShared,
 }
 
 #[derive(Debug)]
@@ -85,7 +84,7 @@ pub enum LocalTransformData {
 #[derive(Debug)]
 pub struct InstanceUploadData {
     pub instance_handle: InstanceHandle,
-    pub local_transforms: LocalTransformData,
+    pub local_transforms: LocalTransformsNew,
     // others
 }
 
@@ -145,30 +144,36 @@ impl World {
                     ));
                     instructions.push(Self::const_last(constants));
                     match instance_upload_data.local_transforms {
-                        LocalTransformData::Copy(mut local_transforms) => {
-                            instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                            let lt_bytes: Vec<u8> = {
-                                let ptr = local_transforms.as_mut_ptr() as *mut u8;
-                                let len =
-                                    local_transforms.len() * std::mem::size_of::<LocalTransform>();
-                                let cap = local_transforms.capacity()
-                                    * std::mem::size_of::<LocalTransform>();
-                                std::mem::forget(local_transforms);
-                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                            };
-                            constants.push(RenderConstant::DataOwned(lt_bytes));
-                            instructions.push(Self::const_last(constants));
-                        }
-                        LocalTransformData::FromShared { donor } => {
-                            instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
-                            constants.push(RenderConstant::Key(donor.as_key()));
-                            instructions.push(Self::const_last(constants));
-                        }
-                        LocalTransformData::NeedsDonor => panic!(
-                            "instance manager is responsible for providing the instance upload data with a donor handle"
-                        ),
-                        LocalTransformData::None => panic!("not supported yet"),
-                        _ => panic!(),
+                        // LocalTransformData::Copy(mut local_transforms) => {
+                        //     instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                        //     let lt_bytes: Vec<u8> = {
+                        //         let ptr = local_transforms.as_mut_ptr() as *mut u8;
+                        //         let len =
+                        //             local_transforms.len() * std::mem::size_of::<LocalTransform>();
+                        //         let cap = local_transforms.capacity()
+                        //             * std::mem::size_of::<LocalTransform>();
+                        //         std::mem::forget(local_transforms);
+                        //         unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                        //     };
+                        //     constants.push(RenderConstant::DataOwned(lt_bytes));
+                        //     instructions.push(Self::const_last(constants));
+                        // }
+                        // LocalTransformData::FromShared { donor } => {
+                        //     instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
+                        //     constants.push(RenderConstant::Key(donor.as_key()));
+                        //     instructions.push(Self::const_last(constants));
+                        // }
+                        // LocalTransformData::NeedsDonor => panic!(
+                        //     "instance manager is responsible for providing the instance upload data with a donor handle"
+                        // ),
+                        // LocalTransformData::None => panic!("not supported yet"),
+                        // _ => panic!(),
+                        LocalTransformsNew::Uninit => todo!(),
+                        LocalTransformsNew::Owned { data } => todo!(),
+                        LocalTransformsNew::CopiedFrom { donor } => todo!(),
+                        LocalTransformsNew::NeedsCopy => todo!(),
+                        LocalTransformsNew::SharedWith { donor } => todo!(),
+                        LocalTransformsNew::NeedsShared => todo!(),
                     }
                     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
                 }
@@ -179,9 +184,9 @@ impl World {
         self.scene = scene;
     }
 
-    pub fn register_asset<A>(&mut self, str_dir: &str) -> Result<AssetHandle, AssetLoadError>
+    pub fn register_asset<A>(&mut self, str_dir: &str) -> Result<ResourceBacking<A>, AssetLoadError>
     where
-        A: Asset + LoadableAsset + 'static,
+        A: Asset + 'static,
     {
         self.entity_manager
             .asset_manager
