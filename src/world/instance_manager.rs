@@ -179,6 +179,7 @@ pub struct AnimationInstance {
     pub start_time: std::time::Instant,
     pub buffer: Vec<Mat4F32>,
     instance_handle: InstanceHandle,
+    complete: bool,
 }
 
 #[cfg(test)]
@@ -187,6 +188,7 @@ impl AnimationInstance {
         use std::time::Instant;
 
         Self {
+            complete: false,
             samples,
             animation_idx: 0,
             start_time: Instant::now(),
@@ -221,6 +223,7 @@ impl AnimationController {
             .map(|lt| **lt)
             .collect();
         self.active_animations.push(AnimationInstance {
+            complete: false,
             samples: entity_animation.animation[anim_idx].init_samples(),
             buffer,
             animation_idx: anim_idx,
@@ -329,8 +332,23 @@ impl InstanceManager {
                 self.activate_animation(handle.as_ref().unwrap(), 0, None);
             }
         }
-        // DO ANIMATIONS
-        for active_animation in self.animation_controller.active_animations.iter_mut() {
+        let mut anim_count = self.animation_controller.active_animations.len();
+        let mut cursor = 0;
+        'outer: while cursor < anim_count {
+            'inner: loop {
+                if self.animation_controller.active_animations[cursor].complete {
+                    self.animation_controller
+                        .active_animations
+                        .swap_remove(cursor);
+                    anim_count -= 1;
+                    if cursor >= anim_count {
+                        break 'outer;
+                    }
+                } else {
+                    break 'inner;
+                }
+            }
+            let active_animation = &mut self.animation_controller.active_animations[cursor];
             let entity_animation = self
                 .animation_controller
                 .registered_animations
@@ -340,11 +358,12 @@ impl InstanceManager {
 
             let now = std::time::Instant::now();
             let time_delta: f32 = (now - active_animation.start_time).as_secs_f32();
-            animation.get_animation_frame(
+            active_animation.complete = animation.get_animation_frame(
                 time_delta,
                 active_animation,
                 &entity_animation.buffer_slot_map,
             );
+            cursor += 1;
         }
     }
 

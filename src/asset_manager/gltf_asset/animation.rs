@@ -24,7 +24,8 @@ fn get_animation_data_for_node(
     animation: &GltfAnimation,
     animation_instance: &mut AnimationInstance,
     buffer_slot_map: &Vec<usize>,
-) {
+) -> bool {
+    let mut complete = true;
     let mut rotation: Option<Quaternion<f32>> = None;
     let mut translation: Option<Vector3<f32>> = None;
     let mut scale: Option<Vector3<f32>> = None;
@@ -56,7 +57,22 @@ fn get_animation_data_for_node(
                         scale = Some(last_vec3(&sampler.transforms.0));
                     }
                 },
+                SampleResult::Pre => {
+                    complete = false;
+                    match anim_type {
+                        AnimationTransformType::Rotation => {
+                            rotation = Some(first_quat(&sampler.transforms.0));
+                        }
+                        AnimationTransformType::Translation => {
+                            translation = Some(first_vec3(&sampler.transforms.0));
+                        }
+                        AnimationTransformType::Scale => {
+                            scale = Some(first_vec3(&sampler.transforms.0));
+                        }
+                    }
+                }
                 SampleResult::Active(i) => {
+                    complete = false;
                     let ratio =
                         (time_delta - sampler.times[i]) / (sampler.times[i + 1] - sampler.times[i]);
                     match anim_type {
@@ -127,15 +143,19 @@ fn get_animation_data_for_node(
     }
 
     for child_node in node.children.iter() {
-        get_animation_data_for_node(
+        if !get_animation_data_for_node(
             child_node,
             &global,
             time_delta,
             animation,
             animation_instance,
             buffer_slot_map,
-        );
+        ) {
+            complete = false;
+        }
     }
+
+    complete
 }
 
 impl Animation for GltfAnimation {
@@ -147,17 +167,21 @@ impl Animation for GltfAnimation {
         time_delta: f32,
         animation_instance: &mut crate::world::instance_manager::AnimationInstance,
         buffer_slot_map: &Vec<usize>,
-    ) {
+    ) -> bool {
+        let mut complete = true;
         for node in self.root_nodes.iter() {
-            get_animation_data_for_node(
+            if !get_animation_data_for_node(
                 node,
                 &cgmath::Matrix4::<f32>::identity(),
                 time_delta,
                 &self,
                 animation_instance,
                 buffer_slot_map,
-            );
+            ) {
+                complete = false;
+            };
         }
+        complete
     }
 
     fn init_samples(&self) -> Vec<crate::animation::animation::AnimationSample> {
@@ -211,4 +235,12 @@ fn last_quat(floats: &[f32]) -> cgmath::Quaternion<f32> {
 fn last_vec3(floats: &[f32]) -> cgmath::Vector3<f32> {
     let last: &[f32] = &floats[floats.len() - 3..floats.len()];
     cgmath::Vector3::new(last[0], last[1], last[2])
+}
+fn first_quat(floats: &[f32]) -> cgmath::Quaternion<f32> {
+    let first: &[f32] = &floats[0..4];
+    cgmath::Quaternion::new(first[3], first[0], first[1], first[2])
+}
+fn first_vec3(floats: &[f32]) -> cgmath::Vector3<f32> {
+    let first: &[f32] = &floats[0..3];
+    cgmath::Vector3::new(first[0], first[1], first[2])
 }

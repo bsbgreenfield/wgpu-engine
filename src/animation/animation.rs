@@ -114,6 +114,7 @@ impl AnimationSample {
 pub enum SampleResult {
     Done,
     Active(usize),
+    Pre,
     End,
 }
 impl AnimationSample {
@@ -128,6 +129,8 @@ impl AnimationSample {
         } else if time_delta >= self.next_time {
             self.cursor += 1;
             self.next_time = times[self.cursor + 1]
+        } else if time_delta <= times[0] {
+            return SampleResult::Pre;
         }
         SampleResult::Active(self.cursor)
     }
@@ -142,7 +145,7 @@ where
         time_delta: f32,
         animation_instance: &mut AnimationInstance,
         buffer_slot_map: &Vec<usize>,
-    );
+    ) -> bool;
 
     fn count(&self) -> usize;
 
