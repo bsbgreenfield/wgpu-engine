@@ -550,7 +550,7 @@ mod integration_tests {
     }
 
     #[test]
-    fn render_box_box() {
+    fn render_two_boxes() {
         pollster::block_on(async {
             let mut app = setup_world(TestCases::Box).await;
             run_frame_unchecked(&mut app);
@@ -749,6 +749,57 @@ mod integration_tests {
                 anim_update.transforms.len() % std::mem::size_of::<crate::util::types::Mat4F32>(),
                 0,
                 "transforms byte length must be a multiple of Mat4F32 size"
+            );
+
+            // test the animation at various times
+            app.world
+                .as_mut()
+                .unwrap()
+                .instance_manager
+                .run_animations(2.49);
+            assert!(
+                app.world
+                    .as_ref()
+                    .unwrap()
+                    .instance_manager
+                    .get_active_animations()
+                    .len()
+                    > 0
+            );
+            let bsm = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_buffer_slot_map(0);
+            let mesh1 = &app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_active_animations()[0]
+                .buffer[bsm[0]];
+            //    .buffer[0][3][1];
+            assert!(
+                (mesh1[3][1] - 2.52).abs() < 0.1,
+                "mesh 0 should be near peak (y ≈ 2.52) at t=2.6s, got {mesh1:?}"
+            );
+            app.world
+                .as_mut()
+                .unwrap()
+                .instance_manager
+                .run_animations(3.5);
+
+            let mesh0_y_descending = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_active_animations()[0]
+                .buffer[0][3][1];
+            assert!(
+                mesh0_y_descending < 2.0,
+                "mesh 0 should be descending (y ≈ 0.43) at t=3.5s, got {mesh0_y_descending}"
             );
         })
     }

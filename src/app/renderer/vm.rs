@@ -7,7 +7,7 @@ use crate::{
         RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaSelector,
         gpu_allocator::UploadIndexJob, renderer::Renderer,
     },
-    asset_manager_new::AssetHandle,
+    asset_manager::AssetHandle,
     util::types::{PNUJWVertex, PNUVertex},
     world::{
         RenderKey,

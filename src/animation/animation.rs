@@ -1,16 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, marker::PhantomData, mem::MaybeUninit, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use crate::{
-    asset_manager_new::gltf_asset::GltfAttributeType, util::types::LocalTransform,
-    world::instance_manager::AnimationInstance,
-};
-
-//#[allow(unused)]
-//pub enum AnimationTransform {
-//    Rotation(Vec<cgmath::Quaternion<f32>>),
-//    Translation(Vec<cgmath::Vector3<f32>>),
-//    Scale(Vec<cgmath::Vector3<f32>>),
-//}
+use crate::{util::types::LocalTransform, world::instance_manager::AnimationInstance};
 
 #[repr(C)]
 pub struct AnimationTransforms(pub Vec<f32>);
@@ -151,12 +141,10 @@ where
         &self,
         time_delta: f32,
         animation_instance: &mut AnimationInstance,
-        base_translation: &cgmath::Matrix4<f32>,
+        buffer_slot_map: &Vec<usize>,
     );
 
     fn count(&self) -> usize;
-
-    fn get_buffer_slot(&self, id: usize) -> usize;
 
     fn init_samples(&self) -> Vec<AnimationSample>;
 

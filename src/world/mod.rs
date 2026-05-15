@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    asset_manager_new::{AssetHandle, AssetLoadError},
+    asset_manager::{AssetHandle, AssetLoadError},
     world::{
         components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
         entity_manager::{EntityHandle, EntityManagerError},
@@ -11,7 +11,6 @@ use crate::{
 pub mod camera;
 pub mod components;
 pub mod entity_manager;
-pub mod entity_upload_query;
 mod index_arena;
 pub mod instance_manager;
 pub(super) mod load_queue;

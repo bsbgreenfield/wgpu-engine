@@ -1,23 +1,23 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+#[cfg(test)]
+use std::sync::Arc;
 
-use cgmath::SquareMatrix;
 use time::{Duration, ext::InstantExt};
 
+#[cfg(test)]
+use crate::animation::animation::Animation;
 use crate::{
-    animation::animation::{Animation, AnimationSample, EntityAnimations},
+    animation::animation::{AnimationSample, EntityAnimations},
     app::{
         app::AppCommand,
         renderer::{DrawItem, DrawPacket},
     },
-    util::types::{GlobalTransform, LocalTransform, Mat4F32},
+    util::types::{GlobalTransform, Mat4F32},
     world::{
         RenderKey, WorldUpdateError,
-        entity_manager::{EntityHandle, EntityManager, RenderData},
-        index_arena::InstanceArenaNew,
-        world::{
-            DrawSet, InstanceUploadData, LocalTransformData, LocalTransformsNew, RenderGroup,
-            RenderView,
-        },
+        entity_manager::{EntityHandle, EntityManager},
+        index_arena::InstanceArena,
+        world::{DrawSet, InstanceUploadData, LocalTransforms, RenderGroup, RenderView},
     },
 };
 
@@ -36,7 +36,6 @@ pub trait Archetype {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArchetypeId {
     Position = 0,
-    PositionAnimated = 1,
 }
 impl TryFrom<u16> for ArchetypeId {
     type Error = ();
@@ -76,72 +75,9 @@ impl Archetype for APosition {
     }
 }
 
-pub struct APositionAnimated {
-    pub position: GlobalTransform,
-    pub time_delta: f32,
-}
-
-impl ArchetypeIdent for APositionAnimated {
-    const ARCHETYPE_ID: ArchetypeId = ArchetypeId::PositionAnimated;
-}
-
-impl Archetype for APositionAnimated {
-    fn insert_self(
-        self: Box<Self>,
-        manager: &mut InstanceManager,
-        entity_handle: &EntityHandle,
-    ) -> InstanceHandle {
-        todo!()
-    }
-}
-
-pub struct APositionAnimatedTable {
-    pub(super) positions: Vec<GlobalTransform>,
-    pub(super) time_deltas: Vec<f32>,
-    pub(super) arena: InstanceArenaNew<APositionAnimated>,
-}
-
-impl ArchetypeTable for APositionAnimatedTable {
-    type A = APositionAnimated;
-
-    fn collect<'a>(&'a self, collector: &mut RenderFrame<'a>) {
-        if !self.positions.is_empty() {
-            collector
-                .global_transforms
-                .push(bytemuck::cast_slice(&self.positions));
-            todo!("deltas?")
-        }
-        todo!()
-    }
-
-    fn new() -> Self {
-        Self {
-            positions: Vec::new(),
-            time_deltas: Vec::new(),
-            arena: InstanceArenaNew::new(),
-        }
-    }
-    fn remove(&mut self, handle: InstanceHandle) {
-        let last = self.positions.len() - 1;
-        if let Some(idx_of_goner) = self.arena.remove(handle) {
-            self.positions.swap(idx_of_goner, last);
-            self.time_deltas.swap(idx_of_goner, last);
-        } else {
-            self.positions.pop();
-            self.time_deltas.pop();
-        }
-    }
-
-    fn insert(&mut self, data: Self::A, entity_handle: EntityHandle) -> InstanceHandle {
-        self.positions.push(data.position);
-        self.time_deltas.push(data.time_delta);
-        self.arena.insert(entity_handle)
-    }
-}
-
 pub struct APositionTable {
     pub(super) positions: Vec<GlobalTransform>,
-    pub(super) arena: InstanceArenaNew<APosition>,
+    pub(super) arena: InstanceArena<APosition>,
 }
 #[cfg(test)]
 impl APositionTable {
@@ -164,7 +100,7 @@ impl ArchetypeTable for APositionTable {
     fn new() -> Self {
         Self {
             positions: Vec::new(),
-            arena: InstanceArenaNew::new(),
+            arena: InstanceArena::new(),
         }
     }
 
@@ -296,10 +232,9 @@ impl AnimationController {
     }
 }
 pub struct InstanceManager {
-    pub(super) next_id: u16,
+    pub(super) _next_id: u16,
     gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
     pub pos: APositionTable,
-    pub posAnim: APositionAnimatedTable,
     render_groups: Vec<RenderGroup>,
     pub(super) entity_group_index: HashMap<EntityHandle, usize>,
     animation_controller: AnimationController,
@@ -354,9 +289,8 @@ impl InstanceManager {
     }
     pub(super) fn new() -> Self {
         Self {
-            next_id: 0,
+            _next_id: 0,
             pos: APositionTable::new(),
-            posAnim: APositionAnimatedTable::new(),
             gpu_bindings: HashMap::new(),
             render_groups: Vec::new(),
             entity_group_index: HashMap::new(),
@@ -376,7 +310,6 @@ impl InstanceManager {
     pub fn resolve_idx(&self, handle: &InstanceHandle) -> Option<usize> {
         match handle.archetype {
             ArchetypeId::Position => self.pos.arena.resolve(handle),
-            ArchetypeId::PositionAnimated => self.posAnim.arena.resolve(handle),
         }
     }
 
@@ -398,21 +331,50 @@ impl InstanceManager {
         }
         // DO ANIMATIONS
         for active_animation in self.animation_controller.active_animations.iter_mut() {
-            let animation = &self
+            let entity_animation = self
                 .animation_controller
                 .registered_animations
                 .get(&active_animation.instance_handle.entity_handle)
-                .unwrap()
-                .animation[active_animation.animation_idx];
+                .unwrap();
+            let animation = &entity_animation.animation[active_animation.animation_idx];
 
             let now = std::time::Instant::now();
             let time_delta: f32 = (now - active_animation.start_time).as_secs_f32();
             animation.get_animation_frame(
                 time_delta,
                 active_animation,
-                &cgmath::Matrix4::<f32>::identity(),
+                &entity_animation.buffer_slot_map,
             );
         }
+    }
+
+    #[cfg(test)]
+    pub fn run_animations(&mut self, time_delta: f32) {
+        for active_animation in self.animation_controller.active_animations.iter_mut() {
+            let entity_animation = self
+                .animation_controller
+                .registered_animations
+                .get(&active_animation.instance_handle.entity_handle)
+                .unwrap();
+            let animation = &entity_animation.animation[active_animation.animation_idx];
+
+            animation.get_animation_frame(
+                time_delta,
+                active_animation,
+                &entity_animation.buffer_slot_map,
+            );
+        }
+    }
+
+    pub fn get_buffer_slot_map(&self, instance_idx: usize) -> &Vec<usize> {
+        let a = &self.animation_controller.active_animations[instance_idx];
+        let entity_anim = self
+            .animation_controller
+            .registered_animations
+            .get(&a.instance_handle.entity_handle)
+            .unwrap();
+
+        &entity_anim.buffer_slot_map
     }
 
     pub(super) fn spawn(
@@ -424,14 +386,31 @@ impl InstanceManager {
         let instance_handle = &data.insert_self(self, entity_handle);
         let mut res = InstanceUploadData {
             instance_handle: instance_handle.clone(),
-            local_transforms: LocalTransformsNew::Uninit,
+            local_transforms: LocalTransforms::Uninit,
         };
         let is_instanced = self
             .entity_group_index
             .contains_key(&instance_handle.entity_handle);
 
         if is_instanced {
-            return Ok(entity_manager.get_entity_cloned(&instance_handle));
+            let group_idx = self.entity_group_index.get(entity_handle).unwrap();
+            let group = self.render_groups.get_mut(*group_idx).unwrap();
+            group.instance_handles.push(instance_handle.clone());
+            let mut instance_upload_data = entity_manager.get_entity_cloned(&instance_handle);
+            match &mut instance_upload_data.local_transforms {
+                LocalTransforms::NeedsCopy => {
+                    instance_upload_data.local_transforms = LocalTransforms::CopiedFrom {
+                        donor: group.instance_handles[0].clone(),
+                    }
+                }
+                LocalTransforms::NeedsShared => {
+                    instance_upload_data.local_transforms = LocalTransforms::SharedWith {
+                        donor: group.instance_handles[0].clone(),
+                    }
+                }
+                _ => panic!("unexpected local transform value"),
+            }
+            return Ok(instance_upload_data);
         } else {
             let mut renderables = entity_manager
                 .get_entity_render_data(&instance_handle)
@@ -457,15 +436,22 @@ impl InstanceManager {
 
                 views.push(view);
                 match &mut res.local_transforms {
-                    LocalTransformsNew::Uninit => {
-                        res.local_transforms = LocalTransformsNew::Owned {
+                    LocalTransforms::Uninit => {
+                        res.local_transforms = LocalTransforms::Owned {
                             data: mesh_data.local_transforms,
                         }
                     }
-                    LocalTransformsNew::Owned { data } => data.extend(mesh_data.local_transforms),
+                    LocalTransforms::Owned { data } => data.extend(mesh_data.local_transforms),
                     _ => panic!("unexpected local transform data val"),
                 }
             }
+
+            self.entity_group_index
+                .insert(*entity_handle, self.render_groups.len());
+            self.render_groups.push(RenderGroup {
+                instance_handles: vec![instance_handle.clone()],
+                views,
+            });
 
             // ******** ANIMATION DATA *********
             if let Some(entity_animations) = renderables.animations {
@@ -477,104 +463,10 @@ impl InstanceManager {
 
         Ok(res)
     }
-    // pub(super) fn spawn(
-    //     &mut self,
-    //     entity_handle: &EntityHandle,
-    //     entity_manager: &EntityManager,
-    //     data: Box<dyn Archetype>,
-    // ) -> Result<InstanceUploadData, WorldUpdateError> {
-    //     let instance_handle = &data.insert_self(self, entity_handle);
-    //     let is_instanced = self
-    //         .entity_group_index
-    //         .contains_key(&instance_handle.entity_handle);
-
-    //     let mut renderables = entity_manager
-    //         .get_entity_renderables(instance_handle, is_instanced)
-    //         .map_err(|_| {
-    //             WorldUpdateError::RenderablesNotAvailable(instance_handle.entity_handle)
-    //         })?;
-
-    //     if is_instanced {
-    //         let group_id = self
-    //             .entity_group_index
-    //             .get(&instance_handle.entity_handle)
-    //             .unwrap();
-    //         let group = self
-    //             .render_groups
-    //             .get_mut(*group_id)
-    //             .expect("group should exist, maybe you deleted from the value, but not the entry?");
-    //         group.instance_handles.push(instance_handle.clone());
-
-    //         if matches!(
-    //             renderables.instance_data.as_ref().unwrap().local_transforms,
-    //             LocalTransformData::NeedsDonor
-    //         ) {
-    //             renderables.instance_data.as_mut().unwrap().local_transforms =
-    //                 LocalTransformData::FromShared {
-    //                     donor: group.instance_handles[0].clone(),
-    //                 }
-    //         }
-    //     } else {
-    //         let mut views = Vec::<RenderView>::with_capacity(
-    //             renderables
-    //                 .common
-    //                 .as_ref()
-    //                 .expect("this is the first instance, so it should have common data")
-    //                 .len(),
-    //         );
-
-    //         for render_data in renderables.common.take().unwrap() {
-    //             match render_data {
-    //                 RenderData::MeshRenderable {
-    //                     gpu_alloc_handle,
-    //                     pnu_vertex_ranges,
-    //                     pnu_mesh_map,
-    //                     pnujw_mesh_map,
-    //                     pnujw_vertex_ranges,
-    //                     index_ranges,
-    //                 } => {
-    //                     let view = RenderView {
-    //                         gpu_handle: gpu_alloc_handle,
-    //                         pnu_draws: pnu_vertex_ranges.map(|pnu| DrawSet {
-    //                             mesh_map: pnu_mesh_map,
-    //                             primtitive_ranges: pnu,
-    //                             index_ranges: index_ranges.clone(),
-    //                         }),
-    //                         pnujw_draws: pnujw_vertex_ranges.map(|pnujw| DrawSet {
-    //                             mesh_map: pnujw_mesh_map,
-    //                             primtitive_ranges: pnujw,
-    //                             index_ranges: index_ranges,
-    //                         }),
-    //                     };
-    //                     views.push(view);
-    //                 }
-    //                 RenderData::AnimationData { animations } => {
-    //                     self.animation_controller.insert_animation_refs(
-    //                         animations,
-    //                         instance_handle.clone(),
-    //                         &renderables.instance_data.as_ref().unwrap().local_transforms,
-    //                     );
-    //                 }
-    //             }
-    //         }
-    //         // ADD GROUP
-    //         self.render_groups.push(RenderGroup {
-    //             instance_handles: vec![instance_handle.clone()],
-    //             views,
-    //         });
-    //         self.entity_group_index.insert(
-    //             instance_handle.entity_handle.clone(),
-    //             self.render_groups.len() - 1,
-    //         );
-    //     }
-
-    //     Ok(renderables.instance_data.unwrap())
-    // }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {
         match handle.archetype {
             ArchetypeId::Position => self.pos.remove(handle),
-            ArchetypeId::PositionAnimated => self.posAnim.remove(handle),
         }
         // TODO: other tables
     }
@@ -584,7 +476,6 @@ impl InstanceManager {
     pub fn offset_of(&self, archetype: ArchetypeId) -> usize {
         match archetype {
             ArchetypeId::Position => 0,
-            ArchetypeId::PositionAnimated => self.pos.positions.len() - 1,
         }
     }
 

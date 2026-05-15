@@ -1,12 +1,9 @@
-use std::{
-    any::{TypeId, type_name},
-    ops::Range,
-};
+use std::{any::TypeId, ops::Range};
 
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
-    asset_manager_new::{GltfValidationError, ModelBuilderError},
+    asset_manager::{GltfValidationError, ModelBuilderError},
     util::types::{ModelVertex, PrimitiveVerticesData},
 };
 
@@ -22,7 +19,7 @@ pub(super) struct Mesh {
 }
 
 impl Primitive {
-    pub(in crate::asset_manager_new) fn new<V: ModelVertex>(
+    pub(in crate::asset_manager) fn new<V: ModelVertex>(
         vertices: Range<u32>,
         indices: Option<Range<u32>>,
     ) -> Self {

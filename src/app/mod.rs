@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     app::renderer::{RenderError, RenderUpdateError},
-    asset_manager_new::{AssetHandle, AssetLoadError},
+    asset_manager::{AssetHandle, AssetLoadError},
     util::types::{PNUJWVertex, PNUVertex, VIndex},
     world::WorldUpdateError,
 };

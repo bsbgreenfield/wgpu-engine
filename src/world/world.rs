@@ -9,7 +9,7 @@ use crate::{
             GPUAllocationHandle, Instruction, Operations, RenderConstant, RenderUpdateDelta,
         },
     },
-    asset_manager_new::{Asset, AssetHandle, AssetLoadError, LoadableAsset},
+    asset_manager::{Asset, AssetLoadError},
     util::types::{LocalTransform, PNUJWVertex, PNUVertex, VIndex},
     world::{
         RenderKey, WorldInitError, WorldUpdateError,
@@ -58,7 +58,7 @@ impl RenderGroup {
 }
 
 #[derive(Debug)]
-pub enum LocalTransformsNew {
+pub enum LocalTransforms {
     Uninit,
     Owned { data: Vec<LocalTransform> },
     CopiedFrom { donor: InstanceHandle },
@@ -68,23 +68,9 @@ pub enum LocalTransformsNew {
 }
 
 #[derive(Debug)]
-pub enum LocalTransformData {
-    None,
-    NeedsDonor,
-    FromShared {
-        donor: InstanceHandle,
-    },
-    New {
-        local_transforms: Vec<LocalTransform>,
-        buffer_slot_map: Vec<usize>,
-    },
-    Copy(Vec<LocalTransform>),
-}
-
-#[derive(Debug)]
 pub struct InstanceUploadData {
     pub instance_handle: InstanceHandle,
-    pub local_transforms: LocalTransformsNew,
+    pub local_transforms: LocalTransforms,
     // others
 }
 
@@ -144,36 +130,27 @@ impl World {
                     ));
                     instructions.push(Self::const_last(constants));
                     match instance_upload_data.local_transforms {
-                        // LocalTransformData::Copy(mut local_transforms) => {
-                        //     instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                        //     let lt_bytes: Vec<u8> = {
-                        //         let ptr = local_transforms.as_mut_ptr() as *mut u8;
-                        //         let len =
-                        //             local_transforms.len() * std::mem::size_of::<LocalTransform>();
-                        //         let cap = local_transforms.capacity()
-                        //             * std::mem::size_of::<LocalTransform>();
-                        //         std::mem::forget(local_transforms);
-                        //         unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                        //     };
-                        //     constants.push(RenderConstant::DataOwned(lt_bytes));
-                        //     instructions.push(Self::const_last(constants));
-                        // }
-                        // LocalTransformData::FromShared { donor } => {
-                        //     instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
-                        //     constants.push(RenderConstant::Key(donor.as_key()));
-                        //     instructions.push(Self::const_last(constants));
-                        // }
-                        // LocalTransformData::NeedsDonor => panic!(
-                        //     "instance manager is responsible for providing the instance upload data with a donor handle"
-                        // ),
-                        // LocalTransformData::None => panic!("not supported yet"),
-                        // _ => panic!(),
-                        LocalTransformsNew::Uninit => todo!(),
-                        LocalTransformsNew::Owned { data } => todo!(),
-                        LocalTransformsNew::CopiedFrom { donor } => todo!(),
-                        LocalTransformsNew::NeedsCopy => todo!(),
-                        LocalTransformsNew::SharedWith { donor } => todo!(),
-                        LocalTransformsNew::NeedsShared => todo!(),
+                        LocalTransforms::Owned { mut data } => {
+                            instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                            let lt_bytes: Vec<u8> = {
+                                let ptr = data.as_mut_ptr() as *mut u8;
+                                let len = data.len() * std::mem::size_of::<LocalTransform>();
+                                let cap = data.capacity() * std::mem::size_of::<LocalTransform>();
+                                std::mem::forget(data);
+                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                            };
+                            constants.push(RenderConstant::DataOwned(lt_bytes));
+                            instructions.push(Self::const_last(constants));
+                        }
+                        LocalTransforms::CopiedFrom { donor } => {
+                            todo!()
+                        }
+                        LocalTransforms::SharedWith { donor } => {
+                            instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
+                            constants.push(RenderConstant::Key(donor.as_key()));
+                            instructions.push(Self::const_last(constants));
+                        }
+                        _ => panic!("instance data not properly initialized"),
                     }
                     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
                 }
@@ -268,14 +245,6 @@ impl World {
             let scene_event = self.scene.current_event();
             if scene_event.is_some() {
                 match scene_event.unwrap() {
-                    SceneEvent::EntitiesAdded(_) => {
-                        todo!()
-                        // for entity_handle in entities {
-                        //     // TODO: handle failed job enqueue?
-                        //     self.enqueue_entity_load(entity_handle, scene_load_level)?;
-                        //     self.poll_assets_for_job(&entity_handle, &mut deltas);
-                        // }
-                    }
                     SceneEvent::LoadLevelChanged(old, new) => {
                         if self.load_queue.has_pending_scene_job(self.scene.scene_id) {
                             if !self.try_handle_scene_load()? {

@@ -1,10 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::{
-    animation::animation::{Animation, EntityAnimations},
-    app::renderer::GPUAllocationHandle,
-    asset_manager_new::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
-    world::{entity_manager::MeshRenderables, entity_upload_query::DataRequirement},
+    animation::animation::EntityAnimations,
+    asset_manager::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
+    world::entity_manager::MeshRenderables,
 };
 
 #[derive(Debug, Clone)]
@@ -56,20 +55,38 @@ pub struct MeshCollectionComponent<A: ProvidesMeshData + ?Sized> {
     pub rigid_animation_mode: RigidAnimationMode,
 }
 
-pub struct MeshCollectionDescriptor<T: ProvidesMeshData> {
-    pub resource_backing: ResourceBacking<T>,
-    pub allocation_handle: Option<GPUAllocationHandle>,
+pub struct MeshCollectionDescriptor {
+    pub resource_backing: ResourceBacking<dyn ProvidesMeshData>,
     pub mesh_accessor: MeshAcessor,
+    pub animation: Option<AnimationComponent<dyn ProvidesAnimationData>>,
     pub rigid_animation_mode: RigidAnimationMode,
 }
 
-impl<T: ProvidesMeshData> MeshCollectionComponent<T> {
-    pub fn new(descriptor: MeshCollectionDescriptor<T>) -> Self {
+impl MeshCollectionDescriptor {
+    pub fn new<T: ProvidesMeshData>(
+        resource: ResourceBacking<T>,
+        mesh_accessor: MeshAcessor,
+        rigid: RigidAnimationMode,
+    ) -> Self {
         Self {
-            resource_backing: descriptor.resource_backing,
-            mesh_accessor: descriptor.mesh_accessor,
-            rigid_animation_mode: descriptor.rigid_animation_mode,
+            mesh_accessor,
+            resource_backing: resource.erase(),
+            rigid_animation_mode: rigid,
+            animation: None,
         }
+    }
+
+    pub fn with_animation<T: ProvidesAnimationData + 'static>(
+        mut self,
+        desc: AnimationComponentDescriptor<T>,
+    ) -> Self {
+        self.animation = Some(AnimationComponent {
+            resource_backing: desc.resource_backing.erase(),
+            animation_accessor: desc.accessor,
+            mesh_accessor: self.mesh_accessor.clone(),
+        });
+
+        self
     }
 }
 
@@ -79,7 +96,6 @@ pub trait Component {
     type Erased: Component;
 
     fn erase(self) -> Self::Erased;
-    fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>>;
     fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output;
 }
 
@@ -87,19 +103,6 @@ impl<A: ProvidesMeshData + ?Sized> Component for MeshCollectionComponent<A> {
     type AssetType = A;
     type Output = MeshRenderables;
     type Erased = MeshCollectionComponent<dyn ProvidesMeshData>;
-    fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>> {
-        let mut res = Vec::new();
-        if !is_instanced {
-            res.push(DataRequirement::MeshData(&self.mesh_accessor));
-        }
-        if !is_instanced || matches!(self.rigid_animation_mode, RigidAnimationMode::Independent) {
-            res.push(DataRequirement::LocalTransformData {
-                accessor: &self.mesh_accessor,
-                mode: &self.rigid_animation_mode,
-            });
-        }
-        res
-    }
 
     fn get_output_data(&self, meshed_asset: &A) -> Self::Output {
         meshed_asset.render_mesh_data(&self.mesh_accessor, &self.rigid_animation_mode)
@@ -122,13 +125,12 @@ pub enum AnimationAccessor {
 pub struct AnimationComponent<T: ProvidesAnimationData + ?Sized> {
     pub resource_backing: ResourceBacking<T>,
     pub animation_accessor: AnimationAccessor,
-    mesh_accessor: MeshAcessor,
+    pub mesh_accessor: MeshAcessor,
 }
 
-pub struct AnimationComponentDescriptor<A: ProvidesAnimationData> {
+pub struct AnimationComponentDescriptor<A: ProvidesAnimationData + ?Sized> {
     pub resource_backing: ResourceBacking<A>,
     pub accessor: AnimationAccessor,
-    pub mesh_acccessor: MeshAcessor,
 }
 
 impl<A: ProvidesAnimationData> AnimationComponent<A> {
@@ -149,11 +151,6 @@ impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
     type AssetType = A;
     type Output = EntityAnimations;
     type Erased = AnimationComponent<dyn ProvidesAnimationData>;
-    fn get_data_requirements<'a>(&'a self, is_instanced: bool) -> Vec<DataRequirement<'a>> {
-        vec![DataRequirement::AnimationData {
-            anim_accessor: &self.animation_accessor,
-        }]
-    }
 
     fn erase(self) -> Self::Erased {
         AnimationComponent {

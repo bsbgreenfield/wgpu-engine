@@ -2,13 +2,13 @@ use std::{collections::HashMap, marker::PhantomData};
 
 use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
-    asset_manager_new::{
+    asset_manager::{
         Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, UnloadedAssetData,
     },
     world::{components::ResourceBacking, scene::SceneLoadLevel},
 };
 
-enum RegisteredAssetNew<A: Asset + ?Sized> {
+enum RegisteredAsset<A: Asset + ?Sized> {
     Unloaded {
         data: UnloadedAssetData,
         _t: PhantomData<A>,
@@ -16,7 +16,7 @@ enum RegisteredAssetNew<A: Asset + ?Sized> {
     Loaded(AssetResidency),
 }
 
-impl<A: Asset + ?Sized> RegisteredAssetNew<A> {
+impl<A: Asset + ?Sized> RegisteredAsset<A> {
     fn set_as_gpu_loaded(&mut self, alloc_handle: GPUAllocationHandle) {
         let Self::Loaded(res) = self else {
             panic!("set gpu called on unloaded asset");
@@ -28,12 +28,12 @@ impl<A: Asset + ?Sized> RegisteredAssetNew<A> {
     }
 }
 
-pub struct AssetManagerNew {
-    registered_assets: HashMap<AssetHandle, RegisteredAssetNew<dyn Asset>>,
+pub struct AssetManager {
+    registered_assets: HashMap<AssetHandle, RegisteredAsset<dyn Asset>>,
     loaded_assets: Vec<Box<dyn Asset>>,
 }
 
-impl AssetManagerNew {
+impl AssetManager {
     pub fn new() -> Self {
         Self {
             loaded_assets: Vec::new(),
@@ -50,25 +50,25 @@ impl AssetManagerNew {
             .get(asset_handle)
             .ok_or(AssetLoadError::AssetNotFound)?;
         match registered {
-            RegisteredAssetNew::Unloaded { data: _data, _t } => Ok(&AssetResidency::Registered),
-            RegisteredAssetNew::Loaded(res) => Ok(res),
+            RegisteredAsset::Unloaded { data: _data, _t } => Ok(&AssetResidency::Registered),
+            RegisteredAsset::Loaded(res) => Ok(res),
         }
     }
 
     fn load(&mut self, asset_handle: &AssetHandle) -> Result<usize, AssetLoadError> {
         let registered_asset = self.registered_assets.remove(asset_handle).unwrap();
         match registered_asset {
-            RegisteredAssetNew::Unloaded { data, _t } => {
+            RegisteredAsset::Unloaded { data, _t } => {
                 let loaded = data.load()?;
                 let la_index = self.loaded_assets.len().clone();
                 self.loaded_assets.push(loaded);
                 self.registered_assets.insert(
                     *asset_handle,
-                    RegisteredAssetNew::Loaded(AssetResidency::CPU(la_index)),
+                    RegisteredAsset::Loaded(AssetResidency::CPU(la_index)),
                 );
                 return Ok(la_index);
             }
-            RegisteredAssetNew::Loaded(res) => match res {
+            RegisteredAsset::Loaded(res) => match res {
                 AssetResidency::CPU(la_index) => return Ok(la_index),
                 AssetResidency::GPU(_alloc, la_index) => return Ok(la_index),
                 _ => panic!(),
@@ -81,10 +81,10 @@ impl AssetManagerNew {
         asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError> {
         match self.registered_assets.get(&asset_handle).unwrap() {
-            RegisteredAssetNew::Unloaded { data: _data, _t } => Err(
-                AssetLoadError::AssetNotLoaded(String::from("this asset is not yet loaded!")),
-            ),
-            RegisteredAssetNew::Loaded(res) => match res {
+            RegisteredAsset::Unloaded { data: _data, _t } => Err(AssetLoadError::AssetNotLoaded(
+                String::from("this asset is not yet loaded!"),
+            )),
+            RegisteredAsset::Loaded(res) => match res {
                 AssetResidency::CPU(la_index) => {
                     let asset = &self.loaded_assets[*la_index];
                     return asset.get_upload_job(asset_handle);
@@ -101,7 +101,7 @@ impl AssetManagerNew {
         let handle = self.gen_handle();
         self.registered_assets.insert(
             handle,
-            RegisteredAssetNew::Unloaded {
+            RegisteredAsset::Unloaded {
                 data: asset,
                 _t: PhantomData,
             },
@@ -167,7 +167,7 @@ impl AssetManagerNew {
             .registered_assets
             .get(asset_handle)
             .expect("asset is not registered!");
-        let RegisteredAssetNew::Loaded(res) = a else {
+        let RegisteredAsset::Loaded(res) = a else {
             panic!("asset is not loaded!")
         };
         let AssetResidency::GPU(alloc_handle, la_index) = res else {

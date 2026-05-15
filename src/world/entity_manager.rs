@@ -5,14 +5,16 @@ use std::{
 use crate::{
     animation::animation::{Animation, EntityAnimations},
     app::renderer::GPUAllocationHandle,
-    asset_manager_new::{
-        AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManagerNew,
+    asset_manager::{
+        AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
     },
     util::types::LocalTransform,
     world::{
-        components::{AnimationComponent, Component, MeshCollectionComponent},
+        components::{
+            AnimationComponent, Component, MeshCollectionComponent, MeshCollectionDescriptor,
+        },
         instance_manager::InstanceHandle,
-        world::{InstanceUploadData, LocalTransformsNew},
+        world::{InstanceUploadData, LocalTransforms},
     },
 };
 
@@ -35,7 +37,7 @@ pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent<dyn ProvidesMeshData>, 100>,
     animations: SparseSet<AnimationComponent<dyn ProvidesAnimationData>, 100>,
-    pub(super) asset_manager: AssetManagerNew,
+    pub(super) asset_manager: AssetManager,
 }
 
 #[derive(Debug)]
@@ -62,17 +64,10 @@ pub struct MeshRenderables {
     pub local_transforms: Vec<LocalTransform>,
 }
 
-pub struct RenderablesNew {
+pub struct Renderables {
     pub instance_handle: InstanceHandle,
     pub mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimations>,
-}
-
-#[derive(Debug)]
-pub struct Renderables {
-    pub instance_handle: InstanceHandle,
-    pub common: Option<Vec<RenderData>>,
-    pub instance_data: Option<InstanceUploadData>,
 }
 
 impl EntityManager {
@@ -82,7 +77,7 @@ impl EntityManager {
     ) -> InstanceUploadData {
         let mut res = InstanceUploadData {
             instance_handle: instance_handle.clone(),
-            local_transforms: crate::world::world::LocalTransformsNew::Uninit,
+            local_transforms: crate::world::world::LocalTransforms::Uninit,
         };
         if let Some(mesh_collection) = self
             .mesh_collections
@@ -90,10 +85,10 @@ impl EntityManager {
         {
             match mesh_collection.rigid_animation_mode {
                 crate::world::components::RigidAnimationMode::Shared => {
-                    res.local_transforms = LocalTransformsNew::NeedsShared
+                    res.local_transforms = LocalTransforms::NeedsShared
                 }
                 crate::world::components::RigidAnimationMode::Independent => {
-                    res.local_transforms = LocalTransformsNew::NeedsCopy
+                    res.local_transforms = LocalTransforms::NeedsCopy
                 }
             }
         }
@@ -103,8 +98,8 @@ impl EntityManager {
     pub fn get_entity_render_data<'frame>(
         &'frame self,
         instance_handle: &InstanceHandle,
-    ) -> Result<RenderablesNew, EntityManagerError> {
-        let mut renderables = RenderablesNew {
+    ) -> Result<Renderables, EntityManagerError> {
+        let mut renderables = Renderables {
             instance_handle: instance_handle.clone(),
             mesh_renderables: Vec::new(),
             animations: None,
@@ -140,63 +135,12 @@ impl EntityManager {
         Ok(renderables)
     }
 
-    /// For each component that might contribute Renderable data to that is needed for the Renderer
-    /// modify the InstanceUploadQuery, and then get the appropriate renderables
-    /// If for example, an Entity has a MeshCollectionComponent, then the component will update the
-    /// query to require some combination of mesh data and local transform data.
-    /// This is repeated for all components until Renderables is populated with the data it the
-    /// Renderer needs.
-    pub fn get_entity_renderables<'frame>(
-        &'frame self,
-        instance_handle: &InstanceHandle,
-        is_instanced: bool,
-    ) -> Result<Renderables, EntityManagerError> {
-        // let mut query = InstanceUploadQuery::default();
-        // let mut renderables = Renderables {
-        //     instance_handle: instance_handle.clone(),
-        //     common: None,
-        //     instance_data: None,
-        // };
-        // let mut assets = HashSet::<AssetHandle>::new();
-        // let mesh_collection = self
-        //     .mesh_collections
-        //     .get(instance_handle.entity_handle.0 as usize);
-        // if let Some(mesh_collection) = mesh_collection {
-        //     mesh_collection.modify_query(&mut query, is_instanced);
-        //     assets.insert(mesh_collection.resource_backing.clone());
-        //     //self.asset_manager
-        //     //    .get_renderables_for(mesh_collection, &mut renderables, &query)
-        //     //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
-        // }
-        // if let Some(animation) = self
-        //     .animations
-        //     .get(instance_handle.entity_handle.0 as usize)
-        // {
-        //     animation.modify_query(&mut query, is_instanced);
-        //     assets.insert(animation.resource_backing);
-        // }
-
-        // // TODO: collect other instance render data
-
-        // // for each unique asset handle that makes up the entity, fetch renderable data
-        // for asset in assets.iter() {
-        //     todo!()
-        //     //self.asset_manager
-        //     //    .get_renderables_for(asset, &mut renderables, &query)
-        //     //    .map_err(|err| EntityManagerError::RenderableFetchError(err.to_string()))?;
-        // }
-
-        // Ok(renderables)
-        todo!()
-    }
-
     pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
         let mut result = HashSet::<AssetHandle>::new();
         if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
         {
-            //     result.insert(mesh_collection_component.resource_backing);
+            result.insert(mesh_collection_component.resource_backing.asset_handle);
         }
-        // TODO: other RBCs
         return result;
     }
 
@@ -217,22 +161,27 @@ impl EntityManager {
 
     pub fn new() -> Self {
         Self {
-            asset_manager: AssetManagerNew::new(),
+            asset_manager: AssetManager::new(),
             available_ids: vec![0..10000],
             mesh_collections: SparseSet::new(),
             animations: SparseSet::new(),
         }
     }
 
-    pub fn add_mesh_collection_for_entity<A>(
+    pub fn add_mesh_collection_for_entity(
         &mut self,
         entity: &EntityHandle,
-        mesh_collection: MeshCollectionComponent<A>,
-    ) where
-        A: ProvidesMeshData,
-    {
-        self.mesh_collections
-            .insert(entity.0 as usize, mesh_collection.erase());
+        descriptor: MeshCollectionDescriptor,
+    ) {
+        let mcc = MeshCollectionComponent {
+            mesh_accessor: descriptor.mesh_accessor,
+            rigid_animation_mode: descriptor.rigid_animation_mode,
+            resource_backing: descriptor.resource_backing,
+        };
+        self.mesh_collections.insert(entity.0 as usize, mcc.erase());
+        if let Some(animation) = descriptor.animation {
+            self.animations.insert(entity.0 as usize, animation.erase());
+        }
     }
 
     pub fn add_animation_for_entity<A>(
@@ -429,15 +378,7 @@ mod sparse_set_tests {
 }
 #[cfg(test)]
 mod entity_manager_tests {
-    use crate::{
-        asset_manager_new::{asset_manager_new::AssetManagerNew, gltf_asset::LoadedGltfAsset},
-        world::{
-            components::{
-                MeshAcessor, MeshCollectionComponent, MeshCollectionDescriptor, RigidAnimationMode,
-            },
-            entity_manager::EntityManager,
-        },
-    };
+    use crate::world::entity_manager::EntityManager;
 
     #[test]
     fn setup_and_create() {

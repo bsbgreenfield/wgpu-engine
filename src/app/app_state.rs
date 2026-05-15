@@ -1,5 +1,6 @@
 use winit::{event_loop::ActiveEventLoop, keyboard::KeyCode};
 
+#[allow(unused)]
 #[derive(Default)]
 pub(super) struct InputController {
     pub key_d_down: bool,

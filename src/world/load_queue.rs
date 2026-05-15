@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    asset_manager_new::{AssetHandle, AssetLoadResult, asset_manager_new::AssetManagerNew},
+    asset_manager::{AssetHandle, AssetLoadResult, asset_manager_new::AssetManager},
     world::{
         WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager},
@@ -141,7 +141,7 @@ impl EntityLoadQueue {
     pub(super) fn poll_scene_job(
         &mut self,
         scene_id: SceneId,
-        manager: &mut AssetManagerNew,
+        manager: &mut AssetManager,
     ) -> Result<(), WorldUpdateError> {
         let mut complete = true;
         let entity_count = self.scene_jobs[&scene_id].entity_load_jobs.len();
@@ -164,7 +164,7 @@ impl EntityLoadQueue {
     fn poll_entity(
         &mut self,
         entity_handle: EntityHandle,
-        manager: &mut AssetManagerNew,
+        manager: &mut AssetManager,
         load_level: SceneLoadLevel,
     ) -> Result<bool, WorldUpdateError> {
         if self.poll_assets_for_job(entity_handle, manager, load_level)? {
@@ -177,7 +177,7 @@ impl EntityLoadQueue {
     fn poll_assets_for_job(
         &mut self,
         entity: EntityHandle,
-        asset_manager: &mut AssetManagerNew,
+        asset_manager: &mut AssetManager,
         load_level: SceneLoadLevel,
     ) -> Result<bool, WorldUpdateError> {
         let job = self.entity_jobs.get(&entity).unwrap();
@@ -211,11 +211,9 @@ impl EntityLoadQueue {
 mod load_queue_tests {
     use crate::{
         app::renderer::GPUAllocationHandle,
-        asset_manager_new::{asset_manager_new::AssetManagerNew, gltf_asset::LoadedGltfAsset},
+        asset_manager::{asset_manager_new::AssetManager, gltf_asset::GltfAsset},
         world::{
-            components::{
-                MeshAcessor, MeshCollectionComponent, MeshCollectionDescriptor, RigidAnimationMode,
-            },
+            components::{MeshAcessor, MeshCollectionDescriptor, RigidAnimationMode},
             entity_manager::EntityManager,
             load_queue::EntityLoadQueue,
             scene::{Scene, SceneLoadLevel},
@@ -224,22 +222,20 @@ mod load_queue_tests {
 
     fn make_box_scene(
         id: usize,
-        asset_manager: &mut AssetManagerNew,
+        asset_manager: &mut AssetManager,
         entity_manager: &mut EntityManager,
         load_level: SceneLoadLevel,
     ) -> Scene {
-        let asset = asset_manager
-            .register_asset::<LoadedGltfAsset>("box")
-            .unwrap();
+        let asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
         let entity = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: asset,
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: asset.erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
         let mut scene = Scene::new_with_id(id);
         scene.load_level = load_level;
@@ -249,7 +245,7 @@ mod load_queue_tests {
     #[test]
     fn enqueue_creates_pending_job() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
         let scene = make_box_scene(
@@ -270,7 +266,7 @@ mod load_queue_tests {
     #[test]
     fn poll_completes_cpu_scene() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
         let scene = make_box_scene(
@@ -291,7 +287,7 @@ mod load_queue_tests {
     #[test]
     fn dequeue_cleans_up_all_jobs() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
         let scene = make_box_scene(
@@ -315,22 +311,20 @@ mod load_queue_tests {
     #[test]
     fn shared_entity_ref_counting_across_two_scenes() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
         // One asset, one entity shared by both scenes.
-        let asset = asset_manager
-            .register_asset::<LoadedGltfAsset>("box")
-            .unwrap();
+        let asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
         let shared_entity = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &shared_entity,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: asset,
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: asset.erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
 
         let mut scene_a = Scene::new_with_id(1);
@@ -369,7 +363,7 @@ mod load_queue_tests {
     #[test]
     fn independent_scenes_dont_interfere() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
         let scene_a = make_box_scene(
@@ -408,33 +402,31 @@ mod load_queue_tests {
     #[test]
     fn shared_asset_persists_until_last_entity_dequeued() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager
-            .register_asset::<LoadedGltfAsset>("box")
-            .unwrap();
+        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
 
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
 
         let mut scene_a = Scene::new_with_id(1);
@@ -473,32 +465,30 @@ mod load_queue_tests {
     #[test]
     fn shared_asset_cpu_scene_resolves_gpu_scene_stays_pending() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager
-            .register_asset::<LoadedGltfAsset>("box")
-            .unwrap();
+        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
 
         // A is CPU
@@ -559,32 +549,30 @@ mod load_queue_tests {
     #[test]
     fn shared_asset_both_cpu_second_scene_resolves_from_cache() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager
-            .register_asset::<LoadedGltfAsset>("box")
-            .unwrap();
+        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
 
         let mut scene_a = Scene::new_with_id(1);
@@ -620,32 +608,30 @@ mod load_queue_tests {
     #[test]
     fn shared_asset_gpu_cpu_second_scene_resolves_from_cache() {
         let mut queue = EntityLoadQueue::new();
-        let mut asset_manager = AssetManagerNew::new();
+        let mut asset_manager = AssetManager::new();
         let mut entity_manager = EntityManager::new();
 
-        let shared_asset = asset_manager
-            .register_asset::<LoadedGltfAsset>("box")
-            .unwrap();
+        let shared_asset = asset_manager.register_asset::<GltfAsset>("box").unwrap();
 
         let entity_a = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_a,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
         let entity_b = entity_manager.new_entity().unwrap();
         entity_manager.add_mesh_collection_for_entity(
             &entity_b,
-            MeshCollectionComponent::new(MeshCollectionDescriptor {
-                resource_backing: shared_asset.clone(),
-                allocation_handle: None,
+            MeshCollectionDescriptor {
+                resource_backing: shared_asset.clone().erase(),
+                animation: None,
                 mesh_accessor: MeshAcessor::All,
                 rigid_animation_mode: RigidAnimationMode::Shared,
-            }),
+            },
         );
 
         let mut scene_a = Scene::new_with_id(1);

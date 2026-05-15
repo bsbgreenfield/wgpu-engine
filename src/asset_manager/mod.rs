@@ -1,18 +1,13 @@
 use std::fmt::{Debug, Display};
 
-mod test_refactor;
-
 use crate::{
-    animation::animation::{Animation, EntityAnimations},
+    animation::animation::EntityAnimations,
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
-    asset_manager_new::gltf_asset::{
-        BinarySource, GltfLoadError, GltfValidationError, LoadedGltfAsset,
-    },
+    asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     world::{
         RenderKey,
         components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
-        entity_manager::{MeshRenderables, Renderables},
-        entity_upload_query::InstanceUploadQueryNew,
+        entity_manager::MeshRenderables,
         scene::SceneLoadLevel,
     },
 };
@@ -80,14 +75,14 @@ impl RenderKey for AssetHandle {
     }
 }
 
-enum UnloadedAssetData {
+pub enum UnloadedAssetData {
     Gltf(gltf::Gltf, BinarySource),
 }
 
 impl UnloadedAssetData {
     fn load(self) -> Result<Box<dyn Asset>, ModelBuilderError> {
         match self {
-            Self::Gltf(gltf, bin) => LoadedGltfAsset::load(gltf, bin),
+            Self::Gltf(gltf, bin) => GltfAsset::load(gltf, bin),
         }
     }
 }
@@ -100,7 +95,7 @@ pub trait Asset {
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,
-    ) -> Result<GPUAssetUploadJob, AssetLoadError>;
+    ) -> Result<GPUAssetUploadJob<'_>, AssetLoadError>;
 
     fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
@@ -155,22 +150,6 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
             },
         }
     }
-}
-pub trait LoadableAsset: Asset {
-    fn load(&self) -> Result<Box<dyn LoadedAsset>, ModelBuilderError>;
-}
-pub trait LoadedAsset {
-    fn upload_job<'a>(
-        &'a self,
-        asset_handle: AssetHandle,
-    ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError>;
-
-    fn get_renderables(
-        &self,
-        alloc_handle: GPUAllocationHandle,
-        renderables: &mut Renderables,
-        query: &InstanceUploadQueryNew,
-    ) -> Result<(), AssetLoadError>;
 }
 #[derive(Debug)]
 pub enum ModelBuilderError {

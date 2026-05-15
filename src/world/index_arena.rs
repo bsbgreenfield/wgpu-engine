@@ -10,14 +10,14 @@ struct Slot {
     dense_index: u16,
 }
 
-pub struct InstanceArenaNew<A: Archetype> {
+pub struct InstanceArena<A: Archetype> {
     slots: Vec<Slot>,
     free_list: Vec<u16>,
     pub(super) handles: Vec<InstanceHandle>,
     _t: PhantomData<A>,
 }
 
-impl<A: Archetype + ArchetypeIdent> InstanceArenaNew<A> {
+impl<A: Archetype + ArchetypeIdent> InstanceArena<A> {
     pub fn new() -> Self {
         Self {
             slots: Vec::new(),

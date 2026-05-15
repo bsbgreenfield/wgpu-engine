@@ -4,7 +4,7 @@ use bytemuck::Pod;
 
 use crate::{
     app::renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
-    asset_manager_new::AssetHandle,
+    asset_manager::AssetHandle,
     util::types::ModelVertex,
     world::{
         RenderKey,
