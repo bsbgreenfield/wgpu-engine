@@ -23,19 +23,34 @@ use crate::{
 };
 
 impl GltfNode {
-    fn new(node: &gltf::Node) -> Self {
+    fn new(node: &gltf::Node, skins: &Vec<Vec<usize>>) -> Self {
         let node_id = node.index();
-        let children: Vec<GltfNode> = node.children().map(|c| GltfNode::new(&c)).collect();
+        let children: Vec<GltfNode> = node.children().map(|c| GltfNode::new(&c, skins)).collect();
         Self {
             node_type: match node.mesh() {
                 Some(m) => NodeType::Mesh(m.index()),
-                None => NodeType::Node,
+                None => match skin_index(node, skins) {
+                    Some(joint_id) => NodeType::Joint(joint_id),
+                    None => NodeType::Node,
+                },
             },
+            skin_idx: node.skin().map(|s| s.index()),
             node_id,
             children,
             transform_components: gltf_mat_to_transforms(node.transform().decomposed()),
         }
     }
+}
+
+fn skin_index(node: &gltf::Node, skins: &Vec<Vec<usize>>) -> Option<(u32, u32)> {
+    for (skin_idx, skin) in skins.iter().enumerate() {
+        if let Some(joint_idx) = skin.iter().position(|joint_idx| *joint_idx == node.index()) {
+            return Some((skin_idx as u32, joint_idx as u32));
+        } else {
+            continue;
+        };
+    }
+    None
 }
 
 fn gltf_mat_to_transforms(transforms: ([f32; 3], [f32; 4], [f32; 3])) -> [NodeTransforms; 3] {
@@ -120,7 +135,16 @@ fn get_buffer_offsets(gltf: &gltf::Gltf) -> Vec<usize> {
     }
     buffer_offsets
 }
-fn build_node_trees(gltf: &gltf::Gltf) -> Result<Vec<Arc<GltfNode>>, ModelBuilderError> {
+
+fn get_skins(gltf: &gltf::Gltf) -> Vec<Vec<usize>> {
+    gltf.skins()
+        .map(|skin| skin.joints().map(|joint| joint.index()).collect())
+        .collect()
+}
+fn build_node_trees(
+    gltf: &gltf::Gltf,
+    skins: &Vec<Vec<usize>>,
+) -> Result<Vec<Arc<GltfNode>>, ModelBuilderError> {
     let scene = gltf
         .scenes()
         .next()
@@ -131,7 +155,7 @@ fn build_node_trees(gltf: &gltf::Gltf) -> Result<Vec<Arc<GltfNode>>, ModelBuilde
 
     Ok(scene
         .nodes()
-        .map(|root_node| Arc::new(GltfNode::new(&root_node)))
+        .map(|root_node| Arc::new(GltfNode::new(&root_node, skins)))
         .collect())
 }
 
@@ -304,7 +328,8 @@ fn build_all_models(
 impl GltfAsset {
     pub fn load(gltf: gltf::Gltf, bin: BinarySource) -> Result<Box<dyn Asset>, ModelBuilderError> {
         let buffer_offsets = get_buffer_offsets(&gltf);
-        let node_tree = build_node_trees(&gltf)?;
+        let skins = get_skins(&gltf);
+        let node_tree = build_node_trees(&gltf, &skins)?;
         let binary_data = super::loader::load_binary_data_from_source(&bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
         let primitive_data = get_primitive_data_map(&gltf, &node_tree)?;
@@ -324,6 +349,7 @@ impl GltfAsset {
             meshes,
             indices,
             animations,
+            skins,
         }))
     }
 }

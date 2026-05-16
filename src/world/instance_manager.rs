@@ -17,7 +17,9 @@ use crate::{
         RenderKey, WorldUpdateError,
         entity_manager::{EntityHandle, EntityManager},
         index_arena::InstanceArena,
-        world::{DrawSet, InstanceUploadData, LocalTransforms, RenderGroup, RenderView},
+        world::{
+            DrawSet, InstanceUploadData, JointTransforms, LocalTransforms, RenderGroup, RenderView,
+        },
     },
 };
 
@@ -177,7 +179,8 @@ pub struct AnimationInstance {
     pub samples: Vec<AnimationSample>,
     animation_idx: usize,
     pub start_time: std::time::Instant,
-    pub buffer: Vec<Mat4F32>,
+    pub mesh_buffer: Vec<Mat4F32>,
+    pub joint_buffer: Vec<Mat4F32>,
     instance_handle: InstanceHandle,
     complete: bool,
 }
@@ -192,7 +195,8 @@ impl AnimationInstance {
             samples,
             animation_idx: 0,
             start_time: Instant::now(),
-            buffer: vec![[[0f32; 4]; 4]; count],
+            joint_buffer: vec![],
+            mesh_buffer: vec![[[0f32; 4]; 4]; count],
             instance_handle: InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0),
         }
     }
@@ -217,7 +221,7 @@ impl AnimationController {
             .registered_animations
             .get(&instance_handle.entity_handle)?;
 
-        let buffer: Vec<Mat4F32> = entity_animation
+        let mesh_buffer: Vec<Mat4F32> = entity_animation
             .local_transforms
             .iter()
             .map(|lt| **lt)
@@ -225,7 +229,8 @@ impl AnimationController {
         self.active_animations.push(AnimationInstance {
             complete: false,
             samples: entity_animation.animation[anim_idx].init_samples(),
-            buffer,
+            mesh_buffer,
+            joint_buffer: vec![],
             animation_idx: anim_idx,
             start_time: std::time::Instant::now()
                 .add_signed(Duration::milliseconds(time_offset.unwrap_or(0.0) as i64)),
@@ -361,7 +366,7 @@ impl InstanceManager {
             active_animation.complete = animation.get_animation_frame(
                 time_delta,
                 active_animation,
-                &entity_animation.buffer_slot_map,
+                &entity_animation.mesh_slot_map,
             );
             cursor += 1;
         }
@@ -380,7 +385,7 @@ impl InstanceManager {
             animation.get_animation_frame(
                 time_delta,
                 active_animation,
-                &entity_animation.buffer_slot_map,
+                &entity_animation.mesh_slot_map,
             );
         }
     }
@@ -393,7 +398,7 @@ impl InstanceManager {
             .get(&a.instance_handle.entity_handle)
             .unwrap();
 
-        &entity_anim.buffer_slot_map
+        &entity_anim.mesh_slot_map
     }
 
     pub(super) fn spawn(
@@ -406,6 +411,7 @@ impl InstanceManager {
         let mut res = InstanceUploadData {
             instance_handle: instance_handle.clone(),
             local_transforms: LocalTransforms::Uninit,
+            joint_transforms: JointTransforms::Uninit,
         };
         let is_instanced = self
             .entity_group_index
@@ -442,11 +448,13 @@ impl InstanceManager {
                 let view = RenderView {
                     gpu_handle: alloc_handle,
                     pnu_draws: mesh_data.pnu_vertex_ranges.map(|pnu| DrawSet {
+                        joint_map: vec![], // TODO: seprate draw set struct for pnu to avoid this?
                         mesh_map: mesh_data.pnu_mesh_map,
                         primtitive_ranges: pnu,
                         index_ranges: mesh_data.index_ranges.clone(),
                     }),
                     pnujw_draws: mesh_data.pnujw_vertex_ranges.map(|pnujw| DrawSet {
+                        joint_map: mesh_data.joint_map,
                         mesh_map: mesh_data.pnujw_mesh_map,
                         primtitive_ranges: pnujw,
                         index_ranges: mesh_data.index_ranges.clone(),
@@ -462,6 +470,17 @@ impl InstanceManager {
                     }
                     LocalTransforms::Owned { data } => data.extend(mesh_data.local_transforms),
                     _ => panic!("unexpected local transform data val"),
+                }
+                match &mut res.joint_transforms {
+                    JointTransforms::Uninit => {
+                        res.joint_transforms = JointTransforms::Owned {
+                            data: mesh_data.joint_transforms,
+                        }
+                    }
+                    JointTransforms::Owned { data } => {
+                        data.extend(mesh_data.joint_transforms);
+                    }
+                    _ => panic!("unexpected joint transform data"),
                 }
             }
 
@@ -566,7 +585,7 @@ impl InstanceManager {
 
             render_frame.rigid_animation_data.push(AnimationUpdate {
                 buffer_offset: lt_offset,
-                transforms: bytemuck::cast_slice(&animation_instance.buffer),
+                transforms: bytemuck::cast_slice(&animation_instance.mesh_buffer),
             });
         }
         render_frame

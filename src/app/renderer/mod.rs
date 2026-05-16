@@ -106,7 +106,9 @@ pub enum Operations {
     MoveEntity,
     SpawnEntityInstance,
     LocalTransformUpload,
+    JointTransformUpload,
     ResolveSharedLTBinding,
+    ResolveSharedJTBinding,
     PNUUpload,
     PNUJWUpload,
     IndexUpload,
@@ -190,7 +192,7 @@ impl From<wgpu::SurfaceError> for RenderError {
 impl Display for RenderUpdateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::GpuUploadFailure(err) => err.fmt(f),
+            Self::GpuUploadFailure(err) => std::fmt::Display::fmt(err, f),
         }
     }
 }

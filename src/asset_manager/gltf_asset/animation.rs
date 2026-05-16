@@ -23,7 +23,7 @@ fn get_animation_data_for_node(
     time_delta: f32,
     animation: &GltfAnimation,
     animation_instance: &mut AnimationInstance,
-    buffer_slot_map: &Vec<usize>,
+    mesh_slot_map: &Vec<usize>,
 ) -> bool {
     let mut complete = true;
     let mut rotation: Option<Quaternion<f32>> = None;
@@ -135,7 +135,10 @@ fn get_animation_data_for_node(
 
     match node.node_type {
         NodeType::Mesh(mesh_id) => {
-            animation_instance.buffer[buffer_slot_map[mesh_id]] = global.into();
+            animation_instance.mesh_buffer[mesh_slot_map[mesh_id]] = global.into();
+        }
+        NodeType::Joint(joint_id) => {
+            //TODO: write to joint buffer
         }
         NodeType::Node => {
             //
@@ -149,7 +152,7 @@ fn get_animation_data_for_node(
             time_delta,
             animation,
             animation_instance,
-            buffer_slot_map,
+            mesh_slot_map,
         ) {
             complete = false;
         }

@@ -1,6 +1,9 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use crate::{util::types::LocalTransform, world::instance_manager::AnimationInstance};
+use crate::{
+    util::types::{LocalTransform, Mat4F32},
+    world::instance_manager::AnimationInstance,
+};
 
 #[repr(C)]
 pub struct AnimationTransforms(pub Vec<f32>);
@@ -144,7 +147,7 @@ where
         &self,
         time_delta: f32,
         animation_instance: &mut AnimationInstance,
-        buffer_slot_map: &Vec<usize>,
+        mesh_slot_map: &Vec<usize>,
     ) -> bool;
 
     fn count(&self) -> usize;
@@ -159,5 +162,7 @@ where
 pub struct EntityAnimations {
     pub animation: Vec<Arc<dyn Animation>>,
     pub local_transforms: Vec<LocalTransform>,
-    pub buffer_slot_map: Vec<usize>,
+    pub joint_transforms: Vec<Mat4F32>,
+    pub mesh_slot_map: Vec<usize>,
+    pub joint_slot_map: Vec<usize>,
 }

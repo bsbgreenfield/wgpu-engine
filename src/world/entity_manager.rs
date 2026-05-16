@@ -8,7 +8,7 @@ use crate::{
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
     },
-    util::types::LocalTransform,
+    util::types::{LocalTransform, Mat4F32},
     world::{
         components::{
             AnimationComponent, Component, MeshCollectionComponent, MeshCollectionDescriptor,
@@ -62,6 +62,8 @@ pub struct MeshRenderables {
     pub pnujw_mesh_map: Vec<u32>,
     pub index_ranges: Option<Vec<Range<u32>>>,
     pub local_transforms: Vec<LocalTransform>,
+    pub joint_transforms: Vec<Mat4F32>,
+    pub joint_map: Vec<u32>,
 }
 
 pub struct Renderables {
@@ -78,6 +80,7 @@ impl EntityManager {
         let mut res = InstanceUploadData {
             instance_handle: instance_handle.clone(),
             local_transforms: crate::world::world::LocalTransforms::Uninit,
+            joint_transforms: super::world::JointTransforms::Uninit,
         };
         if let Some(mesh_collection) = self
             .mesh_collections
@@ -91,6 +94,7 @@ impl EntityManager {
                     res.local_transforms = LocalTransforms::NeedsCopy
                 }
             }
+            // TODO: shared/copied joint transforms!!
         }
         res
     }

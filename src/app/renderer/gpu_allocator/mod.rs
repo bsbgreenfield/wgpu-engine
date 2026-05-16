@@ -19,7 +19,7 @@ pub(super) mod vertex_arena;
 static MIMIMUM_INDEX_ALLOCATION_SIZE: usize = 1024;
 static MIMIMUM_VERTEX_ALLOCATION_SIZE: usize = 2048;
 
-static CHUNK_SIZE: u32 = 4_194_304;
+static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
 
 #[derive(Debug)]
 struct AllocMetaData {
@@ -52,7 +52,8 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
         queue: &wgpu::Queue,
         label: &str,
     ) -> Result<(usize, Range<u32>), VertexArenaError> {
-        let size = (data.len() * size_of::<T>()) as u32;
+        let size = data.len() as u32;
+
         let node_idx: usize = if self.remaining_space >= size {
             self.allocator.alloc_first(size)?
         } else {
@@ -73,7 +74,7 @@ impl<T: bytemuck::Pod + Debug> InstanceChunk<T> {
         queue: &wgpu::Queue,
         label: &str,
     ) -> Result<(usize, Range<u32>), VertexArenaError> {
-        let size = (data.len() * size_of::<T>()) as u32;
+        let size = data.len() as u32;
         let node_idx: usize = if self.remaining_space >= size {
             self.allocator.alloc_first(size)?
         } else {

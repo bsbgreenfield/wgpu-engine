@@ -1,11 +1,17 @@
+use std::f32::consts::PI;
+
+use cgmath::SquareMatrix;
+
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
 use crate::{
     asset_manager::{AssetLoadResult, gltf_asset::GltfAsset},
     world::{
-        components::{AnimationComponentDescriptor, MeshAcessor, RigidAnimationMode},
+        components::{
+            AnimationComponentDescriptor, MeshAcessor, MeshCollectionDescriptor, RigidAnimationMode,
+        },
         entity_manager::EntityHandle,
-        instance_manager::Archetype,
+        instance_manager::{APosition, Archetype},
     },
 };
 
@@ -102,6 +108,61 @@ impl Scene {
         self.event_queue.pop()
     }
 
+    pub fn buggy(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let brain_asset = world.register_asset::<GltfAsset>("buggy")?;
+        let brain_entity = world.entity_manager.new_entity()?;
+        world.entity_manager.add_mesh_collection_for_entity(
+            &brain_entity,
+            MeshCollectionDescriptor::new(
+                brain_asset,
+                MeshAcessor::All,
+                RigidAnimationMode::Shared,
+            ),
+        );
+
+        let mut scene = Scene::new();
+        scene.add_entity(brain_entity);
+
+        scene.spawn(vec![(
+            brain_entity,
+            Box::new(APosition {
+                position: (cgmath::Matrix4::from_angle_y(cgmath::Deg(90.0))
+                    * cgmath::Matrix4::<f32>::from_scale(0.02))
+                .into(),
+            }),
+        )]);
+
+        Ok(scene)
+    }
+
+    pub fn brain(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let brain_asset = world.register_asset::<GltfAsset>("brain")?;
+        let brain_entity = world.entity_manager.new_entity()?;
+        world.entity_manager.add_mesh_collection_for_entity(
+            &brain_entity,
+            MeshCollectionDescriptor::new(
+                brain_asset,
+                MeshAcessor::All,
+                RigidAnimationMode::Shared,
+            ),
+        );
+
+        let mut scene = Scene::new();
+        scene.add_entity(brain_entity);
+
+        scene.spawn(vec![(
+            brain_entity,
+            Box::new(APosition {
+                position: cgmath::Matrix4::<f32>::identity().into(),
+            }),
+        )]);
+
+        Ok(scene)
+    }
     pub fn fox_box(
         world: &mut crate::world::world::World,
     ) -> Result<Self, crate::world::WorldInitError> {

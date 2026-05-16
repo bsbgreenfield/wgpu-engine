@@ -142,7 +142,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                     )
                     .unwrap(),
                 );
-                let scene = Scene::box_animated(self.world.as_mut().unwrap()).unwrap();
+                let scene = Scene::buggy(self.world.as_mut().unwrap()).unwrap();
                 self.world.as_mut().unwrap().add_scene(scene);
                 //  #[cfg(test)]
                 //  {
@@ -201,7 +201,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                         //     .resize(PhysicalSize::new(size.width, size.height));
                     }
                     Err(e) => {
-                        panic!("unable to render! {:?}", e);
+                        panic!("unable to render! {}", e);
                     }
                 }
             }

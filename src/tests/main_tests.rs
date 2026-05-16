@@ -690,7 +690,7 @@ mod integration_tests {
                 "one animation should be active after activate_animation"
             );
             assert_eq!(anim_instances[0].samples.len(), 2);
-            assert_eq!(anim_instances[0].buffer.len(), 2);
+            assert_eq!(anim_instances[0].mesh_buffer.len(), 2);
 
             let anim = app
                 .world
@@ -778,7 +778,7 @@ mod integration_tests {
                 .unwrap()
                 .instance_manager
                 .get_active_animations()[0]
-                .buffer[bsm[0]];
+                .mesh_buffer[bsm[0]];
             //    .buffer[0][3][1];
             assert!(
                 (mesh1[3][1] - 2.52).abs() < 0.1,
@@ -796,7 +796,7 @@ mod integration_tests {
                 .unwrap()
                 .instance_manager
                 .get_active_animations()[0]
-                .buffer[0][3][1];
+                .mesh_buffer[0][3][1];
             assert!(
                 mesh0_y_descending < 2.0,
                 "mesh 0 should be descending (y ≈ 0.43) at t=3.5s, got {mesh0_y_descending}"

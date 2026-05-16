@@ -10,7 +10,7 @@ use crate::{
         },
     },
     asset_manager::{Asset, AssetLoadError},
-    util::types::{LocalTransform, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
         RenderKey, WorldInitError, WorldUpdateError,
         camera::Camera,
@@ -28,6 +28,7 @@ pub struct DrawSet {
     pub mesh_map: Vec<u32>,
     pub primtitive_ranges: Vec<Range<u32>>,
     pub index_ranges: Option<Vec<Range<u32>>>,
+    pub joint_map: Vec<u32>,
 }
 
 impl DrawSet {
@@ -68,9 +69,20 @@ pub enum LocalTransforms {
 }
 
 #[derive(Debug)]
+pub enum JointTransforms {
+    Uninit,
+    Owned { data: Vec<Mat4F32> },
+    CopiedFrom { donor: InstanceHandle },
+    NeedsCopy,
+    SharedWith { donor: InstanceHandle },
+    NeedsShared,
+}
+
+#[derive(Debug)]
 pub struct InstanceUploadData {
     pub instance_handle: InstanceHandle,
     pub local_transforms: LocalTransforms,
+    pub joint_transforms: JointTransforms,
     // others
 }
 
@@ -151,6 +163,27 @@ impl World {
                             instructions.push(Self::const_last(constants));
                         }
                         _ => panic!("instance data not properly initialized"),
+                    }
+                    match instance_upload_data.joint_transforms {
+                        JointTransforms::Owned { mut data } => {
+                            instructions.push(Instruction::Op(Operations::JointTransformUpload));
+                            let jt_bytes: Vec<u8> = {
+                                let ptr = data.as_mut_ptr() as *mut u8;
+                                let len = data.len() * std::mem::size_of::<Mat4F32>();
+                                let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
+                                std::mem::forget(data);
+                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                            };
+                            constants.push(RenderConstant::DataOwned(jt_bytes));
+                            instructions.push(Self::const_last(constants));
+                        }
+                        JointTransforms::SharedWith { donor } => {
+                            instructions.push(Instruction::Op(Operations::ResolveSharedJTBinding));
+                            constants.push(RenderConstant::Key(donor.as_key()));
+                            instructions.push(Self::const_last(constants));
+                        }
+                        JointTransforms::CopiedFrom { donor } => todo!(),
+                        _ => panic!("joint data not properly initialized"),
                     }
                     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
                 }

@@ -93,6 +93,7 @@ impl NodeTransforms {
 #[derive(Debug)]
 pub enum NodeType {
     Mesh(usize),
+    Joint((u32, u32)),
     Node,
 }
 
@@ -100,6 +101,7 @@ pub enum NodeType {
 pub(crate) struct GltfNode {
     node_type: NodeType,
     node_id: usize,
+    skin_idx: Option<usize>,
     children: Vec<GltfNode>,
     transform_components: [NodeTransforms; 3],
 }
@@ -109,10 +111,12 @@ impl GltfNode {
     pub fn mock(
         node_type: NodeType,
         id: usize,
+        skin_idx: Option<usize>,
         children: Vec<GltfNode>,
         transforms: [NodeTransforms; 3],
     ) -> Self {
         Self {
+            skin_idx,
             node_type,
             node_id: id,
             children,
@@ -142,6 +146,7 @@ pub struct GltfAsset {
     pnu_vertices: Vec<PNUVertex>,
     indices: Option<Vec<VIndex>>,
     animations: Vec<Arc<GltfAnimation>>,
+    skins: Vec<Vec<usize>>,
 }
 
 #[derive(Debug)]
