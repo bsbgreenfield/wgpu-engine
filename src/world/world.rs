@@ -6,7 +6,8 @@ use crate::{
         GPUAssetUploadJob,
         app::AppCommand,
         renderer::{
-            GPUAllocationHandle, Instruction, Operations, RenderConstant, RenderUpdateDelta,
+            GPUAllocationHandle, GPUBindings, Instruction, Operations, RenderConstant,
+            RenderUpdateDelta,
         },
     },
     asset_manager::{Asset, AssetLoadError},
@@ -70,6 +71,7 @@ pub enum LocalTransforms {
 
 #[derive(Debug)]
 pub enum JointTransforms {
+    None,
     Uninit,
     Owned { data: Vec<Mat4F32> },
     CopiedFrom { donor: InstanceHandle },
@@ -136,11 +138,13 @@ impl World {
                     instructions.push(Instruction::Op(Operations::EmitAssetUpload));
                 }
                 WorldUpdateDelta::EntityDidSpawn(instance_upload_data) => {
+                    let mut bind_mask = GPUBindings::empty();
                     instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
                     constants.push(RenderConstant::Key(
                         instance_upload_data.instance_handle.as_key(),
                     ));
                     instructions.push(Self::const_last(constants));
+                    bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
                     match instance_upload_data.local_transforms {
                         LocalTransforms::Owned { mut data } => {
                             instructions.push(Instruction::Op(Operations::LocalTransformUpload));
@@ -165,7 +169,11 @@ impl World {
                         _ => panic!("instance data not properly initialized"),
                     }
                     match instance_upload_data.joint_transforms {
+                        JointTransforms::None => {
+                            // none
+                        }
                         JointTransforms::Owned { mut data } => {
+                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
                             instructions.push(Instruction::Op(Operations::JointTransformUpload));
                             let jt_bytes: Vec<u8> = {
                                 let ptr = data.as_mut_ptr() as *mut u8;
@@ -178,14 +186,19 @@ impl World {
                             instructions.push(Self::const_last(constants));
                         }
                         JointTransforms::SharedWith { donor } => {
+                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
                             instructions.push(Instruction::Op(Operations::ResolveSharedJTBinding));
                             constants.push(RenderConstant::Key(donor.as_key()));
                             instructions.push(Self::const_last(constants));
                         }
-                        JointTransforms::CopiedFrom { donor } => todo!(),
+                        JointTransforms::CopiedFrom { donor } => {
+                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
+                            todo!();
+                        }
                         _ => panic!("joint data not properly initialized"),
                     }
                     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+                    instructions.push(Instruction::Byte(bind_mask.bits()));
                 }
             }
         }

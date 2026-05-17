@@ -173,6 +173,7 @@ impl InstanceHandle {
 #[derive(Debug)]
 pub struct InstanceGPUBindings {
     pub lt_offset: u32,
+    pub joint_offset: Option<u32>,
 }
 
 pub struct AnimationInstance {
@@ -230,7 +231,7 @@ impl AnimationController {
             complete: false,
             samples: entity_animation.animation[anim_idx].init_samples(),
             mesh_buffer,
-            joint_buffer: vec![],
+            joint_buffer: entity_animation.joint_transforms.clone(),
             animation_idx: anim_idx,
             start_time: std::time::Instant::now()
                 .add_signed(Duration::milliseconds(time_offset.unwrap_or(0.0) as i64)),
@@ -367,6 +368,7 @@ impl InstanceManager {
                 time_delta,
                 active_animation,
                 &entity_animation.mesh_slot_map,
+                &entity_animation.joint_slot_map,
             );
             cursor += 1;
         }
@@ -386,6 +388,7 @@ impl InstanceManager {
                 time_delta,
                 active_animation,
                 &entity_animation.mesh_slot_map,
+                &entity_animation.joint_slot_map,
             );
         }
     }
@@ -471,16 +474,21 @@ impl InstanceManager {
                     LocalTransforms::Owned { data } => data.extend(mesh_data.local_transforms),
                     _ => panic!("unexpected local transform data val"),
                 }
-                match &mut res.joint_transforms {
-                    JointTransforms::Uninit => {
-                        res.joint_transforms = JointTransforms::Owned {
-                            data: mesh_data.joint_transforms,
+                match mesh_data.joint_transforms {
+                    Some(transforms) => match &mut res.joint_transforms {
+                        JointTransforms::Uninit | JointTransforms::None => {
+                            res.joint_transforms = JointTransforms::Owned { data: transforms }
+                        }
+                        JointTransforms::Owned { data } => {
+                            data.extend(transforms);
+                        }
+                        _ => panic!("unexpected joint transform data"),
+                    },
+                    None => {
+                        if matches!(res.joint_transforms, JointTransforms::Uninit) {
+                            res.joint_transforms = JointTransforms::None;
                         }
                     }
-                    JointTransforms::Owned { data } => {
-                        data.extend(mesh_data.joint_transforms);
-                    }
-                    _ => panic!("unexpected joint transform data"),
                 }
             }
 
@@ -533,12 +541,13 @@ impl InstanceManager {
                                 + offset as u32;
                         if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
                             for (i, pr) in pnu.primtitive_ranges.iter().enumerate() {
-                                entry.push(DrawItem::new(
-                                    bindings.lt_offset + pnu.mesh_map[i],
-                                    instance_idx..instance_idx + 1,
-                                    pr.clone(),
-                                    pnu.index_ranges.as_ref().map(|x| x[i].clone()),
-                                ))
+                                entry.push(DrawItem {
+                                    joint_offset: None,
+                                    lt_idx: bindings.lt_offset + pnu.mesh_map[i],
+                                    instances: instance_idx..instance_idx + 1,
+                                    primitives: pr.clone(),
+                                    indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
+                                });
                             }
                         }
                     }
@@ -556,12 +565,15 @@ impl InstanceManager {
                                 + offset as u32;
                         if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
                             for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
-                                entry.push(DrawItem::new(
-                                    bindings.lt_offset + pnujw.mesh_map[i],
-                                    instance_idx..instance_idx + 1,
-                                    pr.clone(),
-                                    pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
-                                ));
+                                entry.push(DrawItem {
+                                    joint_offset: bindings
+                                        .joint_offset
+                                        .map(|offset| offset + pnujw.joint_map[i]),
+                                    lt_idx: bindings.lt_offset + pnujw.mesh_map[i],
+                                    instances: instance_idx..instance_idx + 1,
+                                    primitives: pr.clone(),
+                                    indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
+                                });
                             }
                         } else {
                             // skip rendering

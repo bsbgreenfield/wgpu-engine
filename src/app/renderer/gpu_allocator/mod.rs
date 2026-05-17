@@ -118,7 +118,7 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
     fn bind_group(&self) -> &wgpu::BindGroup;
 
     fn new(device: &wgpu::Device) -> Self;
-    fn register_shared_lt_binding(
+    fn register_shared_binding(
         &mut self,
         donor: &InstanceHandle,
         new_handle: &InstanceHandle,

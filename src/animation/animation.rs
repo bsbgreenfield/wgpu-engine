@@ -148,6 +148,7 @@ where
         time_delta: f32,
         animation_instance: &mut AnimationInstance,
         mesh_slot_map: &Vec<usize>,
+        skin_offset_map: &Vec<usize>,
     ) -> bool;
 
     fn count(&self) -> usize;

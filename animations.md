@@ -45,8 +45,16 @@ and one mesh which is used twice in a model, the first instance using the first 
     
 
 
+1. traverse the node tree for the entity, collect all skins that are in use
+2. using the list of skins for the entity, traverse again and build the joint transform matrix,
+which will be the jtm that is actually sent to the gpu
+3. add renderview. use a joint map in which map[primitive index] = skin offset
+4. upload to the gpu and return the joint offset for the instance, store in instance manager
+5. in gen_draw_calls, use bindings.jt_offset + joint_map[i] for joint offset
 
 
+
+## TODO: add joint transform in joint buffer during animation loop
 
 
 

@@ -24,6 +24,7 @@ fn get_animation_data_for_node(
     animation: &GltfAnimation,
     animation_instance: &mut AnimationInstance,
     mesh_slot_map: &Vec<usize>,
+    skin_offset_map: &Vec<usize>,
 ) -> bool {
     let mut complete = true;
     let mut rotation: Option<Quaternion<f32>> = None;
@@ -137,8 +138,9 @@ fn get_animation_data_for_node(
         NodeType::Mesh(mesh_id) => {
             animation_instance.mesh_buffer[mesh_slot_map[mesh_id]] = global.into();
         }
-        NodeType::Joint(joint_id) => {
-            //TODO: write to joint buffer
+        NodeType::Joint((skin_id, joint_id)) => {
+            animation_instance.joint_buffer
+                [skin_offset_map[skin_id as usize] + joint_id as usize] = global.into();
         }
         NodeType::Node => {
             //
@@ -153,6 +155,7 @@ fn get_animation_data_for_node(
             animation,
             animation_instance,
             mesh_slot_map,
+            skin_offset_map,
         ) {
             complete = false;
         }
@@ -170,6 +173,7 @@ impl Animation for GltfAnimation {
         time_delta: f32,
         animation_instance: &mut crate::world::instance_manager::AnimationInstance,
         buffer_slot_map: &Vec<usize>,
+        skin_offset_map: &Vec<usize>,
     ) -> bool {
         let mut complete = true;
         for node in self.root_nodes.iter() {
@@ -180,6 +184,7 @@ impl Animation for GltfAnimation {
                 &self,
                 animation_instance,
                 buffer_slot_map,
+                skin_offset_map,
             ) {
                 complete = false;
             };

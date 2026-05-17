@@ -62,7 +62,7 @@ pub struct MeshRenderables {
     pub pnujw_mesh_map: Vec<u32>,
     pub index_ranges: Option<Vec<Range<u32>>>,
     pub local_transforms: Vec<LocalTransform>,
-    pub joint_transforms: Vec<Mat4F32>,
+    pub joint_transforms: Option<Vec<Mat4F32>>,
     pub joint_map: Vec<u32>,
 }
 
@@ -95,6 +95,7 @@ impl EntityManager {
                 }
             }
             // TODO: shared/copied joint transforms!!
+            // TODO: check to see if there are joints!
         }
         res
     }

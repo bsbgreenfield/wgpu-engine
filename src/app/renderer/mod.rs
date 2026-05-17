@@ -222,26 +222,11 @@ pub enum RenderCategory {
 
 #[derive(Debug)]
 pub struct DrawItem {
-    lt_idx: u32,
-    instances: Range<u32>,
-    primitives: Range<u32>,
-    indices: Option<Range<u32>>,
-}
-
-impl DrawItem {
-    pub fn new(
-        lt_idx: u32,
-        instances: Range<u32>,
-        primitives: Range<u32>,
-        indices: Option<Range<u32>>,
-    ) -> Self {
-        Self {
-            lt_idx,
-            instances,
-            primitives,
-            indices,
-        }
-    }
+    pub lt_idx: u32,
+    pub joint_offset: Option<u32>,
+    pub instances: Range<u32>,
+    pub primitives: Range<u32>,
+    pub indices: Option<Range<u32>>,
 }
 
 #[cfg(test)]
@@ -265,4 +250,12 @@ impl DrawItem {
 pub struct BufferChunks {
     index: Option<usize>,
     vertex: usize,
+}
+
+use bitflags::bitflags;
+bitflags! {
+    pub struct GPUBindings: u8 {
+        const LOCAL_TRANSFORM = 0b01;
+        const JOINT_TRANSFORM = 0b10;
+    }
 }

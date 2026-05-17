@@ -109,7 +109,11 @@ impl ProvidesMeshData for GltfAsset {
             local_transforms.push(mesh_instance.local_transform);
             relative_lt_offset += 1;
         }
-        println!("{pnu_mesh_map:?}");
+        let joint_transforms: Option<Vec<Mat4F32>> = if jts.is_empty() {
+            None
+        } else {
+            Some(jts.drain(..).flatten().collect())
+        };
         MeshRenderables {
             pnu_mesh_map,
             pnujw_mesh_map,
@@ -117,7 +121,7 @@ impl ProvidesMeshData for GltfAsset {
             pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
             index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
             local_transforms,
-            joint_transforms: jts.drain(..).flatten().collect(),
+            joint_transforms,
             joint_map,
         }
     }
@@ -129,28 +133,56 @@ impl ProvidesAnimationData for GltfAsset {
         animation_accessor: &AnimationAccessor,
         mesh_accesor: &MeshAcessor,
     ) -> crate::animation::animation::EntityAnimations {
-        let mesh_instances: Vec<(u32, LocalTransform)> = match mesh_accesor {
+        let mut jts: Vec<Vec<Mat4F32>> = self
+            .skins
+            .iter()
+            .map(|skin| {
+                skin.iter()
+                    .map(|_joint| cgmath::Matrix4::<f32>::identity().into())
+                    .collect()
+            })
+            .collect();
+        let mesh_instances: Vec<MeshInstance> = match mesh_accesor {
             MeshAcessor::All => self
                 .node_tree
                 .iter()
-                .flat_map(|node| collect_mesh_instances(node, cgmath::Matrix4::<f32>::identity()))
+                .flat_map(|node| {
+                    collect_mesh_instances_with_jts(
+                        node,
+                        cgmath::Matrix4::<f32>::identity(),
+                        &mut jts,
+                    )
+                })
                 .collect(),
             MeshAcessor::GltfRootNode(root) => {
                 match get_root_node(&self.node_tree, *root as usize) {
-                    Some(root_node) => {
-                        collect_mesh_instances(root_node, cgmath::Matrix4::<f32>::identity())
-                    }
-                    None => {
-                        panic!()
-                    }
+                    Some(root_node) => collect_mesh_instances_with_jts(
+                        root_node,
+                        cgmath::Matrix4::<f32>::identity(),
+                        &mut jts,
+                    ),
+                    None => panic!(),
                 }
             }
         };
+
+        let joint_transforms: Vec<Mat4F32> = if jts.is_empty() {
+            vec![]
+        } else {
+            jts.drain(..).flatten().collect()
+        };
+        let mut skin_offset_map = Vec::with_capacity(self.skins.len());
+        let mut agg = 0;
+        for skin in self.skins.iter() {
+            skin_offset_map.push(agg);
+            agg += skin.len();
+        }
+
         let mut local_transforms = Vec::<LocalTransform>::with_capacity(mesh_instances.len());
         let mut mesh_indices = Vec::<usize>::with_capacity(mesh_instances.len());
-        for (mesh_index, lt) in mesh_instances {
-            local_transforms.push(lt);
-            mesh_indices.push(mesh_index as usize);
+        for mesh_instance in mesh_instances {
+            local_transforms.push(mesh_instance.local_transform);
+            mesh_indices.push(mesh_instance.mesh_id);
         }
         let anim_refs: Vec<Arc<dyn Animation>> = match animation_accessor {
             AnimationAccessor::All => self
@@ -167,8 +199,8 @@ impl ProvidesAnimationData for GltfAsset {
             animation: anim_refs,
             local_transforms,
             mesh_slot_map: mesh_indices,
-            joint_slot_map: todo!(),
-            joint_transforms: todo!(),
+            joint_slot_map: skin_offset_map,
+            joint_transforms,
         }
     }
 }

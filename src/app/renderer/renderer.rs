@@ -79,10 +79,24 @@ impl VertexArenaCollection {
     }
 }
 
+struct InstanceArenaCollection {
+    lt_arena: InstanceArena<LocalTransform>,
+    joint_arena: InstanceArena<LocalTransform>,
+}
+
+impl InstanceArenaCollection {
+    fn new(device: &wgpu::Device) -> Self {
+        Self {
+            lt_arena: InstanceArena::<LocalTransform>::new(device),
+            joint_arena: InstanceArena::<LocalTransform>::new(device),
+        }
+    }
+}
+
 pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
-    instance_arena: InstanceArena<LocalTransform>,
+    instance_arenas: InstanceArenaCollection,
     global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
     pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
@@ -93,7 +107,7 @@ impl Renderer {
         Self {
             allocations: Vec::new(),
             vertex_arenas: VertexArenaCollection::new(&config.device),
-            instance_arena: InstanceArena::<LocalTransform>::new(&config.device),
+            instance_arenas: InstanceArenaCollection::new(&config.device),
             global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(&config.device),
             pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
@@ -142,7 +156,7 @@ impl Renderer {
             if animations.is_empty() {
                 break 'rigid_animations;
             }
-            let buffer_ref = self.instance_arena.get_first_buffer();
+            let buffer_ref = self.instance_arenas.lt_arena.get_first_buffer();
             for animation in animations {
                 queue.write_buffer(
                     buffer_ref,
@@ -167,7 +181,15 @@ impl Renderer {
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arena.upload(job, queue)
+        self.instance_arenas.lt_arena.upload(job, queue)
+    }
+
+    pub(super) fn upload_joint_transforms<'frame>(
+        &mut self,
+        job: InstanceUploadJob<'frame, LocalTransform>,
+        queue: &wgpu::Queue,
+    ) -> Result<u32, VertexArenaError> {
+        self.instance_arenas.joint_arena.upload(job, queue)
     }
 
     pub(super) fn resolve_shared_lt_binding(
@@ -175,8 +197,19 @@ impl Renderer {
         donor_handle: &InstanceHandle,
         new_handle: &InstanceHandle,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arena
-            .register_shared_lt_binding(donor_handle, new_handle)
+        self.instance_arenas
+            .lt_arena
+            .register_shared_binding(donor_handle, new_handle)
+    }
+
+    pub(super) fn resolve_shared_joint_binding(
+        &mut self,
+        donor_handle: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, VertexArenaError> {
+        self.instance_arenas
+            .joint_arena
+            .register_shared_binding(donor_handle, new_handle)
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -237,7 +270,7 @@ impl Renderer {
                 let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
 
                 render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
-                render_pass.set_bind_group(1, self.instance_arena.bind_group(), &[]);
+                render_pass.set_bind_group(1, self.instance_arenas.lt_arena.bind_group(), &[]);
                 render_pass.set_vertex_buffer(1, self.global_transform_buffer.slice(..));
                 for render_category in pass.categories.iter() {
                     match render_category {

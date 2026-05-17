@@ -3,8 +3,8 @@ use std::{iter::Peekable, slice::Iter};
 
 use crate::{
     app::renderer::{
-        GPUAllocationHandle, InstanceUploadJob, Instruction, Operations, RenderConstant,
-        RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaSelector,
+        GPUAllocationHandle, GPUBindings, InstanceUploadJob, Instruction, Operations,
+        RenderConstant, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaSelector,
         gpu_allocator::UploadIndexJob, renderer::Renderer,
     },
     asset_manager::AssetHandle,
@@ -23,6 +23,13 @@ impl<'frame> Renderer {
         match instr {
             Instruction::ConstIdx(idx) => *idx,
             _ => panic!("expected a constant idx"),
+        }
+    }
+    fn get_byte(instructions: &mut InstructionSet) -> u8 {
+        let instr = instructions.next().expect("should define a byte");
+        match instr {
+            Instruction::Byte(number) => *number,
+            _ => panic!("expected a byte"),
         }
     }
     pub(super) fn interpret(
@@ -103,13 +110,23 @@ impl<'frame> Renderer {
                     }
                     Operations::MoveEntity => todo!(),
                     Operations::EmitEntitySpawn => {
+                        let bind_mask = GPUBindings::from_bits(Self::get_byte(&mut instr_peek))
+                            .expect("should be a valid mask");
+                        assert!(bind_mask.contains(GPUBindings::LOCAL_TRANSFORM));
                         let instance_handle_key = stack.pop().expect("should be key").unwrap_key();
+                        let joint_offset: Option<u32> =
+                            if bind_mask.contains(GPUBindings::JOINT_TRANSFORM) {
+                                Some(stack.pop().expect("should be offset").unwrap_offset() as u32)
+                            } else {
+                                None
+                            };
                         let lt_offset = stack.pop().expect("should be offset").unwrap_offset();
 
                         res.push(RenderUpdateDelta::EntitySpawned((
                             InstanceHandle::from_key(instance_handle_key),
                             InstanceGPUBindings {
                                 lt_offset: lt_offset as u32,
+                                joint_offset,
                             },
                         )));
                     }
@@ -140,6 +157,29 @@ impl<'frame> Renderer {
                         // push instance handle
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
                         stack.push(constants[const_idx as usize].clone());
+                    }
+                    Operations::JointTransformUpload => {
+                        let instance_handle_key = stack.pop().expect("should be key");
+                        let instance_handle =
+                            InstanceHandle::from_key(instance_handle_key.unwrap_key());
+                        let jt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data_owned();
+                        let jt_upload_job = InstanceUploadJob::new(jt, instance_handle.clone());
+                        let jt_offset = self.upload_joint_transforms(jt_upload_job, queue)?;
+                        stack.push(RenderConstant::Offset(jt_offset as u64));
+                        stack.push(instance_handle_key);
+                    }
+                    Operations::ResolveSharedJTBinding => {
+                        let donor_handle = constants
+                            [Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_key();
+                        let new_handle = stack.pop().expect("should be key");
+                        let jt_offset = self.resolve_shared_joint_binding(
+                            &InstanceHandle::from_key(donor_handle),
+                            &InstanceHandle::from_key(new_handle.unwrap_key()),
+                        )?;
+                        stack.push(RenderConstant::Offset(jt_offset as u64));
+                        stack.push(new_handle);
                     }
                 },
                 Instruction::Byte(_byte) => {}

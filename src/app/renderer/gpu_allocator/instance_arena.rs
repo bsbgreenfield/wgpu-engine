@@ -84,7 +84,7 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
         Err(VertexArenaError::MaxAllocationReached)
     }
 
-    fn register_shared_lt_binding(
+    fn register_shared_binding(
         &mut self,
         donor: &InstanceHandle,
         new_handle: &InstanceHandle,
