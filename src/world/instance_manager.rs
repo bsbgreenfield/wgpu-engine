@@ -18,7 +18,8 @@ use crate::{
         entity_manager::{EntityHandle, EntityManager},
         index_arena::InstanceArena,
         world::{
-            DrawSet, InstanceUploadData, JointTransforms, LocalTransforms, RenderGroup, RenderView,
+            DrawSet, InstanceUploadData, InverseBindMatrices, JointTransforms, LocalTransforms,
+            RenderGroup, RenderView,
         },
     },
 };
@@ -251,12 +252,26 @@ pub struct InstanceManager {
 
 impl InstanceManager {
     #[cfg(test)]
-    pub fn assert_local_transforms_exist(&self, instance_handle: &InstanceHandle) {
+    pub fn assert_animation_exists(&self, instance_handle: &InstanceHandle) {
         assert!(
             self.animation_controller
                 .registered_animations
                 .contains_key(&instance_handle.entity_handle)
         )
+    }
+    #[cfg(test)]
+    pub fn get_gpu_bindings(&self, handle: &InstanceHandle) -> Option<&InstanceGPUBindings> {
+        self.gpu_bindings.get(handle)
+    }
+
+    #[cfg(test)]
+    pub fn get_joint_slot_map(&self, entity_handle: &EntityHandle) -> &Vec<usize> {
+        &self
+            .animation_controller
+            .registered_animations
+            .get(entity_handle)
+            .expect("entity must be registered")
+            .skin_offset_map
     }
 
     #[cfg(test)]
@@ -276,6 +291,13 @@ impl InstanceManager {
             .get(entity_handle)
             .unwrap()
             .animation[index]
+    }
+
+    #[cfg(test)]
+    pub fn get_entity_animation(&self, entity_handle: &EntityHandle) -> Option<&EntityAnimations> {
+        self.animation_controller
+            .registered_animations
+            .get(entity_handle)
     }
 
     #[cfg(test)]
@@ -368,7 +390,7 @@ impl InstanceManager {
                 time_delta,
                 active_animation,
                 &entity_animation.mesh_slot_map,
-                &entity_animation.joint_slot_map,
+                &entity_animation.skin_offset_map,
             );
             cursor += 1;
         }
@@ -388,7 +410,7 @@ impl InstanceManager {
                 time_delta,
                 active_animation,
                 &entity_animation.mesh_slot_map,
-                &entity_animation.joint_slot_map,
+                &entity_animation.skin_offset_map,
             );
         }
     }
@@ -411,11 +433,6 @@ impl InstanceManager {
         data: Box<dyn Archetype>,
     ) -> Result<InstanceUploadData, WorldUpdateError> {
         let instance_handle = &data.insert_self(self, entity_handle);
-        let mut res = InstanceUploadData {
-            instance_handle: instance_handle.clone(),
-            local_transforms: LocalTransforms::Uninit,
-            joint_transforms: JointTransforms::Uninit,
-        };
         let is_instanced = self
             .entity_group_index
             .contains_key(&instance_handle.entity_handle);
@@ -440,6 +457,12 @@ impl InstanceManager {
             }
             return Ok(instance_upload_data);
         } else {
+            let mut res = InstanceUploadData {
+                instance_handle: instance_handle.clone(),
+                local_transforms: LocalTransforms::Uninit,
+                joint_transforms: JointTransforms::None,
+                ibms: InverseBindMatrices::Uninit,
+            };
             let mut renderables = entity_manager
                 .get_entity_render_data(&instance_handle)
                 .expect("renderables fetch fail");
@@ -474,22 +497,6 @@ impl InstanceManager {
                     LocalTransforms::Owned { data } => data.extend(mesh_data.local_transforms),
                     _ => panic!("unexpected local transform data val"),
                 }
-                match mesh_data.joint_transforms {
-                    Some(transforms) => match &mut res.joint_transforms {
-                        JointTransforms::Uninit | JointTransforms::None => {
-                            res.joint_transforms = JointTransforms::Owned { data: transforms }
-                        }
-                        JointTransforms::Owned { data } => {
-                            data.extend(transforms);
-                        }
-                        _ => panic!("unexpected joint transform data"),
-                    },
-                    None => {
-                        if matches!(res.joint_transforms, JointTransforms::Uninit) {
-                            res.joint_transforms = JointTransforms::None;
-                        }
-                    }
-                }
             }
 
             self.entity_group_index
@@ -500,14 +507,50 @@ impl InstanceManager {
             });
 
             // ******** ANIMATION DATA *********
-            if let Some(entity_animations) = renderables.animations {
-                self.animation_controller
-                    .registered_animations
-                    .insert(instance_handle.entity_handle.clone(), entity_animations);
+            if let Some(entity_animation_data) = renderables.animations {
+                res.joint_transforms = JointTransforms::Uninit;
+                if !entity_animation_data.joint_transforms.is_empty() {
+                    match &mut res.joint_transforms {
+                        JointTransforms::Uninit | JointTransforms::None => {
+                            res.joint_transforms = JointTransforms::Owned {
+                                data: entity_animation_data.joint_transforms.clone(),
+                            }
+                        }
+                        JointTransforms::Owned { data } => {
+                            data.extend(entity_animation_data.joint_transforms.clone());
+                        }
+                        _ => panic!("unexpected joint transform data"),
+                    }
+                    match res.ibms {
+                        InverseBindMatrices::None | InverseBindMatrices::Uninit => {
+                            res.ibms = InverseBindMatrices::Owned {
+                                data: entity_animation_data.inverse_bind_matrices,
+                            }
+                        }
+                        InverseBindMatrices::Owned { mut data } => {
+                            data.extend(entity_animation_data.inverse_bind_matrices);
+                            res.ibms = InverseBindMatrices::Owned { data: data }
+                        }
+                        _ => panic!("unexpected ibm result"),
+                    }
+                } else {
+                    res.joint_transforms = JointTransforms::None;
+                }
+                self.animation_controller.registered_animations.insert(
+                    instance_handle.entity_handle.clone(),
+                    EntityAnimations {
+                        animation: entity_animation_data.animation,
+                        local_transforms: entity_animation_data.local_transforms,
+                        joint_transforms: entity_animation_data.joint_transforms,
+                        mesh_slot_map: entity_animation_data.mesh_slot_map,
+                        skin_offset_map: entity_animation_data.skin_offset_map,
+                    },
+                );
+            } else {
+                res.ibms = InverseBindMatrices::None;
             }
+            Ok(res)
         }
-
-        Ok(res)
     }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {

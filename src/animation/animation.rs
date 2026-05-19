@@ -165,5 +165,15 @@ pub struct EntityAnimations {
     pub local_transforms: Vec<LocalTransform>,
     pub joint_transforms: Vec<Mat4F32>,
     pub mesh_slot_map: Vec<usize>,
-    pub joint_slot_map: Vec<usize>,
+    pub skin_offset_map: Vec<usize>,
+}
+
+#[derive(Debug)]
+pub struct EntityAnimationData {
+    pub animation: Vec<Arc<dyn Animation>>,
+    pub local_transforms: Vec<LocalTransform>,
+    pub joint_transforms: Vec<Mat4F32>,
+    pub mesh_slot_map: Vec<usize>,
+    pub skin_offset_map: Vec<usize>,
+    pub inverse_bind_matrices: Vec<Mat4F32>,
 }

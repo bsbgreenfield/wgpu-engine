@@ -44,7 +44,7 @@ impl<'a> AppConfig<'a> {
             .await
             .expect("failed to make adapter");
         let mut limits = wgpu::Limits::default();
-        limits.max_immediate_size = 4;
+        limits.max_immediate_size = 8;
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -84,7 +84,7 @@ impl<'a> AppConfig<'a> {
             .await?;
 
         let mut limits = wgpu::Limits::default();
-        limits.max_immediate_size = 4;
+        limits.max_immediate_size = 8;
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,

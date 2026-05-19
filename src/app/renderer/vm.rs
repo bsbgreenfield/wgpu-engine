@@ -138,6 +138,7 @@ impl<'frame> Renderer {
                             .unwrap_data_owned();
                         let lt_upload_job = InstanceUploadJob::new(lt, instance_handle.clone());
                         let lt_offset = self.upload_local_transforms(lt_upload_job, queue)?;
+
                         stack.push(RenderConstant::Offset(lt_offset as u64));
                         stack.push(instance_handle_key);
                     }
@@ -166,6 +167,12 @@ impl<'frame> Renderer {
                             .unwrap_data_owned();
                         let jt_upload_job = InstanceUploadJob::new(jt, instance_handle.clone());
                         let jt_offset = self.upload_joint_transforms(jt_upload_job, queue)?;
+                        let ibms = constants[Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data_owned();
+
+                        let ibm_upload_job = InstanceUploadJob::new(ibms, instance_handle.clone());
+                        let _ibm_offset = self.upload_inverse_bind_matrices(ibm_upload_job, queue);
+                        // NOTE: ibm offset should always be the same as joint offset
                         stack.push(RenderConstant::Offset(jt_offset as u64));
                         stack.push(instance_handle_key);
                     }

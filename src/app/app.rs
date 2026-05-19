@@ -142,7 +142,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                     )
                     .unwrap(),
                 );
-                let scene = Scene::buggy(self.world.as_mut().unwrap()).unwrap();
+                let scene = Scene::fox_animated_scene(self.world.as_mut().unwrap()).unwrap();
                 self.world.as_mut().unwrap().add_scene(scene);
                 //  #[cfg(test)]
                 //  {

@@ -81,11 +81,22 @@ pub enum JointTransforms {
 }
 
 #[derive(Debug)]
+pub enum InverseBindMatrices {
+    None,
+    Uninit,
+    Owned { data: Vec<Mat4F32> },
+    CopiedFrom { donor: InstanceHandle },
+    NeedsCopy,
+    SharedWith { donor: InstanceHandle },
+    NeedsShared,
+}
+
+#[derive(Debug)]
 pub struct InstanceUploadData {
     pub instance_handle: InstanceHandle,
     pub local_transforms: LocalTransforms,
     pub joint_transforms: JointTransforms,
-    // others
+    pub ibms: InverseBindMatrices,
 }
 
 #[derive(Debug)]
@@ -182,7 +193,20 @@ impl World {
                                 std::mem::forget(data);
                                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
                             };
+                            let InverseBindMatrices::Owned { mut data } = instance_upload_data.ibms
+                            else {
+                                panic!("joint transforms must be accompanied by ibms");
+                            };
+                            let ibm_bytes: Vec<u8> = {
+                                let ptr = data.as_mut_ptr() as *mut u8;
+                                let len = data.len() * std::mem::size_of::<Mat4F32>();
+                                let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
+                                std::mem::forget(data);
+                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                            };
                             constants.push(RenderConstant::DataOwned(jt_bytes));
+                            instructions.push(Self::const_last(constants));
+                            constants.push(RenderConstant::DataOwned(ibm_bytes));
                             instructions.push(Self::const_last(constants));
                         }
                         JointTransforms::SharedWith { donor } => {

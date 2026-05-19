@@ -2,15 +2,19 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
+use gltf::json::serialize::to_vec;
+
 use crate::animation::animation::{
     AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
     InterpolationType,
 };
-use crate::asset_manager::gltf_asset::mesh::copy_and_cast_gltf_binary_data_f32;
+use crate::asset_manager::gltf_asset::mesh::{
+    copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
+};
 use crate::asset_manager::gltf_asset::util::collect_mesh_ids;
 use crate::asset_manager::gltf_asset::{GltfAnimation, GltfAsset, NodeTransforms, NodeType};
 use crate::asset_manager::{Asset, BinarySource, GltfValidationError, ModelBuilderError};
-use crate::util::types::{ModelVertex, VIndex};
+use crate::util::types::{Mat4F32, ModelVertex, VIndex};
 use crate::{
     asset_manager::{
         gltf_asset::{
@@ -262,6 +266,22 @@ fn set_index_data(index_ranges: &Vec<Range<usize>>, bin: &Vec<u8>) -> Option<Vec
     }
 }
 
+fn get_ibms(
+    gltf: &gltf::Gltf,
+    binary_data: &Vec<u8>,
+    buffer_offsets: &Vec<usize>,
+) -> Result<Vec<Vec<Mat4F32>>, ModelBuilderError> {
+    let mut ibms = Vec::new();
+    for skin in gltf.skins() {
+        let acc =
+            GLTFDataAccessor::from_accessor(&skin.inverse_bind_matrices().expect("must have ibm"))?;
+        let skin_ibms = copy_and_cast_gltf_binary_data_mat4f32(&acc, buffer_offsets, binary_data)?;
+        ibms.push(skin_ibms);
+    }
+
+    Ok(ibms)
+}
+
 fn build_all_models(
     binary_data: &Vec<u8>,
     index_ranges: &Vec<Range<usize>>,
@@ -332,6 +352,8 @@ impl GltfAsset {
         let node_tree = build_node_trees(&gltf, &skins)?;
         let binary_data = super::loader::load_binary_data_from_source(&bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
+
+        let ibms = get_ibms(&gltf, &binary_data, &buffer_offsets)?;
         let primitive_data = get_primitive_data_map(&gltf, &node_tree)?;
         let index_range_vec = get_index_range_vec(&primitive_data, &buffer_offsets)?;
         let (pnujw, pnu, indices, meshes) = build_all_models(
@@ -350,6 +372,7 @@ impl GltfAsset {
             indices,
             animations,
             skins,
+            ibms,
         }))
     }
 }

@@ -4,7 +4,7 @@ use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
     asset_manager::{GltfValidationError, ModelBuilderError},
-    util::types::{ModelVertex, PrimitiveVerticesData},
+    util::types::{Mat4F32, ModelVertex, PrimitiveVerticesData},
 };
 
 pub(super) struct Primitive {
@@ -249,6 +249,45 @@ pub(super) fn copy_and_cast_gltf_binary_data_f32(
         copy_dest.len(),
         accessor.num_elements as usize * accessor.count as usize
     );
+
+    Ok(copy_dest)
+}
+
+pub(super) fn copy_and_cast_gltf_binary_data_mat4f32(
+    accessor: &GLTFDataAccessor,
+    buffer_offsets: &Vec<usize>,
+    binary_data: &Vec<u8>,
+) -> Result<Vec<Mat4F32>, GltfValidationError> {
+    assert!(accessor.byte_size == 4);
+    assert!(accessor.num_elements == 16);
+
+    let byte_offset =
+        accessor.byte_offset as usize + buffer_offsets[accessor.buffer_index as usize];
+    let mut copy_dest: Vec<Mat4F32> = Vec::with_capacity(accessor.count as usize);
+    let mut byte_loc = byte_offset;
+
+    let extra_stride = if let Some(stride) = accessor.stride {
+        stride as usize - (accessor.byte_size as usize * accessor.num_elements as usize)
+    } else {
+        0
+    };
+
+    for _ in 0..accessor.count as usize {
+        let mut mat = [[0f32; 4]; 4];
+        for col in 0..4 {
+            for row in 0..4 {
+                let slice: [u8; 4] = binary_data[byte_loc..byte_loc + 4]
+                    .try_into()
+                    .map_err(|_| GltfValidationError::UnsupportedScheme)?;
+                mat[col][row] = f32::from_le_bytes(slice);
+                byte_loc += 4;
+            }
+        }
+        copy_dest.push(mat);
+        byte_loc += extra_stride;
+    }
+
+    assert_eq!(copy_dest.len(), accessor.count as usize);
 
     Ok(copy_dest)
 }

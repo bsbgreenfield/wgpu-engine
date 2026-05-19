@@ -44,28 +44,6 @@ pub trait InstanceData {
     fn desc() -> wgpu::VertexBufferLayout<'static>;
 }
 
-pub trait StorageData {
-    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
-}
-
-impl StorageData for LocalTransform {
-    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("LT bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
-                },
-                count: None,
-            }],
-        })
-    }
-}
-
 #[repr(C)]
 #[derive(bytemuck::Pod, Clone, Copy, bytemuck::Zeroable, Debug)]
 pub struct LocalTransform(Mat4F32);
@@ -82,6 +60,47 @@ impl From<Mat4F32> for LocalTransform {
     }
 }
 impl From<cgmath::Matrix4<f32>> for LocalTransform {
+    fn from(value: cgmath::Matrix4<f32>) -> Self {
+        Self(mat4_from_cgmath(value))
+    }
+}
+
+#[repr(C)]
+#[derive(bytemuck::Pod, Clone, Copy, bytemuck::Zeroable, Debug)]
+pub struct JointTransform(Mat4F32);
+
+#[repr(C)]
+#[derive(bytemuck::Pod, Clone, Copy, bytemuck::Zeroable, Debug)]
+pub struct InverseBindMatrix(Mat4F32);
+
+impl Deref for JointTransform {
+    type Target = Mat4F32;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl From<Mat4F32> for JointTransform {
+    fn from(value: Mat4F32) -> Self {
+        Self(value)
+    }
+}
+impl From<cgmath::Matrix4<f32>> for JointTransform {
+    fn from(value: cgmath::Matrix4<f32>) -> Self {
+        Self(mat4_from_cgmath(value))
+    }
+}
+impl Deref for InverseBindMatrix {
+    type Target = Mat4F32;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl From<Mat4F32> for InverseBindMatrix {
+    fn from(value: Mat4F32) -> Self {
+        Self(value)
+    }
+}
+impl From<cgmath::Matrix4<f32>> for InverseBindMatrix {
     fn from(value: cgmath::Matrix4<f32>) -> Self {
         Self(mat4_from_cgmath(value))
     }

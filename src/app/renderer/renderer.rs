@@ -17,7 +17,10 @@ use crate::{
             pipeline::PipelineCollection,
         },
     },
-    util::types::{GlobalTransform, LocalTransform, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{
+        GlobalTransform, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex, PNUVertex,
+        VIndex,
+    },
     world::{
         camera::Camera,
         instance_manager::{InstanceHandle, RenderFrame},
@@ -81,14 +84,16 @@ impl VertexArenaCollection {
 
 struct InstanceArenaCollection {
     lt_arena: InstanceArena<LocalTransform>,
-    joint_arena: InstanceArena<LocalTransform>,
+    joint_arena: InstanceArena<JointTransform>,
+    ibm_arena: InstanceArena<InverseBindMatrix>,
 }
 
 impl InstanceArenaCollection {
     fn new(device: &wgpu::Device) -> Self {
         Self {
             lt_arena: InstanceArena::<LocalTransform>::new(device),
-            joint_arena: InstanceArena::<LocalTransform>::new(device),
+            joint_arena: InstanceArena::<JointTransform>::new(device),
+            ibm_arena: InstanceArena::<InverseBindMatrix>::new(device),
         }
     }
 }
@@ -186,10 +191,18 @@ impl Renderer {
 
     pub(super) fn upload_joint_transforms<'frame>(
         &mut self,
-        job: InstanceUploadJob<'frame, LocalTransform>,
+        job: InstanceUploadJob<'frame, JointTransform>,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
         self.instance_arenas.joint_arena.upload(job, queue)
+    }
+
+    pub(super) fn upload_inverse_bind_matrices<'frame>(
+        &mut self,
+        job: InstanceUploadJob<'frame, InverseBindMatrix>,
+        queue: &wgpu::Queue,
+    ) -> Result<u32, VertexArenaError> {
+        self.instance_arenas.ibm_arena.upload(job, queue)
     }
 
     pub(super) fn resolve_shared_lt_binding(
@@ -210,6 +223,13 @@ impl Renderer {
         self.instance_arenas
             .joint_arena
             .register_shared_binding(donor_handle, new_handle)
+    }
+
+    fn get_joint_bg(&self) -> &wgpu::BindGroup {
+        self.instance_arenas.joint_arena.bind_group()
+    }
+    fn get_ibm_bg(&self) -> &wgpu::BindGroup {
+        self.instance_arenas.ibm_arena.bind_group()
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -312,6 +332,8 @@ impl Renderer {
                         RenderCategory::OpaqueSkinned => {
                             let pipeline = &self.pipelines.opaque_skinned;
                             render_pass.set_pipeline(&pipeline.pipeline);
+                            render_pass.set_bind_group(1, self.get_joint_bg(), &[]);
+                            render_pass.set_bind_group(1, self.get_ibm_bg(), &[]);
                             for draw_entry in draw_packet.pnujw.iter() {
                                 let (vertex_alloc_range, v_buffer) =
                                     self.vertex_arenas.skinned_arena.resolve(draw_entry.0);
@@ -319,8 +341,13 @@ impl Renderer {
                                 render_pass.set_vertex_buffer(0, v_buffer.slice(..));
 
                                 for draw in draw_entry.1.iter() {
-                                    render_pass
-                                        .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
+                                    render_pass.set_immediates(
+                                        0,
+                                        bytemuck::cast_slice(&[
+                                            draw.lt_idx,
+                                            draw.joint_offset.unwrap(),
+                                        ]),
+                                    );
                                     if let Some(indices) = &draw.indices {
                                         let (index_alloc_range, i_buffer) =
                                             self.vertex_arenas.index_arena.resolve(draw_entry.0);

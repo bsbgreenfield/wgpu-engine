@@ -21,6 +21,7 @@ struct InstanceInput {
 
 struct DrawPushConstants {
     mesh_index: u32,
+	joint_offset: u32,
 }
 
 
@@ -35,6 +36,10 @@ var<uniform> camera_uniform: CameraUniform;
 
 @group(1) @binding(0)
 var<storage, read> local_mesh_transforms: array<mat4x4<f32>>;
+@group(1) @binding(1)
+var<storage, read> joint_transforms: array<mat4x4<f32>>;
+@group(1) @binding(2)
+var<storage, read> ibm_transforms: array<mat4x4<f32>>;
 
 
 @vertex

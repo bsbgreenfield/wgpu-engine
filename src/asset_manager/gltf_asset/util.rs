@@ -80,14 +80,18 @@ pub(super) fn collect_mesh_instances_with_jts(
 pub(super) fn collect_mesh_instances(
     node: &GltfNode,
     parent_transform: cgmath::Matrix4<f32>,
-) -> Vec<(u32, LocalTransform)> {
-    let mut result = Vec::<(u32, LocalTransform)>::new();
+) -> Vec<MeshInstance> {
+    let mut result = Vec::<MeshInstance>::new();
     use cgmath::Matrix4;
     let accumulated: cgmath::Matrix4<f32> =
         Matrix4::from(parent_transform) * NodeTransforms::to_matrix(&node.transform_components);
 
     if let NodeType::Mesh(mesh_id) = node.node_type {
-        result.push((mesh_id as u32, accumulated.into()));
+        result.push(MeshInstance {
+            mesh_id,
+            local_transform: accumulated.into(),
+            skin_idx: node.skin_idx,
+        })
     }
     for child in &node.children {
         result.extend(collect_mesh_instances(child, accumulated));

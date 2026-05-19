@@ -3,7 +3,7 @@ use std::{
 };
 
 use crate::{
-    animation::animation::{Animation, EntityAnimations},
+    animation::animation::{Animation, EntityAnimationData, EntityAnimations},
     app::renderer::GPUAllocationHandle,
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
@@ -60,16 +60,15 @@ pub struct MeshRenderables {
     pub pnu_mesh_map: Vec<u32>,
     pub pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
     pub pnujw_mesh_map: Vec<u32>,
+    pub joint_map: Vec<u32>,
     pub index_ranges: Option<Vec<Range<u32>>>,
     pub local_transforms: Vec<LocalTransform>,
-    pub joint_transforms: Option<Vec<Mat4F32>>,
-    pub joint_map: Vec<u32>,
 }
 
 pub struct Renderables {
     pub instance_handle: InstanceHandle,
     pub mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
-    pub animations: Option<EntityAnimations>,
+    pub animations: Option<EntityAnimationData>,
 }
 
 impl EntityManager {
@@ -80,7 +79,8 @@ impl EntityManager {
         let mut res = InstanceUploadData {
             instance_handle: instance_handle.clone(),
             local_transforms: crate::world::world::LocalTransforms::Uninit,
-            joint_transforms: super::world::JointTransforms::Uninit,
+            joint_transforms: super::world::JointTransforms::None,
+            ibms: super::world::InverseBindMatrices::Uninit,
         };
         if let Some(mesh_collection) = self
             .mesh_collections
@@ -94,8 +94,12 @@ impl EntityManager {
                     res.local_transforms = LocalTransforms::NeedsCopy
                 }
             }
-            // TODO: shared/copied joint transforms!!
-            // TODO: check to see if there are joints!
+        }
+        if let Some(animation_component) = self
+            .animations
+            .get(instance_handle.entity_handle.0 as usize)
+        {
+            // TODO: set joint copy or shared
         }
         res
     }
@@ -178,6 +182,7 @@ impl EntityManager {
         entity: &EntityHandle,
         descriptor: MeshCollectionDescriptor,
     ) {
+        println!("{:?}", descriptor);
         let mcc = MeshCollectionComponent {
             mesh_accessor: descriptor.mesh_accessor,
             rigid_animation_mode: descriptor.rigid_animation_mode,

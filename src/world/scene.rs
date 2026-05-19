@@ -8,7 +8,8 @@ use crate::{
     asset_manager::{AssetLoadResult, gltf_asset::GltfAsset},
     world::{
         components::{
-            AnimationComponentDescriptor, MeshAcessor, MeshCollectionDescriptor, RigidAnimationMode,
+            AnimationAccessor, AnimationComponentDescriptor, MeshAcessor, MeshCollectionDescriptor,
+            RigidAnimationMode,
         },
         entity_manager::EntityHandle,
         instance_manager::{APosition, Archetype},
@@ -272,6 +273,37 @@ impl Scene {
             EntityHandle(0),
             Box::new(APosition {
                 position: cgmath::Matrix4::<f32>::identity().into(),
+            }),
+        )]);
+        Ok(scene)
+    }
+    pub fn fox_animated_scene(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let fox_asset = world.register_asset::<GltfAsset>("fox")?; // asset
+
+        let fox_entity = world.entity_manager.new_entity()?;
+
+        let mcc = MeshCollectionDescriptor::new(
+            fox_asset.clone(),
+            MeshAcessor::All,
+            RigidAnimationMode::Shared,
+        )
+        .with_animation(AnimationComponentDescriptor {
+            resource_backing: fox_asset,
+            accessor: AnimationAccessor::All,
+        });
+
+        world
+            .entity_manager
+            .add_mesh_collection_for_entity(&fox_entity, mcc); // mesh
+
+        let mut scene = Scene::new();
+        scene.add_entity(fox_entity);
+        scene.spawn(vec![(
+            EntityHandle(0),
+            Box::new(APosition {
+                position: cgmath::Matrix4::<f32>::from_scale(0.05).into(),
             }),
         )]);
         Ok(scene)

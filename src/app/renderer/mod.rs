@@ -3,7 +3,7 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData,
 use bytemuck::Pod;
 
 use crate::{
-    app::renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
+    app::renderer::gpu_allocator::{InstanceChunk, UploadMeshJob, VertexArenaError},
     asset_manager::AssetHandle,
     util::types::ModelVertex,
     world::{
@@ -258,4 +258,9 @@ bitflags! {
         const LOCAL_TRANSFORM = 0b01;
         const JOINT_TRANSFORM = 0b10;
     }
+}
+
+trait StorageData: bytemuck::Pod + std::fmt::Debug + Sized {
+    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
+    fn get_chunk(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> InstanceChunk<Self>;
 }

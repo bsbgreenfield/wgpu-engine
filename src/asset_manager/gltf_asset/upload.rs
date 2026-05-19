@@ -3,7 +3,7 @@ use std::{any::TypeId, sync::Arc};
 use cgmath::SquareMatrix;
 
 use crate::{
-    animation::animation::{Animation, EntityAnimations},
+    animation::animation::{Animation, EntityAnimationData, EntityAnimations},
     asset_manager::{
         AssetLoadError, ProvidesAnimationData, ProvidesMeshData,
         gltf_asset::{
@@ -33,34 +33,17 @@ impl ProvidesMeshData for GltfAsset {
         mesh_accesor: &'a MeshAcessor,
         _mode: &'a RigidAnimationMode,
     ) -> MeshRenderables {
-        let mut jts: Vec<Vec<Mat4F32>> = self
-            .skins
-            .iter()
-            .map(|skin| {
-                skin.iter()
-                    .map(|_joint| cgmath::Matrix4::<f32>::identity().into())
-                    .collect()
-            })
-            .collect();
         let mesh_instances: Vec<MeshInstance> = match mesh_accesor {
             MeshAcessor::All => self
                 .node_tree
                 .iter()
-                .flat_map(|node| {
-                    collect_mesh_instances_with_jts(
-                        node,
-                        cgmath::Matrix4::<f32>::identity(),
-                        &mut jts,
-                    )
-                })
+                .flat_map(|node| collect_mesh_instances(node, cgmath::Matrix4::<f32>::identity()))
                 .collect(),
             MeshAcessor::GltfRootNode(root) => {
                 match get_root_node(&self.node_tree, *root as usize) {
-                    Some(root_node) => collect_mesh_instances_with_jts(
-                        root_node,
-                        cgmath::Matrix4::<f32>::identity(),
-                        &mut jts,
-                    ),
+                    Some(root_node) => {
+                        collect_mesh_instances(root_node, cgmath::Matrix4::<f32>::identity())
+                    }
                     None => {
                         panic!()
                     }
@@ -109,20 +92,14 @@ impl ProvidesMeshData for GltfAsset {
             local_transforms.push(mesh_instance.local_transform);
             relative_lt_offset += 1;
         }
-        let joint_transforms: Option<Vec<Mat4F32>> = if jts.is_empty() {
-            None
-        } else {
-            Some(jts.drain(..).flatten().collect())
-        };
         MeshRenderables {
+            joint_map,
             pnu_mesh_map,
             pnujw_mesh_map,
             pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),
             pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
             index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
             local_transforms,
-            joint_transforms,
-            joint_map,
         }
     }
 }
@@ -132,7 +109,7 @@ impl ProvidesAnimationData for GltfAsset {
         &self,
         animation_accessor: &AnimationAccessor,
         mesh_accesor: &MeshAcessor,
-    ) -> crate::animation::animation::EntityAnimations {
+    ) -> crate::animation::animation::EntityAnimationData {
         let mut jts: Vec<Vec<Mat4F32>> = self
             .skins
             .iter()
@@ -171,6 +148,8 @@ impl ProvidesAnimationData for GltfAsset {
         } else {
             jts.drain(..).flatten().collect()
         };
+        // TODO: asset doesnt really need to hold onto this
+        let inverse_bind_matrices = self.ibms.iter().cloned().flatten().collect();
         let mut skin_offset_map = Vec::with_capacity(self.skins.len());
         let mut agg = 0;
         for skin in self.skins.iter() {
@@ -195,12 +174,13 @@ impl ProvidesAnimationData for GltfAsset {
             }
         };
 
-        EntityAnimations {
+        EntityAnimationData {
             animation: anim_refs,
             local_transforms,
             mesh_slot_map: mesh_indices,
-            joint_slot_map: skin_offset_map,
+            skin_offset_map,
             joint_transforms,
+            inverse_bind_matrices,
         }
     }
 }

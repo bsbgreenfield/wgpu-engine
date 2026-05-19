@@ -1,8 +1,11 @@
 use crate::{
-    app::{app_config::AppConfig, renderer::RenderCategory},
+    app::{
+        app_config::AppConfig,
+        renderer::{RenderCategory, StorageData},
+    },
     util::types::{
-        GlobalTransform, InstanceData, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex,
-        StorageData,
+        GlobalTransform, InstanceData, InverseBindMatrix, JointTransform, LocalTransform,
+        ModelVertex, PNUJWVertex, PNUVertex,
     },
     world::camera::Camera,
 };
@@ -43,8 +46,10 @@ impl PipelineCollection {
             bind_group_layouts: &[
                 &Camera::get_bind_group_layout(device),
                 &LocalTransform::get_bind_group_layout(device),
+                &JointTransform::get_bind_group_layout(device),
+                &InverseBindMatrix::get_bind_group_layout(device),
             ],
-            immediate_size: 4,
+            immediate_size: 8,
         })
     }
 

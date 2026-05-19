@@ -1,12 +1,14 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::num::NonZero;
 use std::{fmt::Display, ops::Range};
 
 use bytemuck::Pod;
 use std::error::Error;
 
-use crate::app::renderer::InstanceUploadJob;
 use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
+use crate::app::renderer::{InstanceUploadJob, StorageData};
+use crate::util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32};
 use crate::{
     app::renderer::GPUAllocationHandle, util::types::ModelVertex,
     world::instance_manager::InstanceHandle,
@@ -37,7 +39,7 @@ struct GPUChunk<T: bytemuck::Pod + Debug> {
     allocator: FreeListAllocator,
     _t: PhantomData<T>,
 }
-struct InstanceChunk<T: bytemuck::Pod + Debug> {
+pub(super) struct InstanceChunk<T: bytemuck::Pod + Debug> {
     remaining_space: u32,
     bind_group: wgpu::BindGroup,
     buffer: wgpu::Buffer,
@@ -124,6 +126,7 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
         new_handle: &InstanceHandle,
     ) -> Result<u32, Self::AllocationError>;
 
+    #[allow(unused)]
     fn resolve_buffer(&self, instance_handle: &InstanceHandle) -> &wgpu::Buffer;
 }
 #[derive(Debug)]
@@ -204,4 +207,128 @@ impl<'frame, V: ModelVertex> UploadMeshJob<'frame, V> {
 pub(super) struct UploadIndexJob<'frame> {
     pub indices: &'frame [u8],
     pub(super) global_alloc_id: u32,
+}
+
+impl StorageData for LocalTransform {
+    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("LT bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
+                },
+                count: None,
+            }],
+        })
+    }
+
+    fn get_chunk(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> InstanceChunk<Self> {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("local transform storage buffer"),
+            size: CHUNK_SIZE as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let new_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("lt bind group"),
+            layout: bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buf.as_entire_binding(),
+            }],
+        });
+        InstanceChunk {
+            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
+            bind_group: new_bg,
+            buffer: buf,
+            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
+            _t: PhantomData,
+        }
+    }
+}
+impl StorageData for JointTransform {
+    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Joint bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
+                },
+                count: None,
+            }],
+        })
+    }
+
+    fn get_chunk(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> InstanceChunk<Self> {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("joint transform storage buffer"),
+            size: CHUNK_SIZE as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let new_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("joint bind group"),
+            layout: bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 1,
+                resource: buf.as_entire_binding(),
+            }],
+        });
+        InstanceChunk {
+            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
+            bind_group: new_bg,
+            buffer: buf,
+            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
+            _t: PhantomData,
+        }
+    }
+}
+impl StorageData for InverseBindMatrix {
+    fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ibm bind group layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
+                },
+                count: None,
+            }],
+        })
+    }
+
+    fn get_chunk(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> InstanceChunk<Self> {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("imb transform storage buffer"),
+            size: CHUNK_SIZE as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let new_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ibm bind group"),
+            layout: bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 2,
+                resource: buf.as_entire_binding(),
+            }],
+        });
+        InstanceChunk {
+            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
+            bind_group: new_bg,
+            buffer: buf,
+            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
+            _t: PhantomData,
+        }
+    }
 }

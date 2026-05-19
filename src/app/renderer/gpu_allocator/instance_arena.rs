@@ -1,14 +1,9 @@
-use std::{collections::HashMap, fmt::Debug, marker::PhantomData, num::NonZero};
-
-use wgpu::ShaderStages;
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     app::renderer::{
-        InstanceUploadJob,
-        gpu_allocator::{
-            AllocMetaData, CHUNK_SIZE, GPUInstanceAllocator, InstanceChunk, VertexArenaError,
-            free_list::FreeListAllocator,
-        },
+        InstanceUploadJob, StorageData,
+        gpu_allocator::{AllocMetaData, GPUInstanceAllocator, InstanceChunk, VertexArenaError},
     },
     util::types::LocalTransform,
     world::instance_manager::InstanceHandle,
@@ -28,38 +23,11 @@ impl InstanceArena<LocalTransform> {
     }
 }
 
-impl InstanceChunk<LocalTransform> {
-    fn new(device: &wgpu::Device, bgl: &wgpu::BindGroupLayout) -> Self {
-        let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("local transform storage buffer"),
-            size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let new_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("lt bind group"),
-            layout: bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buf.as_entire_binding(),
-            }],
-        });
-        Self {
-            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
-            bind_group: new_bg,
-            buffer: buf,
-            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
-            _t: PhantomData,
-        }
-    }
-}
-
-impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
+impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
     type AllocationError = VertexArenaError;
-
     fn upload<'a>(
         &mut self,
-        job: InstanceUploadJob<'a, LocalTransform>,
+        job: InstanceUploadJob<'a, T>,
         queue: &wgpu::Queue,
     ) -> Result<u32, Self::AllocationError> {
         'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
@@ -70,7 +38,7 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
                         AllocMetaData::new(chunk_id, node_id),
                     );
                     return Ok(self.chunks[chunk_id].allocator.resolve(node_id).start
-                        / size_of::<LocalTransform>() as u32);
+                        / size_of::<T>() as u32);
                 }
 
                 Err(e) => match e {
@@ -83,7 +51,6 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
         }
         Err(VertexArenaError::MaxAllocationReached)
     }
-
     fn register_shared_binding(
         &mut self,
         donor: &InstanceHandle,
@@ -106,10 +73,10 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
     fn resolve(&self, handle: &crate::world::instance_manager::InstanceHandle) -> u32 {
         let meta = self.alloc_table.get(&handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
-        range.start / size_of::<LocalTransform>() as u32
+        range.start / size_of::<T>() as u32
     }
 
-    fn resolve_buffer(&self, instance_handle: &InstanceHandle) -> &wgpu::Buffer {
+    fn resolve_buffer(&self, _instance_handle: &InstanceHandle) -> &wgpu::Buffer {
         //TODO: if we add more chunks, then this will have to actually resolve
         &self.chunks[0].buffer
     }
@@ -120,24 +87,10 @@ impl GPUInstanceAllocator<LocalTransform> for InstanceArena<LocalTransform> {
     }
 
     fn new(device: &wgpu::Device) -> Self {
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("local transform bind group LAYOUT"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(
-                        NonZero::new(size_of::<LocalTransform>() as u64).unwrap(),
-                    ),
-                },
-                count: None,
-            }],
-        });
+        let bgl = T::get_bind_group_layout(device);
         Self {
             max_chunks: 1,
-            chunks: vec![InstanceChunk::new(device, &bgl)],
+            chunks: vec![T::get_chunk(device, &bgl)],
             alloc_table: HashMap::new(),
             label: Some("Local Transform arena".to_string()),
         }

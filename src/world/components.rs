@@ -1,7 +1,7 @@
-use std::marker::PhantomData;
+use std::{any::TypeId, fmt::Debug, marker::PhantomData};
 
 use crate::{
-    animation::animation::EntityAnimations,
+    animation::animation::{EntityAnimationData, EntityAnimations},
     asset_manager::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
     world::entity_manager::MeshRenderables,
 };
@@ -18,10 +18,19 @@ pub enum RigidAnimationMode {
     Independent,
 }
 
-#[derive(Debug)]
 pub struct ResourceBacking<A: Asset + ?Sized> {
     pub asset_handle: AssetHandle,
     _t: PhantomData<A>,
+}
+
+impl<A: Asset + ?Sized> Debug for ResourceBacking<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ResourceBacking with an asset type of {:?} and handle: {:?}",
+            self._t, self.asset_handle
+        )
+    }
 }
 
 impl<A: Asset + ?Sized> Clone for ResourceBacking<A> {
@@ -55,6 +64,7 @@ pub struct MeshCollectionComponent<A: ProvidesMeshData + ?Sized> {
     pub rigid_animation_mode: RigidAnimationMode,
 }
 
+#[derive(Debug)]
 pub struct MeshCollectionDescriptor {
     pub resource_backing: ResourceBacking<dyn ProvidesMeshData>,
     pub mesh_accessor: MeshAcessor,
@@ -85,7 +95,6 @@ impl MeshCollectionDescriptor {
             animation_accessor: desc.accessor,
             mesh_accessor: self.mesh_accessor.clone(),
         });
-
         self
     }
 }
@@ -128,6 +137,15 @@ pub struct AnimationComponent<T: ProvidesAnimationData + ?Sized> {
     pub mesh_accessor: MeshAcessor,
 }
 
+impl<T: ProvidesAnimationData + ?Sized> Debug for AnimationComponent<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnimationComponent")
+            .field("Animation Accesor", &self.animation_accessor)
+            .field("mesh accessor", &self.mesh_accessor)
+            .finish()
+    }
+}
+
 pub struct AnimationComponentDescriptor<A: ProvidesAnimationData + ?Sized> {
     pub resource_backing: ResourceBacking<A>,
     pub accessor: AnimationAccessor,
@@ -149,7 +167,7 @@ impl<A: ProvidesAnimationData> AnimationComponent<A> {
 
 impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
     type AssetType = A;
-    type Output = EntityAnimations;
+    type Output = EntityAnimationData;
     type Erased = AnimationComponent<dyn ProvidesAnimationData>;
 
     fn erase(self) -> Self::Erased {

@@ -11,7 +11,7 @@ use crate::{
     asset_manager::{
         Asset, AssetHandle, AssetLoadError, ModelBuilderError, gltf_asset::mesh::Mesh,
     },
-    util::types::{PNUJWVertex, PNUVertex, VIndex},
+    util::types::{Mat4F32, PNUJWVertex, PNUVertex, VIndex},
 };
 mod animation;
 mod build;
@@ -147,6 +147,7 @@ pub struct GltfAsset {
     indices: Option<Vec<VIndex>>,
     animations: Vec<Arc<GltfAnimation>>,
     skins: Vec<Vec<usize>>,
+    ibms: Vec<Vec<Mat4F32>>,
 }
 
 #[derive(Debug)]

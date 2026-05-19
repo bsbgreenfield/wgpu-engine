@@ -12,6 +12,7 @@ mod integration_tests {
             },
         },
         world::{
+            self,
             entity_manager::{EntityHandle, EntityManager},
             instance_manager::{APosition, ArchetypeId, InstanceHandle},
             scene::Scene,
@@ -22,6 +23,7 @@ mod integration_tests {
     enum TestCases {
         Box,
         Fox,
+        FoxAnimated,
         BoxFox,
         BoxAnimated,
     }
@@ -106,6 +108,7 @@ mod integration_tests {
         let scene = match test_case {
             TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
             TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),
+            TestCases::FoxAnimated => Scene::fox_animated_scene(&mut world).expect("fox anim init"),
             TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
             TestCases::BoxAnimated => Scene::box_animated(&mut world).expect("box animated init"),
         };
@@ -626,6 +629,111 @@ mod integration_tests {
     }
 
     #[test]
+    fn fox_animated() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::FoxAnimated).await;
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityDidSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
+            let instance_handle =
+                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
+
+            app.world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .assert_animation_exists(&instance_handle);
+
+            let joint_slot_map = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_joint_slot_map(&instance_handle.entity_handle);
+
+            assert_eq!(joint_slot_map.len(), 1, "one skin");
+            assert_eq!(joint_slot_map[0], 0, "the skin offset of the skin is 0");
+
+            let registered_entity_animations = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_entity_animation(&instance_handle.entity_handle)
+                .expect("should be registered_entity_animations");
+
+            assert_eq!(
+                registered_entity_animations.animation.len(),
+                3,
+                "the fox should have 3 total animations"
+            );
+
+            assert_eq!(
+                registered_entity_animations.joint_transforms.len(),
+                24,
+                "the fox has 24 joints"
+            );
+
+            let bindings = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_gpu_bindings(&instance_handle)
+                .expect("the instance should have bidings ");
+
+            assert!(bindings.joint_offset.is_some());
+            assert_eq!(bindings.joint_offset.unwrap(), 0);
+            assert_eq!(bindings.lt_offset, 0);
+
+            gen_draw_calls(&mut app);
+            let pnujw_items: Vec<&DrawItem> =
+                app.draw_packet.get_pnujw().values().flatten().collect();
+            assert!(
+                !pnujw_items.is_empty(),
+                "fox should produce pnujw draw items"
+            );
+            for item in &pnujw_items {
+                assert_eq!(
+                    item.joint_offset.unwrap(),
+                    0,
+                    "pnujw draw item joint_offset must equal gpu_joint_offset + skin_local_offset (0)"
+                );
+            }
+
+            app.world
+                .as_mut()
+                .unwrap()
+                .instance_manager
+                .activate_animation(&instance_handle, 0, None);
+
+            {
+                let active = app
+                    .world
+                    .as_ref()
+                    .unwrap()
+                    .instance_manager
+                    .get_active_animations();
+                assert_eq!(active.len(), 1, "one animation must be active");
+                assert_eq!(
+                    active[0].joint_buffer.len(),
+                    24,
+                    "joint_buffer must hold one entry per joint"
+                );
+            }
+        })
+    }
+
+    #[test]
     fn box_animated() {
         pollster::block_on(async {
             let mut app = setup_world(TestCases::BoxAnimated).await;
@@ -648,7 +756,7 @@ mod integration_tests {
                 .as_ref()
                 .unwrap()
                 .instance_manager
-                .assert_local_transforms_exist(&InstanceHandle::mock(
+                .assert_animation_exists(&InstanceHandle::mock(
                     ArchetypeId::Position,
                     EntityHandle(0),
                     0,

@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    animation::animation::EntityAnimations,
+    animation::animation::{EntityAnimationData, EntityAnimations},
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     world::{
@@ -193,5 +193,5 @@ pub trait ProvidesAnimationData: Asset {
         &self,
         animation_accessor: &AnimationAccessor,
         mesh_accessor: &MeshAcessor,
-    ) -> EntityAnimations;
+    ) -> EntityAnimationData;
 }
