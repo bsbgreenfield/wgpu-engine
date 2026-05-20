@@ -1,7 +1,10 @@
 use crate::{
     app::{
         app_config::AppConfig,
-        renderer::{RenderCategory, StorageData},
+        renderer::{
+            RenderCategory, StorageData,
+            bind_groups::{BindGroupProvider, LocalTransformBindGroup, SkinningBindGroup},
+        },
     },
     util::types::{
         GlobalTransform, InstanceData, InverseBindMatrix, JointTransform, LocalTransform,
@@ -35,7 +38,7 @@ impl PipelineCollection {
             label: Some("opaque_static pipeline layout"),
             bind_group_layouts: &[
                 &Camera::get_bind_group_layout(device),
-                &LocalTransform::get_bind_group_layout(device),
+                &LocalTransformBindGroup::get_bind_group_layout(device),
             ],
             immediate_size: 4,
         })
@@ -45,9 +48,8 @@ impl PipelineCollection {
             label: Some("opaque_skinned pipeline layout"),
             bind_group_layouts: &[
                 &Camera::get_bind_group_layout(device),
-                &LocalTransform::get_bind_group_layout(device),
-                &JointTransform::get_bind_group_layout(device),
-                &InverseBindMatrix::get_bind_group_layout(device),
+                &LocalTransformBindGroup::get_bind_group_layout(device),
+                &SkinningBindGroup::get_bind_group_layout(device),
             ],
             immediate_size: 8,
         })

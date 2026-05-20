@@ -1,25 +1,76 @@
+use core::hash;
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     app::renderer::{
         InstanceUploadJob, StorageData,
-        gpu_allocator::{AllocMetaData, GPUInstanceAllocator, InstanceChunk, VertexArenaError},
+        gpu_allocator::{AllocMetaData, GPUChunk, GPUInstanceAllocator, VertexArenaError},
     },
-    util::types::LocalTransform,
+    util::types::{JointTransform, LocalTransform},
     world::instance_manager::InstanceHandle,
 };
 
 #[allow(unused)]
 pub struct InstanceArena<T: bytemuck::Pod + Debug> {
     max_chunks: usize,
-    chunks: Vec<InstanceChunk<T>>,
+    chunks: Vec<GPUChunk<T>>,
     alloc_table: HashMap<InstanceHandle, AllocMetaData>,
     label: Option<String>,
 }
 
-impl InstanceArena<LocalTransform> {
+impl<T: bytemuck::Pod + Debug> InstanceArena<T> {
     pub fn get_first_buffer(&self) -> &wgpu::Buffer {
         &self.chunks[0].buffer
+    }
+}
+
+pub(super) trait SharedInstanceData {
+    fn register_shared_binding(
+        &mut self,
+        donor_handle: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, VertexArenaError>;
+}
+
+impl SharedInstanceData for InstanceArena<LocalTransform> {
+    fn register_shared_binding(
+        &mut self,
+        donor_handle: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, VertexArenaError> {
+        let meta = self
+            .alloc_table
+            .get(donor_handle)
+            .ok_or(VertexArenaError::HandleNotFound(donor_handle.clone()))?;
+        self.alloc_table.insert(
+            new_handle.clone(),
+            AllocMetaData {
+                chunk_id: meta.chunk_id,
+                node_id: meta.node_id,
+            },
+        );
+        Ok(self.resolve(new_handle))
+    }
+}
+
+impl SharedInstanceData for InstanceArena<JointTransform> {
+    fn register_shared_binding(
+        &mut self,
+        donor_handle: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, VertexArenaError> {
+        let meta = self
+            .alloc_table
+            .get(donor_handle)
+            .ok_or(VertexArenaError::HandleNotFound(donor_handle.clone()))?;
+        self.alloc_table.insert(
+            new_handle.clone(),
+            AllocMetaData {
+                chunk_id: meta.chunk_id,
+                node_id: meta.node_id,
+            },
+        );
+        Ok(self.resolve(new_handle))
     }
 }
 
@@ -81,16 +132,10 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
         &self.chunks[0].buffer
     }
 
-    #[inline]
-    fn bind_group(&self) -> &wgpu::BindGroup {
-        &self.chunks[0].bind_group
-    }
-
     fn new(device: &wgpu::Device) -> Self {
-        let bgl = T::get_bind_group_layout(device);
         Self {
             max_chunks: 1,
-            chunks: vec![T::get_chunk(device, &bgl)],
+            chunks: vec![T::get_chunk(device)],
             alloc_table: HashMap::new(),
             label: Some("Local Transform arena".to_string()),
         }

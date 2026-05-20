@@ -9,6 +9,7 @@ use crate::{
             DrawPacket, InstanceUploadJob, Instruction, RenderCategory, RenderConstant,
             RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaError,
             VertexArenaSelector,
+            bind_groups::{BindGroupProvider, LocalTransformBindGroup, SkinningBindGroup},
             gpu_allocator::{
                 GPUAllocator, GPUInstanceAllocator, UploadIndexJob,
                 instance_arena::InstanceArena,
@@ -82,18 +83,16 @@ impl VertexArenaCollection {
     }
 }
 
-struct InstanceArenaCollection {
-    lt_arena: InstanceArena<LocalTransform>,
-    joint_arena: InstanceArena<JointTransform>,
-    ibm_arena: InstanceArena<InverseBindMatrix>,
+pub(super) struct BindGroupCollection {
+    pub(super) local_transforms: LocalTransformBindGroup,
+    pub(super) skinning: SkinningBindGroup,
 }
 
-impl InstanceArenaCollection {
+impl BindGroupCollection {
     fn new(device: &wgpu::Device) -> Self {
         Self {
-            lt_arena: InstanceArena::<LocalTransform>::new(device),
-            joint_arena: InstanceArena::<JointTransform>::new(device),
-            ibm_arena: InstanceArena::<InverseBindMatrix>::new(device),
+            local_transforms: LocalTransformBindGroup::new(device),
+            skinning: SkinningBindGroup::new(device),
         }
     }
 }
@@ -101,7 +100,7 @@ impl InstanceArenaCollection {
 pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
-    instance_arenas: InstanceArenaCollection,
+    pub(super) instance_arenas: BindGroupCollection,
     global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
     pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
@@ -112,7 +111,7 @@ impl Renderer {
         Self {
             allocations: Vec::new(),
             vertex_arenas: VertexArenaCollection::new(&config.device),
-            instance_arenas: InstanceArenaCollection::new(&config.device),
+            instance_arenas: BindGroupCollection::new(&config.device),
             global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(&config.device),
             pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
@@ -161,7 +160,7 @@ impl Renderer {
             if animations.is_empty() {
                 break 'rigid_animations;
             }
-            let buffer_ref = self.instance_arenas.lt_arena.get_first_buffer();
+            let buffer_ref = self.instance_arenas.local_transforms.get_buffer();
             for animation in animations {
                 queue.write_buffer(
                     buffer_ref,
@@ -186,50 +185,18 @@ impl Renderer {
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas.lt_arena.upload(job, queue)
+        self.instance_arenas.local_transforms.upload(job, queue)
     }
 
-    pub(super) fn upload_joint_transforms<'frame>(
+    pub(super) fn upload_skin_data<'frame>(
         &mut self,
-        job: InstanceUploadJob<'frame, JointTransform>,
+        joint_job: InstanceUploadJob<'frame, JointTransform>,
+        ibm_job: InstanceUploadJob<'frame, InverseBindMatrix>,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas.joint_arena.upload(job, queue)
-    }
-
-    pub(super) fn upload_inverse_bind_matrices<'frame>(
-        &mut self,
-        job: InstanceUploadJob<'frame, InverseBindMatrix>,
-        queue: &wgpu::Queue,
-    ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas.ibm_arena.upload(job, queue)
-    }
-
-    pub(super) fn resolve_shared_lt_binding(
-        &mut self,
-        donor_handle: &InstanceHandle,
-        new_handle: &InstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
         self.instance_arenas
-            .lt_arena
-            .register_shared_binding(donor_handle, new_handle)
-    }
-
-    pub(super) fn resolve_shared_joint_binding(
-        &mut self,
-        donor_handle: &InstanceHandle,
-        new_handle: &InstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas
-            .joint_arena
-            .register_shared_binding(donor_handle, new_handle)
-    }
-
-    fn get_joint_bg(&self) -> &wgpu::BindGroup {
-        self.instance_arenas.joint_arena.bind_group()
-    }
-    fn get_ibm_bg(&self) -> &wgpu::BindGroup {
-        self.instance_arenas.ibm_arena.bind_group()
+            .skinning
+            .upload(joint_job, ibm_job, queue)
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -290,7 +257,11 @@ impl Renderer {
                 let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
 
                 render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
-                render_pass.set_bind_group(1, self.instance_arenas.lt_arena.bind_group(), &[]);
+                render_pass.set_bind_group(
+                    1,
+                    self.instance_arenas.local_transforms.get_first_bg(),
+                    &[],
+                );
                 render_pass.set_vertex_buffer(1, self.global_transform_buffer.slice(..));
                 for render_category in pass.categories.iter() {
                     match render_category {
@@ -332,8 +303,11 @@ impl Renderer {
                         RenderCategory::OpaqueSkinned => {
                             let pipeline = &self.pipelines.opaque_skinned;
                             render_pass.set_pipeline(&pipeline.pipeline);
-                            render_pass.set_bind_group(1, self.get_joint_bg(), &[]);
-                            render_pass.set_bind_group(1, self.get_ibm_bg(), &[]);
+                            render_pass.set_bind_group(
+                                2,
+                                self.instance_arenas.skinning.get_first_bg(),
+                                &[],
+                            );
                             for draw_entry in draw_packet.pnujw.iter() {
                                 let (vertex_alloc_range, v_buffer) =
                                     self.vertex_arenas.skinned_arena.resolve(draw_entry.0);

@@ -147,10 +147,13 @@ impl<'frame> Renderer {
                             [Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_key();
                         let new_handle = stack.pop().expect("should be key");
-                        let lt_offset = self.resolve_shared_lt_binding(
-                            &InstanceHandle::from_key(donor_handle),
-                            &InstanceHandle::from_key(new_handle.unwrap_key()),
-                        )?;
+                        let lt_offset = self
+                            .instance_arenas
+                            .local_transforms
+                            .register_shared_binding(
+                                &InstanceHandle::from_key(donor_handle),
+                                &InstanceHandle::from_key(new_handle.unwrap_key()),
+                            )?;
                         stack.push(RenderConstant::Offset(lt_offset as u64));
                         stack.push(new_handle);
                     }
@@ -165,13 +168,13 @@ impl<'frame> Renderer {
                             InstanceHandle::from_key(instance_handle_key.unwrap_key());
                         let jt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_owned();
-                        let jt_upload_job = InstanceUploadJob::new(jt, instance_handle.clone());
-                        let jt_offset = self.upload_joint_transforms(jt_upload_job, queue)?;
                         let ibms = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_owned();
-
+                        let jt_upload_job = InstanceUploadJob::new(jt, instance_handle.clone());
                         let ibm_upload_job = InstanceUploadJob::new(ibms, instance_handle.clone());
-                        let _ibm_offset = self.upload_inverse_bind_matrices(ibm_upload_job, queue);
+                        let jt_offset =
+                            self.upload_skin_data(jt_upload_job, ibm_upload_job, queue)?;
+
                         // NOTE: ibm offset should always be the same as joint offset
                         stack.push(RenderConstant::Offset(jt_offset as u64));
                         stack.push(instance_handle_key);
@@ -181,7 +184,7 @@ impl<'frame> Renderer {
                             [Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_key();
                         let new_handle = stack.pop().expect("should be key");
-                        let jt_offset = self.resolve_shared_joint_binding(
+                        let jt_offset = self.instance_arenas.skinning.register_shared_binding(
                             &InstanceHandle::from_key(donor_handle),
                             &InstanceHandle::from_key(new_handle.unwrap_key()),
                         )?;
