@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    animation::animation::{EntityAnimationData, EntityAnimations},
+    animation::animation::EntityAnimationData,
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     world::{

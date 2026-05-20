@@ -11,6 +11,7 @@ pub(super) struct InputController {
     pub key_e_down: bool,
     pub key_1_down: bool,
     pub key_2_down: bool,
+    pub key_3_down: bool,
 }
 pub struct AppState {
     pub(super) input_controller: InputController,
@@ -35,8 +36,16 @@ impl AppState {
                 }
             }
             KeyCode::KeyA => {
-                println!("HELLO");
                 self.input_controller.key_a_down = is_pressed;
+            }
+            KeyCode::Digit1 => {
+                self.input_controller.key_1_down = is_pressed;
+            }
+            KeyCode::Digit2 => {
+                self.input_controller.key_2_down = is_pressed;
+            }
+            KeyCode::Digit3 => {
+                self.input_controller.key_3_down = is_pressed;
             }
             _ => {}
         }

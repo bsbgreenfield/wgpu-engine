@@ -2,14 +2,11 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            RenderCategory, StorageData,
+            RenderCategory,
             bind_groups::{BindGroupProvider, LocalTransformBindGroup, SkinningBindGroup},
         },
     },
-    util::types::{
-        GlobalTransform, InstanceData, InverseBindMatrix, JointTransform, LocalTransform,
-        ModelVertex, PNUJWVertex, PNUVertex,
-    },
+    util::types::{GlobalTransform, InstanceData, ModelVertex, PNUJWVertex, PNUVertex},
     world::camera::Camera,
 };
 

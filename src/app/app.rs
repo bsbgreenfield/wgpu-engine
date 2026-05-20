@@ -30,7 +30,9 @@ pub struct App<'a> {
 }
 
 pub enum AppCommand {
-    DoSomething,
+    One,
+    Two,
+    Three,
 }
 
 impl App<'_> {
@@ -48,9 +50,17 @@ impl App<'_> {
     }
 
     pub fn run_frame(&mut self) -> Result<(), FrameError> {
-        if self.app_state.input_controller.key_a_down {
-            self.app_commands.push(AppCommand::DoSomething);
-            self.app_state.input_controller.key_a_down = false;
+        if self.app_state.input_controller.key_1_down {
+            self.app_commands.push(AppCommand::One);
+            self.app_state.input_controller.key_1_down = false;
+        }
+        if self.app_state.input_controller.key_2_down {
+            self.app_commands.push(AppCommand::Two);
+            self.app_state.input_controller.key_2_down = false;
+        }
+        if self.app_state.input_controller.key_3_down {
+            self.app_commands.push(AppCommand::Three);
+            self.app_state.input_controller.key_3_down = false;
         }
         let deltas = self
             .world

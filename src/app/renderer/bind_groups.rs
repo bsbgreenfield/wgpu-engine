@@ -4,7 +4,7 @@ use wgpu::ShaderStages;
 
 use crate::{
     app::renderer::{
-        GPUAllocationHandle, InstanceUploadJob,
+        InstanceUploadJob,
         gpu_allocator::{GPUInstanceAllocator, VertexArenaError, instance_arena::InstanceArena},
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
@@ -46,7 +46,7 @@ impl BindGroupProvider for SkinningBindGroup {
         });
         Self {
             bind_groups: vec![initial_bind_group],
-            bind_group_layout: bgl,
+            _bind_group_layout: bgl,
             joint_arena: joints,
             ibm_arena: ibms,
         }
@@ -89,13 +89,17 @@ impl BindGroupProvider for SkinningBindGroup {
 }
 
 pub(super) struct SkinningBindGroup {
-    bind_group_layout: wgpu::BindGroupLayout,
+    _bind_group_layout: wgpu::BindGroupLayout,
     bind_groups: Vec<wgpu::BindGroup>,
     joint_arena: InstanceArena<JointTransform>,
     ibm_arena: InstanceArena<InverseBindMatrix>,
 }
 
 impl SkinningBindGroup {
+    pub(super) fn get_joint_buffer(&self) -> &wgpu::Buffer {
+        //TODO: resolve using handle
+        self.joint_arena.get_first_buffer()
+    }
     pub(super) fn upload<'frame>(
         &mut self,
         joint_job: InstanceUploadJob<'frame, JointTransform>,

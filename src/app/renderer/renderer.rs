@@ -11,8 +11,7 @@ use crate::{
             VertexArenaSelector,
             bind_groups::{BindGroupProvider, LocalTransformBindGroup, SkinningBindGroup},
             gpu_allocator::{
-                GPUAllocator, GPUInstanceAllocator, UploadIndexJob,
-                instance_arena::InstanceArena,
+                GPUAllocator, UploadIndexJob,
                 vertex_arena::{GPUArena, StaticGPUBuffer},
             },
             pipeline::PipelineCollection,
@@ -22,11 +21,7 @@ use crate::{
         GlobalTransform, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex, PNUVertex,
         VIndex,
     },
-    world::{
-        camera::Camera,
-        instance_manager::{InstanceHandle, RenderFrame},
-        world::DrawSet,
-    },
+    world::{camera::Camera, instance_manager::RenderFrame, world::DrawSet},
 };
 
 pub(super) struct EngineRenderPass {
@@ -161,6 +156,20 @@ impl Renderer {
                 break 'rigid_animations;
             }
             let buffer_ref = self.instance_arenas.local_transforms.get_buffer();
+            for animation in animations {
+                queue.write_buffer(
+                    buffer_ref,
+                    animation.buffer_offset.into(),
+                    animation.transforms,
+                );
+            }
+        }
+        'skinned_animations: {
+            let animations = &render_frame.joint_animation_data;
+            if animations.is_empty() {
+                break 'skinned_animations;
+            }
+            let buffer_ref = self.instance_arenas.skinning.get_joint_buffer();
             for animation in animations {
                 queue.write_buffer(
                     buffer_ref,

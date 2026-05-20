@@ -346,18 +346,20 @@ impl InstanceManager {
 
     pub(super) fn update(&mut self, commands: &mut Vec<AppCommand>) {
         if let Some(command) = commands.pop() {
+            let idx;
             let mut handle = None;
             match command {
-                AppCommand::DoSomething => {
-                    for (found, _) in self.gpu_bindings.iter() {
-                        handle = Some(found.clone());
-                    }
-                }
+                AppCommand::One => idx = 0,
+                AppCommand::Two => idx = 1,
+                AppCommand::Three => idx = 2,
             }
-            if handle.is_none() {
+            if self.gpu_bindings.is_empty() {
                 commands.push(command);
             } else {
-                self.activate_animation(handle.as_ref().unwrap(), 0, None);
+                for stored_handle in self.gpu_bindings.keys() {
+                    handle = Some(stored_handle.clone());
+                }
+                self.activate_animation(handle.as_ref().unwrap(), idx, None);
             }
         }
         let mut anim_count = self.animation_controller.active_animations.len();
@@ -642,6 +644,17 @@ impl InstanceManager {
                 buffer_offset: lt_offset,
                 transforms: bytemuck::cast_slice(&animation_instance.mesh_buffer),
             });
+            if let Some(joint_offset) = self
+                .gpu_bindings
+                .get(&animation_instance.instance_handle)
+                .unwrap()
+                .joint_offset
+            {
+                render_frame.joint_animation_data.push(AnimationUpdate {
+                    buffer_offset: joint_offset,
+                    transforms: bytemuck::cast_slice(&animation_instance.joint_buffer),
+                });
+            }
         }
         render_frame
     }
@@ -658,4 +671,5 @@ pub struct RenderFrame<'frame> {
     pub global_transforms: Vec<&'frame [u8]>,
     pub local_transforms: Vec<&'frame [u8]>,
     pub rigid_animation_data: Vec<AnimationUpdate<'frame>>,
+    pub joint_animation_data: Vec<AnimationUpdate<'frame>>,
 }

@@ -182,7 +182,6 @@ impl EntityManager {
         entity: &EntityHandle,
         descriptor: MeshCollectionDescriptor,
     ) {
-        println!("{:?}", descriptor);
         let mcc = MeshCollectionComponent {
             mesh_accessor: descriptor.mesh_accessor,
             rigid_animation_mode: descriptor.rigid_animation_mode,

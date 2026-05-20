@@ -36,11 +36,24 @@ var<uniform> camera_uniform: CameraUniform;
 
 @group(1) @binding(0)
 var<storage, read> local_mesh_transforms: array<mat4x4<f32>>;
-@group(1) @binding(1)
+@group(2) @binding(0)
 var<storage, read> joint_transforms: array<mat4x4<f32>>;
-@group(1) @binding(2)
+@group(2) @binding(1)
 var<storage, read> ibm_transforms: array<mat4x4<f32>>;
 
+fn apply_bone_transform(joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>)  -> vec4<f32> {
+	let joint0 = joint_transforms[joints[0]] * ibm_transforms[joints[0]];
+	let joint1 = joint_transforms[joints[1]] * ibm_transforms[joints[1]];
+	let joint2 = joint_transforms[joints[2]] * ibm_transforms[joints[2]];
+	let joint3 = joint_transforms[joints[3]] * ibm_transforms[joints[3]];
+	let skin_mat: mat4x4<f32> = 
+	 							joint0 * weights[0] +
+	 							joint1 * weights[1] +
+	 							joint2 * weights[2] +
+	 							joint3 * weights[3];
+	let result: vec4<f32> = skin_mat * vec4<f32>(position, 1.0);
+	return result;
+}
 
 @vertex
 fn vs_main(obj: VertexInput, instance: InstanceInput) -> VertexOutput {
@@ -51,7 +64,8 @@ fn vs_main(obj: VertexInput, instance: InstanceInput) -> VertexOutput {
 		instance.gtm_3,
 	);
     var out: VertexOutput;
-    out.clip_position = camera_uniform.transform * global_t_matrix * local_mesh_transforms[pc.mesh_index] * vec4<f32>(obj.position, 1.0);
+	let new_position: vec4<f32> = apply_bone_transform(obj.joints, obj.weights, obj.position);
+    out.clip_position = camera_uniform.transform * global_t_matrix * local_mesh_transforms[pc.mesh_index] * new_position;
 	out.tex_coords = obj.tex_coords;
     return out;
 }
