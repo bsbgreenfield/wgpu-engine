@@ -60,7 +60,7 @@ impl Asset for GltfAsset {
     }
 }
 
-pub struct GltfAnimation {
+pub(super) struct GltfAnimation {
     pub samplers: Vec<AnimationSampler>,
     pub channels: AnimationChannels,
     pub root_nodes: Vec<Arc<GltfNode>>,
@@ -98,7 +98,7 @@ pub enum NodeType {
 }
 
 #[derive(Debug)]
-pub(crate) struct GltfNode {
+pub(super) struct GltfNode {
     node_type: NodeType,
     node_id: usize,
     skin_idx: Option<usize>,
@@ -108,6 +108,7 @@ pub(crate) struct GltfNode {
 
 #[cfg(test)]
 impl GltfNode {
+    #[allow(unused)]
     pub fn mock(
         node_type: NodeType,
         id: usize,

@@ -1,4 +1,3 @@
-use core::hash;
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::{

@@ -7,7 +7,7 @@ use crate::{
         app_state::AppState,
         renderer::{DrawPacket, Instruction, RenderCategory, RenderConstant, renderer::Renderer},
     },
-    world::{entity_manager::EntityManager, scene::Scene, world::World},
+    world::{entity_manager::entity_manager::EntityManager, scene::Scene, world::World},
 };
 use winit::{
     application::ApplicationHandler,

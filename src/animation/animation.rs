@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::{
     util::types::{LocalTransform, Mat4F32},
-    world::instance_manager::AnimationInstance,
+    world::instance_manager::InstanceHandle,
 };
 
 #[repr(C)]
@@ -55,6 +55,17 @@ impl From<gltf::animation::Interpolation> for InterpolationType {
         }
     }
 }
+
+pub struct AnimationInstance {
+    pub samples: Vec<AnimationSample>,
+    pub animation_idx: usize,
+    pub start_time: std::time::Instant,
+    pub mesh_buffer: Vec<Mat4F32>,
+    pub joint_buffer: Vec<Mat4F32>,
+    pub instance_handle: InstanceHandle,
+    pub complete: bool,
+}
+
 #[allow(unused)]
 pub struct AnimationSampler {
     pub interp: InterpolationType,

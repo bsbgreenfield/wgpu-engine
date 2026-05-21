@@ -15,9 +15,10 @@ use crate::{
     world::{
         RenderKey, WorldInitError, WorldUpdateError,
         camera::Camera,
-        components::ResourceBacking,
-        entity_manager::{EntityHandle, EntityManager},
-        instance_manager::{Archetype, InstanceHandle, InstanceManager},
+        entity_manager::{
+            EntityHandle, components::ResourceBacking, entity_manager::EntityManager,
+        },
+        instance_manager::{Archetype, InstanceHandle, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
         scene::SceneEvent,
     },

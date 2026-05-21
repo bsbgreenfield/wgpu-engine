@@ -3,9 +3,10 @@ use cgmath::{Quaternion, SquareMatrix, Vector3};
 #[cfg(test)]
 use crate::animation::animation::{AnimationChannels, AnimationSampler};
 use crate::{
-    animation::animation::{Animation, AnimationSample, AnimationTransformType, SampleResult},
+    animation::animation::{
+        Animation, AnimationInstance, AnimationSample, AnimationTransformType, SampleResult,
+    },
     asset_manager::gltf_asset::{GltfAnimation, GltfNode, NodeTransforms, NodeType},
-    world::instance_manager::AnimationInstance,
 };
 
 impl std::fmt::Debug for GltfAnimation {
@@ -171,7 +172,7 @@ impl Animation for GltfAnimation {
     fn get_animation_frame(
         &self,
         time_delta: f32,
-        animation_instance: &mut crate::world::instance_manager::AnimationInstance,
+        animation_instance: &mut AnimationInstance,
         buffer_slot_map: &Vec<usize>,
         skin_offset_map: &Vec<usize>,
     ) -> bool {

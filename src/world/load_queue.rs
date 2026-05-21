@@ -4,7 +4,7 @@ use crate::{
     asset_manager::{AssetHandle, AssetLoadResult, asset_manager_new::AssetManager},
     world::{
         WorldUpdateError,
-        entity_manager::{EntityHandle, EntityManager},
+        entity_manager::{EntityHandle, entity_manager::EntityManager},
         scene::{Scene, SceneId, SceneLoadLevel},
     },
 };
@@ -213,8 +213,10 @@ mod load_queue_tests {
         app::renderer::GPUAllocationHandle,
         asset_manager::{asset_manager_new::AssetManager, gltf_asset::GltfAsset},
         world::{
-            components::{MeshAcessor, MeshCollectionDescriptor},
-            entity_manager::EntityManager,
+            entity_manager::{
+                components::{MeshAcessor, MeshCollectionDescriptor},
+                entity_manager::EntityManager,
+            },
             load_queue::EntityLoadQueue,
             scene::{Scene, SceneLoadLevel},
         },

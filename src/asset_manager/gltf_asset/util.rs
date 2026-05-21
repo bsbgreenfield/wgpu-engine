@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     asset_manager::gltf_asset::{GltfNode, NodeTransforms, NodeType, upload::MeshInstance},
-    util::types::{LocalTransform, Mat4F32},
+    util::types::Mat4F32,
 };
 
 pub(super) fn get_root_node(nodes: &[Arc<GltfNode>], node_id: usize) -> Option<&GltfNode> {

@@ -5,7 +5,7 @@ use crate::{
     asset_manager::{
         Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, UnloadedAssetData,
     },
-    world::{components::ResourceBacking, scene::SceneLoadLevel},
+    world::{entity_manager::components::ResourceBacking, scene::SceneLoadLevel},
 };
 
 enum RegisteredAsset<A: Asset + ?Sized> {

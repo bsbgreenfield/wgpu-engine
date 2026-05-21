@@ -1,14 +1,9 @@
 #[cfg(test)]
 mod rigid_tests {
-    use std::{sync::Arc, vec};
 
     use crate::{
-        animation::animation::{
-            Animation, AnimationChannels, AnimationSampler, AnimationTransformType,
-            AnimationTransforms, InterpolationType,
-        },
-        asset_manager::gltf_asset::{GltfAnimation, GltfNode, NodeTransforms, NodeType},
-        world::instance_manager::AnimationInstance,
+        animation::animation::{AnimationSampler, AnimationTransforms, InterpolationType},
+        asset_manager::gltf_asset::NodeTransforms,
     };
 
     // buffer is column-major [[f32;4];4]: translation is column 3, so [3][0]=x, [3][1]=y, [3][2]=z

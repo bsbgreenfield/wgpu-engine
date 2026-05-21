@@ -3,11 +3,11 @@ use std::{any::TypeId, sync::Arc};
 use cgmath::SquareMatrix;
 
 use crate::{
-    animation::animation::{Animation, EntityAnimationData, EntityAnimations},
+    animation::animation::{Animation, EntityAnimationData},
     asset_manager::{
         AssetLoadError, ProvidesAnimationData, ProvidesMeshData,
         gltf_asset::{
-            GltfAsset, GltfNode,
+            GltfAsset,
             util::{
                 collect_mesh_instances, collect_mesh_instances_with_jts, get_root_node,
                 skin_offset_of,
@@ -15,7 +15,7 @@ use crate::{
         },
     },
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
-    world::{
+    world::entity_manager::{
         components::{AnimationAccessor, MeshAcessor},
         entity_manager::MeshRenderables,
     },

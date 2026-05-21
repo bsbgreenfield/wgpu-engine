@@ -7,12 +7,14 @@ use crate::world::{WorldInitError, world::World};
 use crate::{
     asset_manager::{AssetLoadResult, gltf_asset::GltfAsset},
     world::{
-        components::{
-            AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
-            MeshCollectionDescriptor,
+        entity_manager::{
+            EntityHandle,
+            components::{
+                AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
+                MeshCollectionDescriptor,
+            },
         },
-        entity_manager::EntityHandle,
-        instance_manager::{APosition, Archetype},
+        instance_manager::{Archetype, archetype_table::APosition},
     },
 };
 
@@ -202,8 +204,6 @@ impl Scene {
     ) -> Result<Self, crate::world::WorldInitError> {
         use cgmath::SquareMatrix;
 
-        use crate::world::{components::MeshCollectionDescriptor, instance_manager::APosition};
-
         let box_asset = world.register_asset::<GltfAsset>("box")?;
         let fox_asset = world.register_asset::<GltfAsset>("fox")?;
 
@@ -246,11 +246,6 @@ impl Scene {
         world: &mut crate::world::world::World,
     ) -> Result<Self, crate::world::WorldInitError> {
         use cgmath::SquareMatrix;
-
-        use crate::world::{
-            components::{AnimationAccessor, MeshCollectionDescriptor},
-            instance_manager::APosition,
-        };
 
         let box_anim_asset = world.register_asset::<GltfAsset>("box_animated")?;
         let box_anim_entity = world.entity_manager.new_entity()?;
@@ -362,8 +357,6 @@ impl Scene {
     pub fn box_scene(world: &mut World) -> Result<Self, WorldInitError> {
         use cgmath::SquareMatrix;
 
-        use crate::world::{components::MeshCollectionDescriptor, instance_manager::APosition};
-
         let box_asset = world.register_asset::<GltfAsset>("box")?; // asset
 
         let box_entity = world.entity_manager.new_entity()?;
@@ -418,8 +411,6 @@ impl Scene {
     }
     #[cfg(test)]
     pub fn fox_scene(world: &mut World) -> Result<Self, WorldInitError> {
-        use crate::world::{components::MeshCollectionDescriptor, instance_manager::APosition};
-
         let fox_asset = world.register_asset::<GltfAsset>("fox")?; // asset
 
         let fox_entity = world.entity_manager.new_entity()?;

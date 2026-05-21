@@ -2,16 +2,11 @@ use std::fmt::Display;
 
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError},
-    world::{
-        components::{AnimationAccessor, MeshAcessor},
-        entity_manager::{EntityHandle, EntityManagerError},
-    },
+    world::entity_manager::{EntityHandle, EntityManagerError},
 };
 
 pub mod camera;
-pub mod components;
 pub mod entity_manager;
-mod index_arena;
 pub mod instance_manager;
 pub(super) mod load_queue;
 pub mod scene;

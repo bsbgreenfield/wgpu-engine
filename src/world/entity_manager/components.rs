@@ -1,9 +1,9 @@
-use std::{any::TypeId, fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
-    animation::animation::{EntityAnimationData, EntityAnimations},
+    animation::animation::EntityAnimationData,
     asset_manager::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
-    world::entity_manager::MeshRenderables,
+    world::entity_manager::entity_manager::MeshRenderables,
 };
 
 #[derive(Debug, Clone)]

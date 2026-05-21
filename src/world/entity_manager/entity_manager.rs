@@ -1,6 +1,4 @@
-use std::{
-    collections::HashSet, error::Error, fmt::Display, mem::MaybeUninit, ops::Range, sync::Arc,
-};
+use std::{collections::HashSet, mem::MaybeUninit, ops::Range, sync::Arc};
 
 use crate::{
     animation::animation::{Animation, EntityAnimationData},
@@ -10,35 +8,23 @@ use crate::{
     },
     util::types::LocalTransform,
     world::{
-        components::{
-            AnimationComponent, AnimationMode, Component, MeshCollectionComponent,
-            MeshCollectionDescriptor,
+        entity_manager::{
+            EntityHandle, EntityManagerError,
+            components::{
+                AnimationComponent, AnimationMode, Component, MeshCollectionComponent,
+                MeshCollectionDescriptor,
+            },
         },
         instance_manager::InstanceHandle,
-        world::{InstanceUploadData, JointTransforms, LocalTransforms},
+        world::{InstanceUploadData, InverseBindMatrices, JointTransforms, LocalTransforms},
     },
 };
-
-#[derive(Debug)]
-pub enum EntityManagerError {
-    MaxEntitiesExceeded,
-    InvalidInitialization,
-    UploadJobFail,
-    RenderableFetchError(String),
-}
-
-impl Display for EntityManagerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return f.write_str(&self.to_string());
-    }
-}
-impl Error for EntityManagerError {}
 
 pub struct EntityManager {
     available_ids: Vec<std::ops::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent<dyn ProvidesMeshData>, 100>,
     animations: SparseSet<AnimationComponent<dyn ProvidesAnimationData>, 100>,
-    pub(super) asset_manager: AssetManager,
+    pub asset_manager: AssetManager,
 }
 
 #[derive(Debug)]
@@ -77,12 +63,11 @@ impl EntityManager {
         &'frame self,
         instance_handle: &InstanceHandle,
     ) -> InstanceUploadData {
-        todo!("take gpu bindings, assign shared / copy from that instead of instance handle");
         let mut res = InstanceUploadData {
             instance_handle: instance_handle.clone(),
             local_transforms: crate::world::world::LocalTransforms::NeedsShared,
-            joint_transforms: super::world::JointTransforms::None,
-            ibms: super::world::InverseBindMatrices::NeedsShared, // will this ever not be shared?
+            joint_transforms: JointTransforms::None,
+            ibms: InverseBindMatrices::NeedsShared,
         };
         if let Some(anim) = self
             .animations
@@ -199,15 +184,13 @@ impl EntityManager {
         self.animations.insert(entity.0 as usize, animation.erase());
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct EntityHandle(pub u16);
 
 const INVALID: usize = usize::MAX;
-struct SparseSet<T, const N: usize> {
+pub(super) struct SparseSet<T, const N: usize> {
     dense: [MaybeUninit<T>; N],
-    dense_ids: [usize; N],
-    sparse: [usize; N],
-    len: usize,
+    pub(super) dense_ids: [usize; N],
+    pub(super) sparse: [usize; N],
+    pub(super) len: usize,
 }
 
 impl<T, const N: usize> SparseSet<T, N> {
@@ -238,7 +221,7 @@ impl<T, const N: usize> SparseSet<T, N> {
         self.len += 1;
     }
 
-    fn get(&self, id: usize) -> Option<&T> {
+    pub(super) fn get(&self, id: usize) -> Option<&T> {
         if self.contains(id) {
             unsafe { return Some(self.dense[self.sparse[id]].assume_init_ref()) }
         }
@@ -246,7 +229,7 @@ impl<T, const N: usize> SparseSet<T, N> {
     }
 
     #[allow(unused)]
-    fn get_mut(&mut self, id: usize) -> Option<&mut T> {
+    pub(super) fn get_mut(&mut self, id: usize) -> Option<&mut T> {
         if self.contains(id) {
             unsafe {
                 return Some(self.dense[self.sparse[id]].assume_init_mut());
@@ -259,162 +242,4 @@ impl<T, const N: usize> SparseSet<T, N> {
     pub fn contains(&self, id: usize) -> bool {
         id < N && self.sparse[id] < self.len && self.dense_ids[self.sparse[id]] == id
     }
-}
-#[cfg(test)]
-mod sparse_set_tests {
-    use super::*;
-
-    type TestSet = SparseSet<i32, 8>;
-
-    #[test]
-    fn insert_and_get() {
-        let mut set = TestSet::new();
-
-        set.insert(3, 42);
-
-        assert!(set.contains(3));
-        assert_eq!(set.get(3), Some(&42));
-    }
-
-    #[test]
-    fn insert_multiple() {
-        let mut set = TestSet::new();
-
-        set.insert(1, 10);
-        set.insert(4, 20);
-        set.insert(6, 30);
-
-        assert_eq!(set.get(1), Some(&10));
-        assert_eq!(set.get(4), Some(&20));
-        assert_eq!(set.get(6), Some(&30));
-    }
-
-    #[test]
-    fn contains_false_when_not_present() {
-        let mut set = TestSet::new();
-
-        set.insert(2, 99);
-
-        assert!(!set.contains(1));
-        assert!(!set.contains(7));
-    }
-
-    #[test]
-    fn get_returns_none_when_not_present() {
-        let set = TestSet::new();
-
-        assert_eq!(set.get(0), None);
-    }
-
-    #[test]
-    #[should_panic(expected = "ID already present")]
-    fn insert_duplicate_panics() {
-        let mut set = TestSet::new();
-
-        set.insert(2, 10);
-        set.insert(2, 20); // should panic
-    }
-
-    #[test]
-    #[should_panic(expected = "ID out of bounds")]
-    fn insert_out_of_bounds_panics() {
-        let mut set = TestSet::new();
-
-        set.insert(100, 1);
-    }
-
-    #[test]
-    #[should_panic(expected = "SparseSet is full")]
-    fn insert_when_full_panics() {
-        let mut set = SparseSet::<i32, 2>::new();
-
-        set.insert(0, 1);
-        set.insert(1, 2);
-
-        // third insert should panic
-        set.insert(2, 3);
-    }
-
-    #[test]
-    fn dense_is_compact() {
-        let mut set = TestSet::new();
-
-        set.insert(5, 50);
-        set.insert(2, 20);
-        set.insert(7, 70);
-
-        // Ensure elements are packed in dense[0..len]
-        for i in 0..set.len {
-            let id = set.dense_ids[i];
-            assert!(set.contains(id));
-            assert_eq!(set.sparse[id], i);
-        }
-    }
-
-    #[test]
-    fn get_mut_allows_modification() {
-        let mut set = TestSet::new();
-
-        set.insert(3, 10);
-
-        if let Some(v) = set.get_mut(3) {
-            *v = 99;
-        }
-
-        assert_eq!(set.get(3), Some(&99));
-    }
-
-    #[test]
-    fn sparse_and_dense_consistency() {
-        let mut set = TestSet::new();
-
-        for i in 0..5 {
-            set.insert(i, i as i32 * 10);
-        }
-
-        for id in 0..5 {
-            assert!(set.contains(id));
-
-            let dense_index = set.sparse[id];
-            assert_eq!(set.dense_ids[dense_index], id);
-            assert_eq!(set.get(id), Some(&(id as i32 * 10)));
-        }
-    }
-}
-#[cfg(test)]
-mod entity_manager_tests {
-    use crate::world::entity_manager::EntityManager;
-
-    #[test]
-    fn setup_and_create() {
-        let mut manager = EntityManager::new();
-        let entity = manager.new_entity().unwrap();
-        assert!(entity.0 == 0);
-        let entity2 = manager.new_entity().unwrap();
-        assert!(entity2.0 == 1);
-    }
-
-    //  #[test]
-    //  fn add_components() {
-    //      let mut asset_manager = AssetManagerNew::new();
-    //      let box_asset = asset_manager
-    //          .register_asset::<LoadedGltfAsset>("box")
-    //          .unwrap();
-    //      let mut manager = EntityManager::new();
-    //      let entity = manager.new_entity().unwrap();
-    //      let mesh = MeshCollectionComponent::new(MeshCollectionDescriptor {
-    //          // MeshCollection
-    //          resource_backing: box_asset,
-    //          allocation_handle: None,
-    //          mesh_accessor: MeshAcessor::All,
-    //          rigid_animation_mode: RigidAnimationMode::Shared,
-    //      });
-    //      manager.add_mesh_collection_for_entity(&entity, mesh);
-
-    //      let _ = manager.mesh_collections.get(entity.0 as usize).unwrap();
-
-    //      unsafe {
-    //          manager.mesh_collections.dense[0].assume_init_ref();
-    //      }
-    //  }
 }

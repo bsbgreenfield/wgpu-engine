@@ -2,249 +2,35 @@ use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::Arc;
 
-use time::{Duration, ext::InstantExt};
-
-#[cfg(test)]
-use crate::animation::animation::Animation;
 use crate::{
-    animation::animation::{AnimationSample, EntityAnimations},
+    animation::animation::EntityAnimations,
     app::{
         app::AppCommand,
         renderer::{DrawItem, DrawPacket},
     },
-    util::types::{GlobalTransform, Mat4F32},
     world::{
-        RenderKey, WorldUpdateError,
-        entity_manager::{EntityHandle, EntityManager},
-        index_arena::InstanceArena,
+        WorldUpdateError,
+        entity_manager::{EntityHandle, entity_manager::EntityManager},
+        instance_manager::{
+            Archetype, ArchetypeId, InstanceGPUBindings, InstanceHandle, RenderFrame,
+            animation_controller::AnimationController,
+            archetype_table::{APositionTable, ArchetypeTable},
+        },
         world::{
             DrawSet, InstanceUploadData, InverseBindMatrices, JointTransforms, LocalTransforms,
             RenderGroup, RenderView,
         },
     },
 };
-
-pub trait ArchetypeIdent {
-    const ARCHETYPE_ID: ArchetypeId;
-}
-
-pub trait Archetype {
-    fn insert_self(
-        self: Box<Self>,
-        manager: &mut InstanceManager,
-        entity_handle: &EntityHandle,
-    ) -> InstanceHandle;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ArchetypeId {
-    Position = 0,
-}
-impl TryFrom<u16> for ArchetypeId {
-    type Error = ();
-    fn try_from(v: u16) -> Result<Self, Self::Error> {
-        match v {
-            0 => Ok(Self::Position),
-            _ => Err(()),
-        }
-    }
-}
-
-trait ArchetypeTable {
-    type A: Archetype;
-
-    fn new() -> Self;
-
-    fn insert(&mut self, data: Self::A, entity_handle: EntityHandle) -> InstanceHandle;
-
-    fn remove(&mut self, handle: InstanceHandle);
-
-    fn collect<'a>(&'a self, collector: &mut RenderFrame<'a>);
-}
-
-pub struct APosition {
-    pub position: GlobalTransform,
-}
-impl ArchetypeIdent for APosition {
-    const ARCHETYPE_ID: ArchetypeId = ArchetypeId::Position;
-}
-impl Archetype for APosition {
-    fn insert_self(
-        self: Box<Self>,
-        manager: &mut InstanceManager,
-        entity_handle: &EntityHandle,
-    ) -> InstanceHandle {
-        manager.pos.insert(*self, *entity_handle)
-    }
-}
-
-pub struct APositionTable {
-    pub(super) positions: Vec<GlobalTransform>,
-    pub(super) arena: InstanceArena<APosition>,
-}
 #[cfg(test)]
-impl APositionTable {
-    pub fn get_positions(&self) -> Vec<GlobalTransform> {
-        self.positions.clone()
-    }
-}
-
-impl ArchetypeTable for APositionTable {
-    type A = APosition;
-
-    fn collect<'a>(&'a self, render_frame: &mut RenderFrame<'a>) {
-        if !self.positions.is_empty() {
-            render_frame
-                .global_transforms
-                .push(bytemuck::cast_slice(&self.positions[..]));
-        }
-    }
-
-    fn new() -> Self {
-        Self {
-            positions: Vec::new(),
-            arena: InstanceArena::new(),
-        }
-    }
-
-    fn insert(&mut self, data: APosition, entity_handle: EntityHandle) -> InstanceHandle {
-        self.positions.push(data.position);
-        self.arena.insert(entity_handle)
-    }
-
-    fn remove(&mut self, handle: InstanceHandle) {
-        let last = self.positions.len() - 1;
-        if let Some(idx_of_goner) = self.arena.remove(handle) {
-            self.positions.swap(idx_of_goner, last);
-        } else {
-            self.positions.pop();
-        }
-    }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct InstanceHandle {
-    pub archetype: ArchetypeId,
-    pub entity_handle: EntityHandle,
-    pub instance_id: u16,
-    pub generation: u16,
-}
-
-impl RenderKey for InstanceHandle {
-    fn as_key(&self) -> u64 {
-        let i = self.instance_id as u64;
-        let e = (self.entity_handle.0 as u64) << 16;
-        let a = (self.archetype as u64) << 32;
-        let g = (self.generation as u64) << 48;
-        i | e | a | g
-    }
-
-    fn from_key(key: u64) -> Self {
-        let instance = (key & 0xFFFF) as u16;
-        let entity = ((key >> 16) & 0xFFFF) as u16;
-        let archetype = ((key >> 32) & 0xFFFF) as u16;
-        let generation = ((key >> 48) & 0xFFFF) as u16;
-
-        Self {
-            archetype: ArchetypeId::try_from(archetype).expect("invalid archetype in key"),
-            entity_handle: EntityHandle(entity),
-            generation,
-            instance_id: instance,
-        }
-    }
-}
-
-#[cfg(test)]
-impl InstanceHandle {
-    pub fn mock(
-        archetype: ArchetypeId,
-        entity_handle: EntityHandle,
-        instance_id: u16,
-        generation: u16,
-    ) -> Self {
-        Self {
-            archetype,
-            entity_handle,
-            instance_id,
-            generation,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct InstanceGPUBindings {
-    pub lt_offset: u32,
-    pub joint_offset: Option<u32>,
-}
-
-pub struct AnimationInstance {
-    pub samples: Vec<AnimationSample>,
-    animation_idx: usize,
-    pub start_time: std::time::Instant,
-    pub mesh_buffer: Vec<Mat4F32>,
-    pub joint_buffer: Vec<Mat4F32>,
-    instance_handle: InstanceHandle,
-    complete: bool,
-}
-
-#[cfg(test)]
-impl AnimationInstance {
-    pub fn new_for_test(samples: Vec<AnimationSample>, count: usize) -> Self {
-        use std::time::Instant;
-
-        Self {
-            complete: false,
-            samples,
-            animation_idx: 0,
-            start_time: Instant::now(),
-            joint_buffer: vec![],
-            mesh_buffer: vec![[[0f32; 4]; 4]; count],
-            instance_handle: InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct AnimationController {
-    registered_animations: HashMap<EntityHandle, EntityAnimations>,
-    active_animations: Vec<AnimationInstance>,
-}
-
-impl AnimationController {
-    /// time offset is unsafe: only use if you are sure the offset is a valid value for the animation, or if
-    /// the animation is repeating
-    fn activate_animations(
-        &mut self,
-        instance_handle: &InstanceHandle,
-        anim_idx: usize,
-        time_offset: Option<f32>,
-    ) -> Option<()> {
-        let entity_animation = self
-            .registered_animations
-            .get(&instance_handle.entity_handle)?;
-
-        let mesh_buffer: Vec<Mat4F32> = entity_animation
-            .local_transforms
-            .iter()
-            .map(|lt| **lt)
-            .collect();
-        self.active_animations.push(AnimationInstance {
-            complete: false,
-            samples: entity_animation.animation[anim_idx].init_samples(),
-            mesh_buffer,
-            joint_buffer: entity_animation.joint_transforms.clone(),
-            animation_idx: anim_idx,
-            start_time: std::time::Instant::now()
-                .add_signed(Duration::milliseconds(time_offset.unwrap_or(0.0) as i64)),
-            instance_handle: instance_handle.clone(),
-        });
-        Some(())
-    }
-}
+use crate::{
+    animation::animation::{Animation, AnimationInstance},
+    util::types::GlobalTransform,
+};
 pub struct InstanceManager {
     pub(super) _next_id: u16,
     gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
-    pub pos: APositionTable,
+    pub(super) pos: APositionTable,
     render_groups: Vec<RenderGroup>,
     pub(super) entity_group_index: HashMap<EntityHandle, usize>,
     animation_controller: AnimationController,
@@ -306,8 +92,8 @@ impl InstanceManager {
     }
 
     #[cfg(test)]
-    pub fn get_pos_table(&self) -> &APositionTable {
-        &self.pos
+    pub fn get_pos_table_positions(&self) -> Vec<GlobalTransform> {
+        self.pos.get_positions()
     }
 
     #[cfg(test)]
@@ -318,7 +104,7 @@ impl InstanceManager {
     pub fn update_gpu_bindings(&mut self, data: (InstanceHandle, InstanceGPUBindings)) {
         self.gpu_bindings.insert(data.0, data.1);
     }
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             _next_id: 0,
             pos: APositionTable::new(),
@@ -344,7 +130,7 @@ impl InstanceManager {
         }
     }
 
-    pub(super) fn update(&mut self, commands: &mut Vec<AppCommand>) {
+    pub fn update(&mut self, commands: &mut Vec<AppCommand>) {
         if let Some(command) = commands.pop() {
             let idx;
             let mut handle = None;
@@ -362,61 +148,15 @@ impl InstanceManager {
                 self.activate_animation(handle.as_ref().unwrap(), idx, None);
             }
         }
-        let mut anim_count = self.animation_controller.active_animations.len();
-        let mut cursor = 0;
-        'outer: while cursor < anim_count {
-            'inner: loop {
-                if self.animation_controller.active_animations[cursor].complete {
-                    self.animation_controller
-                        .active_animations
-                        .swap_remove(cursor);
-                    anim_count -= 1;
-                    if cursor >= anim_count {
-                        break 'outer;
-                    }
-                } else {
-                    break 'inner;
-                }
-            }
-            let active_animation = &mut self.animation_controller.active_animations[cursor];
-            let entity_animation = self
-                .animation_controller
-                .registered_animations
-                .get(&active_animation.instance_handle.entity_handle)
-                .unwrap();
-            let animation = &entity_animation.animation[active_animation.animation_idx];
-
-            let now = std::time::Instant::now();
-            let time_delta: f32 = (now - active_animation.start_time).as_secs_f32();
-            active_animation.complete = animation.get_animation_frame(
-                time_delta,
-                active_animation,
-                &entity_animation.mesh_slot_map,
-                &entity_animation.skin_offset_map,
-            );
-            cursor += 1;
-        }
+        self.animation_controller.update();
     }
 
     #[cfg(test)]
     pub fn run_animations(&mut self, time_delta: f32) {
-        for active_animation in self.animation_controller.active_animations.iter_mut() {
-            let entity_animation = self
-                .animation_controller
-                .registered_animations
-                .get(&active_animation.instance_handle.entity_handle)
-                .unwrap();
-            let animation = &entity_animation.animation[active_animation.animation_idx];
-
-            animation.get_animation_frame(
-                time_delta,
-                active_animation,
-                &entity_animation.mesh_slot_map,
-                &entity_animation.skin_offset_map,
-            );
-        }
+        self.animation_controller.run_animations(time_delta);
     }
 
+    #[cfg(test)]
     pub fn get_buffer_slot_map(&self, instance_idx: usize) -> &Vec<usize> {
         let a = &self.animation_controller.active_animations[instance_idx];
         let entity_anim = self
@@ -428,7 +168,7 @@ impl InstanceManager {
         &entity_anim.mesh_slot_map
     }
 
-    pub(super) fn spawn(
+    pub fn spawn(
         &mut self,
         entity_handle: &EntityHandle,
         entity_manager: &EntityManager,
@@ -647,43 +387,8 @@ impl InstanceManager {
         let mut render_frame = RenderFrame::default();
         self.pos.collect(&mut render_frame);
 
-        for animation_instance in self.animation_controller.active_animations.iter() {
-            let lt_offset = self
-                .gpu_bindings
-                .get(&animation_instance.instance_handle)
-                .unwrap()
-                .lt_offset;
-
-            render_frame.rigid_animation_data.push(AnimationUpdate {
-                buffer_offset: lt_offset,
-                transforms: bytemuck::cast_slice(&animation_instance.mesh_buffer),
-            });
-            if let Some(joint_offset) = self
-                .gpu_bindings
-                .get(&animation_instance.instance_handle)
-                .unwrap()
-                .joint_offset
-            {
-                render_frame.joint_animation_data.push(AnimationUpdate {
-                    buffer_offset: joint_offset,
-                    transforms: bytemuck::cast_slice(&animation_instance.joint_buffer),
-                });
-            }
-        }
+        self.animation_controller
+            .prepare_animation_frame(&mut render_frame, &self.gpu_bindings);
         render_frame
     }
-}
-
-#[derive(Debug)]
-pub struct AnimationUpdate<'frame> {
-    pub buffer_offset: u32,
-    pub transforms: &'frame [u8],
-}
-
-#[derive(Debug, Default)]
-pub struct RenderFrame<'frame> {
-    pub global_transforms: Vec<&'frame [u8]>,
-    pub local_transforms: Vec<&'frame [u8]>,
-    pub rigid_animation_data: Vec<AnimationUpdate<'frame>>,
-    pub joint_animation_data: Vec<AnimationUpdate<'frame>>,
 }

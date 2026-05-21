@@ -6,8 +6,10 @@ use crate::{
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     world::{
         RenderKey,
-        components::{AnimationAccessor, MeshAcessor},
-        entity_manager::MeshRenderables,
+        entity_manager::{
+            components::{AnimationAccessor, MeshAcessor},
+            entity_manager::MeshRenderables,
+        },
         scene::SceneLoadLevel,
     },
 };

@@ -10,7 +10,7 @@ struct Slot {
     dense_index: u16,
 }
 
-pub struct InstanceArena<A: Archetype> {
+pub(super) struct InstanceArena<A: Archetype> {
     slots: Vec<Slot>,
     free_list: Vec<u16>,
     pub(super) handles: Vec<InstanceHandle>,

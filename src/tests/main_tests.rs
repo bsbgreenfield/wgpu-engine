@@ -12,8 +12,8 @@ mod integration_tests {
             },
         },
         world::{
-            entity_manager::{EntityHandle, EntityManager},
-            instance_manager::{APosition, ArchetypeId, InstanceHandle},
+            entity_manager::{EntityHandle, entity_manager::EntityManager},
+            instance_manager::{ArchetypeId, InstanceHandle, archetype_table::APosition},
             scene::Scene,
             world::{World, WorldUpdateDelta},
         },
@@ -202,7 +202,7 @@ mod integration_tests {
             );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
-            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
+            assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
 
             gen_draw_calls(&mut app);
             assert!(!app.draw_packet.is_empty());
@@ -238,7 +238,7 @@ mod integration_tests {
             );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
-            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
+            assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
             gen_draw_calls(&mut app);
 
             assert!(!app.draw_packet.is_empty());
@@ -357,7 +357,7 @@ mod integration_tests {
             );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 2);
-            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 2);
+            assert_eq!(instance_manager.get_pos_table_positions().len(), 2);
 
             gen_draw_calls(&mut app);
             assert!(!app.draw_packet.is_empty());
@@ -388,7 +388,7 @@ mod integration_tests {
             run_frame_unchecked(&mut app); // entity spawn at identity
 
             let im = &app.world.as_ref().unwrap().instance_manager;
-            let positions = im.get_pos_table().get_positions();
+            let positions = im.get_pos_table_positions();
             assert_eq!(positions.len(), 1);
 
             // box_scene spawns at the identity matrix
@@ -425,8 +425,7 @@ mod integration_tests {
                 .as_ref()
                 .unwrap()
                 .instance_manager
-                .get_pos_table()
-                .get_positions();
+                .get_pos_table_positions();
             assert_eq!(positions.len(), 2);
             let mock_instance_handle_2 =
                 InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 1, 0);
@@ -501,7 +500,7 @@ mod integration_tests {
                 let render_bytes_as_global_transforms: Vec<crate::util::types::GlobalTransform> =
                     bytemuck::cast_slice(render_frame.global_transforms[0]).to_vec();
                 // THE GLOBAL TRANSFORMS IN THE ARCH TABLE
-                let positions = im.get_pos_table().get_positions();
+                let positions = im.get_pos_table_positions();
                 (render_bytes_as_global_transforms, positions)
             };
 
@@ -561,7 +560,7 @@ mod integration_tests {
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
 
             assert_eq!(instance_manager.get_all_instances().len(), 1);
-            assert_eq!(instance_manager.get_pos_table().get_positions().len(), 1);
+            assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
 
             let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
 
@@ -620,10 +619,7 @@ mod integration_tests {
             assert_eq!(world.scene.spawn_count, 2);
 
             assert_eq!(world.instance_manager.get_all_instances().len(), 2);
-            assert_eq!(
-                world.instance_manager.get_pos_table().get_positions().len(),
-                2
-            );
+            assert_eq!(world.instance_manager.get_pos_table_positions().len(), 2);
         })
     }
 
