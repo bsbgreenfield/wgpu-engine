@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::num::NonZero;
 use std::{fmt::Display, ops::Range};
 
+use bitflags::parser::to_writer;
 use bytemuck::Pod;
 use std::error::Error;
 
@@ -90,11 +91,6 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
     fn resolve(&self, handle: &InstanceHandle) -> u32;
 
     fn new(device: &wgpu::Device) -> Self;
-    fn register_shared_binding(
-        &mut self,
-        donor: &InstanceHandle,
-        new_handle: &InstanceHandle,
-    ) -> Result<u32, Self::AllocationError>;
 
     #[allow(unused)]
     fn resolve_buffer(&self, instance_handle: &InstanceHandle) -> &wgpu::Buffer;
@@ -123,7 +119,10 @@ impl Display for FreeListAllocError {
 pub enum VertexArenaError {
     DataTooLarge(u32, String),
     FreeListError(FreeListAllocError),
-    HandleNotFound(InstanceHandle),
+    HandleNotFound {
+        shared: InstanceHandle,
+        donor: InstanceHandle,
+    },
     MaxAllocationReached,
 }
 
@@ -147,11 +146,13 @@ impl Display for VertexArenaError {
             Self::MaxAllocationReached => f.write_str(
                 "All Chunks are allocated, and there is no room in any of them for this upload",
             ),
-            Self::HandleNotFound(handle) => write!(
-                f,
-                "you probably tried to resolve shared instance data from an instance arena, but the handle {:?} was not found to be within the arena's alloc table",
-                handle
-            ),
+            Self::HandleNotFound { shared, donor } => {
+                write!(
+                    f,
+                    "tried to use handle: {:?} as a donor for {:?}, but the former was not found",
+                    donor, shared
+                )
+            }
         }
     }
 }
@@ -226,4 +227,11 @@ impl StorageData for InverseBindMatrix {
             _t: PhantomData,
         }
     }
+}
+pub(super) trait SharedInstanceData {
+    fn register_shared_binding(
+        &mut self,
+        donor_handle: &InstanceHandle,
+        new_handle: &InstanceHandle,
+    ) -> Result<u32, VertexArenaError>;
 }

@@ -440,22 +440,36 @@ impl InstanceManager {
             .contains_key(&instance_handle.entity_handle);
 
         if is_instanced {
+            println!("INSTANCED!!!!!!!!!!!!!!!!!!!!");
             let group_idx = self.entity_group_index.get(entity_handle).unwrap();
             let group = self.render_groups.get_mut(*group_idx).unwrap();
             group.instance_handles.push(instance_handle.clone());
             let mut instance_upload_data = entity_manager.get_entity_cloned(&instance_handle);
-            match &mut instance_upload_data.local_transforms {
+            match instance_upload_data.local_transforms {
                 LocalTransforms::NeedsCopy => {
                     instance_upload_data.local_transforms = LocalTransforms::CopiedFrom {
-                        donor: group.instance_handles[0].clone(),
+                        donor: group.instance_handles[0].clone(), // TODO: manage shared slots
                     }
                 }
                 LocalTransforms::NeedsShared => {
                     instance_upload_data.local_transforms = LocalTransforms::SharedWith {
-                        donor: group.instance_handles[0].clone(),
+                        donor: group.instance_handles[0].clone(), // TODO: manage shared slots
                     }
                 }
                 _ => panic!("unexpected local transform value"),
+            }
+            match instance_upload_data.joint_transforms {
+                JointTransforms::NeedsShared => {
+                    instance_upload_data.joint_transforms = JointTransforms::SharedWith {
+                        donor: group.instance_handles[0].clone(),
+                    }
+                }
+                JointTransforms::NeedsCopy => {
+                    instance_upload_data.joint_transforms = JointTransforms::CopiedFrom {
+                        donor: group.instance_handles[0].clone(),
+                    }
+                }
+                _ => panic!("unexpected JointTransforms value"),
             }
             return Ok(instance_upload_data);
         } else {

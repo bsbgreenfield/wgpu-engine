@@ -16,7 +16,7 @@ use crate::{
     },
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
     world::{
-        components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
+        components::{AnimationAccessor, MeshAcessor},
         entity_manager::MeshRenderables,
     },
 };
@@ -28,11 +28,7 @@ pub(super) struct MeshInstance {
 }
 
 impl ProvidesMeshData for GltfAsset {
-    fn render_mesh_data<'a>(
-        &self,
-        mesh_accesor: &'a MeshAcessor,
-        _mode: &'a RigidAnimationMode,
-    ) -> MeshRenderables {
+    fn render_mesh_data<'a>(&self, mesh_accesor: &'a MeshAcessor) -> MeshRenderables {
         let mesh_instances: Vec<MeshInstance> = match mesh_accesor {
             MeshAcessor::All => self
                 .node_tree

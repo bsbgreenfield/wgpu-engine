@@ -5,7 +5,10 @@ use wgpu::ShaderStages;
 use crate::{
     app::renderer::{
         InstanceUploadJob,
-        gpu_allocator::{GPUInstanceAllocator, VertexArenaError, instance_arena::InstanceArena},
+        gpu_allocator::{
+            GPUInstanceAllocator, SharedInstanceData, VertexArenaError,
+            instance_arena::InstanceArena,
+        },
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
     world::instance_manager::InstanceHandle,

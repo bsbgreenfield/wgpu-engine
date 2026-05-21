@@ -3,18 +3,19 @@ use std::{
 };
 
 use crate::{
-    animation::animation::{Animation, EntityAnimationData, EntityAnimations},
+    animation::animation::{Animation, EntityAnimationData},
     app::renderer::GPUAllocationHandle,
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
     },
-    util::types::{LocalTransform, Mat4F32},
+    util::types::LocalTransform,
     world::{
         components::{
-            AnimationComponent, Component, MeshCollectionComponent, MeshCollectionDescriptor,
+            AnimationComponent, AnimationMode, Component, MeshCollectionComponent,
+            MeshCollectionDescriptor,
         },
         instance_manager::InstanceHandle,
-        world::{InstanceUploadData, LocalTransforms},
+        world::{InstanceUploadData, JointTransforms, LocalTransforms},
     },
 };
 
@@ -76,30 +77,25 @@ impl EntityManager {
         &'frame self,
         instance_handle: &InstanceHandle,
     ) -> InstanceUploadData {
+        todo!("take gpu bindings, assign shared / copy from that instead of instance handle");
         let mut res = InstanceUploadData {
             instance_handle: instance_handle.clone(),
-            local_transforms: crate::world::world::LocalTransforms::Uninit,
+            local_transforms: crate::world::world::LocalTransforms::NeedsShared,
             joint_transforms: super::world::JointTransforms::None,
-            ibms: super::world::InverseBindMatrices::Uninit,
+            ibms: super::world::InverseBindMatrices::NeedsShared, // will this ever not be shared?
         };
-        if let Some(mesh_collection) = self
-            .mesh_collections
-            .get(instance_handle.entity_handle.0 as usize)
-        {
-            match mesh_collection.rigid_animation_mode {
-                crate::world::components::RigidAnimationMode::Shared => {
-                    res.local_transforms = LocalTransforms::NeedsShared
-                }
-                crate::world::components::RigidAnimationMode::Independent => {
-                    res.local_transforms = LocalTransforms::NeedsCopy
-                }
-            }
-        }
-        if let Some(animation_component) = self
+        if let Some(anim) = self
             .animations
             .get(instance_handle.entity_handle.0 as usize)
         {
-            // TODO: set joint copy or shared
+            match anim.rigid_animation_mode {
+                AnimationMode::Shared => res.local_transforms = LocalTransforms::NeedsShared,
+                AnimationMode::Independent => res.local_transforms = LocalTransforms::NeedsCopy,
+            }
+            match anim.skinned_animation_mode {
+                AnimationMode::Shared => res.joint_transforms = JointTransforms::NeedsShared,
+                AnimationMode::Independent => res.joint_transforms = JointTransforms::NeedsCopy,
+            }
         }
         res
     }
@@ -113,6 +109,7 @@ impl EntityManager {
             mesh_renderables: Vec::new(),
             animations: None,
         };
+
         if let Some(mesh_collection) = self
             .mesh_collections
             .get(instance_handle.entity_handle.0 as usize)
@@ -184,7 +181,6 @@ impl EntityManager {
     ) {
         let mcc = MeshCollectionComponent {
             mesh_accessor: descriptor.mesh_accessor,
-            rigid_animation_mode: descriptor.rigid_animation_mode,
             resource_backing: descriptor.resource_backing,
         };
         self.mesh_collections.insert(entity.0 as usize, mcc.erase());

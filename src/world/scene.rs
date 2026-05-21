@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::fmt::Debug;
 
 use cgmath::SquareMatrix;
 
@@ -8,8 +8,8 @@ use crate::{
     asset_manager::{AssetLoadResult, gltf_asset::GltfAsset},
     world::{
         components::{
-            AnimationAccessor, AnimationComponentDescriptor, MeshAcessor, MeshCollectionDescriptor,
-            RigidAnimationMode,
+            AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
+            MeshCollectionDescriptor,
         },
         entity_manager::EntityHandle,
         instance_manager::{APosition, Archetype},
@@ -39,6 +39,47 @@ pub enum SceneEvent {
     Spawn(Vec<(EntityHandle, Box<dyn Archetype>)>),
 }
 
+impl SceneEvent {
+    fn priority(&self) -> usize {
+        match self {
+            Self::LoadLevelChanged(_, _) => 1,
+            Self::Spawn(_) => 0,
+        }
+    }
+}
+
+impl PartialEq for SceneEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.priority() == other.priority()
+    }
+}
+
+impl Eq for SceneEvent {}
+
+impl PartialOrd for SceneEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SceneEvent {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.priority().cmp(&other.priority())
+    }
+}
+impl Debug for SceneEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LoadLevelChanged(arg0, arg1) => f
+                .debug_tuple("LoadLevelChanged")
+                .field(arg0)
+                .field(arg1)
+                .finish(),
+            Self::Spawn(arg0) => write!(f, "Spawn {} entities ", arg0.len()),
+        }
+    }
+}
+
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct SceneId(usize);
 pub struct Scene {
@@ -47,7 +88,7 @@ pub struct Scene {
     dirty: bool,
     pub spawn_count: usize,
     pub load_level: SceneLoadLevel,
-    event_queue: Vec<SceneEvent>,
+    pub event_queue: Vec<SceneEvent>,
 }
 
 impl Scene {
@@ -80,13 +121,13 @@ impl Scene {
     pub fn current_event(&self) -> Option<&SceneEvent> {
         self.event_queue.last()
     }
-
     pub fn spawn(&mut self, instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>) {
         self.dirty = true;
         self.event_queue.push(SceneEvent::Spawn(instance_data));
         if self.load_level < SceneLoadLevel::GPU {
             self.set_load_level(SceneLoadLevel::GPU);
         }
+        self.event_queue.sort();
         self.spawn_count += 1;
     }
 
@@ -116,11 +157,7 @@ impl Scene {
         let brain_entity = world.entity_manager.new_entity()?;
         world.entity_manager.add_mesh_collection_for_entity(
             &brain_entity,
-            MeshCollectionDescriptor::new(
-                brain_asset,
-                MeshAcessor::All,
-                RigidAnimationMode::Shared,
-            ),
+            MeshCollectionDescriptor::new(brain_asset, MeshAcessor::All),
         );
 
         let mut scene = Scene::new();
@@ -145,11 +182,7 @@ impl Scene {
         let brain_entity = world.entity_manager.new_entity()?;
         world.entity_manager.add_mesh_collection_for_entity(
             &brain_entity,
-            MeshCollectionDescriptor::new(
-                brain_asset,
-                MeshAcessor::All,
-                RigidAnimationMode::Shared,
-            ),
+            MeshCollectionDescriptor::new(brain_asset, MeshAcessor::All),
         );
 
         let mut scene = Scene::new();
@@ -179,11 +212,11 @@ impl Scene {
 
         world.entity_manager.add_mesh_collection_for_entity(
             &box_entity,
-            MeshCollectionDescriptor::new(box_asset, MeshAcessor::All, RigidAnimationMode::Shared),
+            MeshCollectionDescriptor::new(box_asset, MeshAcessor::All),
         ); // mesh
         world.entity_manager.add_mesh_collection_for_entity(
             &fox_entity,
-            MeshCollectionDescriptor::new(fox_asset, MeshAcessor::All, RigidAnimationMode::Shared),
+            MeshCollectionDescriptor::new(fox_asset, MeshAcessor::All),
         ); // mesh
 
         let mut scene = Scene::new();
@@ -223,15 +256,14 @@ impl Scene {
         let box_anim_entity = world.entity_manager.new_entity()?;
         world.entity_manager.add_mesh_collection_for_entity(
             &box_anim_entity,
-            MeshCollectionDescriptor::new(
-                box_anim_asset.clone(),
-                MeshAcessor::All,
-                RigidAnimationMode::Shared,
-            )
-            .with_animation(AnimationComponentDescriptor {
-                accessor: AnimationAccessor::All,
-                resource_backing: box_anim_asset,
-            }),
+            MeshCollectionDescriptor::new(box_anim_asset.clone(), MeshAcessor::All).with_animation(
+                AnimationComponentDescriptor {
+                    accessor: AnimationAccessor::All,
+                    resource_backing: box_anim_asset,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                },
+            ),
         );
 
         let mut scene = Scene::new();
@@ -244,6 +276,85 @@ impl Scene {
             }),
         )]);
 
+        Ok(scene)
+    }
+
+    pub fn box_animated_shared(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let box_anim_asset = world.register_asset::<GltfAsset>("box_animated")?;
+
+        let entity1 = world.entity_manager.new_entity()?;
+
+        world.entity_manager.add_mesh_collection_for_entity(
+            &entity1,
+            MeshCollectionDescriptor::new(box_anim_asset.clone(), MeshAcessor::All).with_animation(
+                AnimationComponentDescriptor {
+                    resource_backing: box_anim_asset.clone(),
+                    accessor: AnimationAccessor::All,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                },
+            ),
+        );
+
+        let mut scene = Scene::new();
+
+        scene.add_entity(entity1);
+
+        scene.spawn(vec![
+            (
+                entity1,
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::identity().into(),
+                }),
+            ),
+            (
+                entity1,
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(3., 0., 0.))
+                        .into(),
+                }),
+            ),
+        ]);
+
+        Ok(scene)
+    }
+    pub fn shared_foxes(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let fox_asset = world.register_asset::<GltfAsset>("fox")?;
+        let fox_entity = world.entity_manager.new_entity()?;
+        let mcc = MeshCollectionDescriptor::new(fox_asset.clone(), MeshAcessor::All)
+            .with_animation(AnimationComponentDescriptor {
+                resource_backing: fox_asset,
+                accessor: AnimationAccessor::All,
+                rigid_animation_mode: AnimationMode::Shared,
+                skinned_animation_mode: AnimationMode::Shared,
+            });
+
+        world
+            .entity_manager
+            .add_mesh_collection_for_entity(&fox_entity, mcc); // mesh
+
+        let mut scene = Scene::new();
+        scene.add_entity(fox_entity);
+        scene.spawn(vec![
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_scale(0.05).into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(3., 0., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+        ]);
         Ok(scene)
     }
 
@@ -260,7 +371,6 @@ impl Scene {
         world.entity_manager.add_mesh_collection_for_entity(
             &box_entity,
             MeshCollectionDescriptor {
-                rigid_animation_mode: RigidAnimationMode::Shared,
                 mesh_accessor: MeshAcessor::All,
                 resource_backing: box_asset.erase(),
                 animation: None,
@@ -284,15 +394,13 @@ impl Scene {
 
         let fox_entity = world.entity_manager.new_entity()?;
 
-        let mcc = MeshCollectionDescriptor::new(
-            fox_asset.clone(),
-            MeshAcessor::All,
-            RigidAnimationMode::Shared,
-        )
-        .with_animation(AnimationComponentDescriptor {
-            resource_backing: fox_asset,
-            accessor: AnimationAccessor::All,
-        });
+        let mcc = MeshCollectionDescriptor::new(fox_asset.clone(), MeshAcessor::All)
+            .with_animation(AnimationComponentDescriptor {
+                resource_backing: fox_asset,
+                accessor: AnimationAccessor::All,
+                rigid_animation_mode: AnimationMode::Shared,
+                skinned_animation_mode: AnimationMode::Independent,
+            });
 
         world
             .entity_manager
@@ -322,7 +430,6 @@ impl Scene {
                 resource_backing: fox_asset.erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         ); // mesh
 

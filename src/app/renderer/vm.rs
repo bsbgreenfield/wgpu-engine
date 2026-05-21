@@ -180,6 +180,7 @@ impl<'frame> Renderer {
                         stack.push(instance_handle_key);
                     }
                     Operations::ResolveSharedJTBinding => {
+                        println!("ASSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS");
                         let donor_handle = constants
                             [Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_key();

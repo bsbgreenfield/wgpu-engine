@@ -4,7 +4,9 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::{
     app::renderer::{
         InstanceUploadJob, StorageData,
-        gpu_allocator::{AllocMetaData, GPUChunk, GPUInstanceAllocator, VertexArenaError},
+        gpu_allocator::{
+            AllocMetaData, GPUChunk, GPUInstanceAllocator, SharedInstanceData, VertexArenaError,
+        },
     },
     util::types::{JointTransform, LocalTransform},
     world::instance_manager::InstanceHandle,
@@ -24,24 +26,20 @@ impl<T: bytemuck::Pod + Debug> InstanceArena<T> {
     }
 }
 
-pub(super) trait SharedInstanceData {
-    fn register_shared_binding(
-        &mut self,
-        donor_handle: &InstanceHandle,
-        new_handle: &InstanceHandle,
-    ) -> Result<u32, VertexArenaError>;
-}
-
 impl SharedInstanceData for InstanceArena<LocalTransform> {
     fn register_shared_binding(
         &mut self,
         donor_handle: &InstanceHandle,
         new_handle: &InstanceHandle,
     ) -> Result<u32, VertexArenaError> {
+        println!("REGSITERING LOCAL");
         let meta = self
             .alloc_table
             .get(donor_handle)
-            .ok_or(VertexArenaError::HandleNotFound(donor_handle.clone()))?;
+            .ok_or(VertexArenaError::HandleNotFound {
+                shared: new_handle.clone(),
+                donor: donor_handle.clone(),
+            })?;
         self.alloc_table.insert(
             new_handle.clone(),
             AllocMetaData {
@@ -59,10 +57,14 @@ impl SharedInstanceData for InstanceArena<JointTransform> {
         donor_handle: &InstanceHandle,
         new_handle: &InstanceHandle,
     ) -> Result<u32, VertexArenaError> {
+        println!("REGISTERING JOINTS");
         let meta = self
             .alloc_table
             .get(donor_handle)
-            .ok_or(VertexArenaError::HandleNotFound(donor_handle.clone()))?;
+            .ok_or(VertexArenaError::HandleNotFound {
+                shared: new_handle.clone(),
+                donor: donor_handle.clone(),
+            })?;
         self.alloc_table.insert(
             new_handle.clone(),
             AllocMetaData {
@@ -101,24 +103,6 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
             }
         }
         Err(VertexArenaError::MaxAllocationReached)
-    }
-    fn register_shared_binding(
-        &mut self,
-        donor: &InstanceHandle,
-        new_handle: &InstanceHandle,
-    ) -> Result<u32, Self::AllocationError> {
-        let meta = self
-            .alloc_table
-            .get(donor)
-            .ok_or(VertexArenaError::HandleNotFound(donor.clone()))?;
-        self.alloc_table.insert(
-            new_handle.clone(),
-            AllocMetaData {
-                chunk_id: meta.chunk_id,
-                node_id: meta.node_id,
-            },
-        );
-        Ok(self.resolve(new_handle))
     }
 
     fn resolve(&self, handle: &crate::world::instance_manager::InstanceHandle) -> u32 {

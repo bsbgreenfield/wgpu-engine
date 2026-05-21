@@ -213,7 +213,7 @@ mod load_queue_tests {
         app::renderer::GPUAllocationHandle,
         asset_manager::{asset_manager_new::AssetManager, gltf_asset::GltfAsset},
         world::{
-            components::{MeshAcessor, MeshCollectionDescriptor, RigidAnimationMode},
+            components::{MeshAcessor, MeshCollectionDescriptor},
             entity_manager::EntityManager,
             load_queue::EntityLoadQueue,
             scene::{Scene, SceneLoadLevel},
@@ -234,7 +234,6 @@ mod load_queue_tests {
                 resource_backing: asset.erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
         let mut scene = Scene::new_with_id(id);
@@ -323,7 +322,6 @@ mod load_queue_tests {
                 resource_backing: asset.erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
 
@@ -414,7 +412,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
 
@@ -425,7 +422,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
 
@@ -477,7 +473,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
         let entity_b = entity_manager.new_entity().unwrap();
@@ -487,7 +482,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
 
@@ -561,7 +555,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
         let entity_b = entity_manager.new_entity().unwrap();
@@ -571,7 +564,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
 
@@ -620,7 +612,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
         let entity_b = entity_manager.new_entity().unwrap();
@@ -630,7 +621,6 @@ mod load_queue_tests {
                 resource_backing: shared_asset.clone().erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
-                rigid_animation_mode: RigidAnimationMode::Shared,
             },
         );
 

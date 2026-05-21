@@ -21,7 +21,7 @@ mod upload;
 mod util;
 
 #[allow(unused)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum BinarySource {
     BinFile(PathBuf),
     GLB(PathBuf),

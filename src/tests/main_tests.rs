@@ -12,7 +12,6 @@ mod integration_tests {
             },
         },
         world::{
-            self,
             entity_manager::{EntityHandle, EntityManager},
             instance_manager::{APosition, ArchetypeId, InstanceHandle},
             scene::Scene,

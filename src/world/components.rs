@@ -13,7 +13,7 @@ pub enum MeshAcessor {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum RigidAnimationMode {
+pub enum AnimationMode {
     Shared,
     Independent,
 }
@@ -61,7 +61,6 @@ impl<A: Asset + ?Sized> ResourceBacking<A> {
 pub struct MeshCollectionComponent<A: ProvidesMeshData + ?Sized> {
     pub resource_backing: ResourceBacking<A>,
     pub mesh_accessor: MeshAcessor,
-    pub rigid_animation_mode: RigidAnimationMode,
 }
 
 #[derive(Debug)]
@@ -69,19 +68,16 @@ pub struct MeshCollectionDescriptor {
     pub resource_backing: ResourceBacking<dyn ProvidesMeshData>,
     pub mesh_accessor: MeshAcessor,
     pub animation: Option<AnimationComponent<dyn ProvidesAnimationData>>,
-    pub rigid_animation_mode: RigidAnimationMode,
 }
 
 impl MeshCollectionDescriptor {
     pub fn new<T: ProvidesMeshData>(
         resource: ResourceBacking<T>,
         mesh_accessor: MeshAcessor,
-        rigid: RigidAnimationMode,
     ) -> Self {
         Self {
             mesh_accessor,
             resource_backing: resource.erase(),
-            rigid_animation_mode: rigid,
             animation: None,
         }
     }
@@ -93,6 +89,8 @@ impl MeshCollectionDescriptor {
         self.animation = Some(AnimationComponent {
             resource_backing: desc.resource_backing.erase(),
             animation_accessor: desc.accessor,
+            rigid_animation_mode: desc.rigid_animation_mode,
+            skinned_animation_mode: desc.skinned_animation_mode,
             mesh_accessor: self.mesh_accessor.clone(),
         });
         self
@@ -114,13 +112,12 @@ impl<A: ProvidesMeshData + ?Sized> Component for MeshCollectionComponent<A> {
     type Erased = MeshCollectionComponent<dyn ProvidesMeshData>;
 
     fn get_output_data(&self, meshed_asset: &A) -> Self::Output {
-        meshed_asset.render_mesh_data(&self.mesh_accessor, &self.rigid_animation_mode)
+        meshed_asset.render_mesh_data(&self.mesh_accessor)
     }
     fn erase(self) -> Self::Erased {
         MeshCollectionComponent {
             mesh_accessor: self.mesh_accessor,
             resource_backing: self.resource_backing.erase(),
-            rigid_animation_mode: self.rigid_animation_mode,
         }
     }
 }
@@ -134,6 +131,9 @@ pub enum AnimationAccessor {
 pub struct AnimationComponent<T: ProvidesAnimationData + ?Sized> {
     pub resource_backing: ResourceBacking<T>,
     pub animation_accessor: AnimationAccessor,
+    pub rigid_animation_mode: AnimationMode,
+    pub skinned_animation_mode: AnimationMode,
+
     pub mesh_accessor: MeshAcessor,
 }
 
@@ -149,20 +149,8 @@ impl<T: ProvidesAnimationData + ?Sized> Debug for AnimationComponent<T> {
 pub struct AnimationComponentDescriptor<A: ProvidesAnimationData + ?Sized> {
     pub resource_backing: ResourceBacking<A>,
     pub accessor: AnimationAccessor,
-}
-
-impl<A: ProvidesAnimationData> AnimationComponent<A> {
-    pub fn from_mesh_component(
-        mcc: &MeshCollectionComponent<impl ProvidesMeshData>,
-        resource_backing: ResourceBacking<A>,
-        animation_accessor: AnimationAccessor,
-    ) -> Self {
-        Self {
-            resource_backing,
-            animation_accessor,
-            mesh_accessor: mcc.mesh_accessor.clone(),
-        }
-    }
+    pub rigid_animation_mode: AnimationMode,
+    pub skinned_animation_mode: AnimationMode,
 }
 
 impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
@@ -175,6 +163,8 @@ impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
             resource_backing: self.resource_backing.erase(),
             animation_accessor: self.animation_accessor,
             mesh_accessor: self.mesh_accessor,
+            rigid_animation_mode: self.rigid_animation_mode,
+            skinned_animation_mode: self.skinned_animation_mode,
         }
     }
 

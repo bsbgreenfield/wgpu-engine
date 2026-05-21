@@ -6,7 +6,7 @@ use crate::{
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     world::{
         RenderKey,
-        components::{AnimationAccessor, MeshAcessor, RigidAnimationMode},
+        components::{AnimationAccessor, MeshAcessor},
         entity_manager::MeshRenderables,
         scene::SceneLoadLevel,
     },
@@ -78,6 +78,13 @@ impl RenderKey for AssetHandle {
 pub enum UnloadedAssetData {
     Gltf(gltf::Gltf, BinarySource),
 }
+impl Debug for UnloadedAssetData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnloadedAssetData::Gltf(_, _) => write!(f, "Gltf Asset",),
+        }
+    }
+}
 
 impl UnloadedAssetData {
     fn load(self) -> Result<Box<dyn Asset>, ModelBuilderError> {
@@ -100,7 +107,7 @@ pub trait Asset {
     fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum AssetResidency {
     Registered,
     CPU(usize),
@@ -181,11 +188,7 @@ impl From<GltfValidationError> for ModelBuilderError {
 }
 
 pub trait ProvidesMeshData: Asset {
-    fn render_mesh_data<'a>(
-        &self,
-        mesh_accessor: &'a MeshAcessor,
-        mode: &'a RigidAnimationMode,
-    ) -> MeshRenderables;
+    fn render_mesh_data<'a>(&self, mesh_accessor: &'a MeshAcessor) -> MeshRenderables;
 }
 
 pub trait ProvidesAnimationData: Asset {

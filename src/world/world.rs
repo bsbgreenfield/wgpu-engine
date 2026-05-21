@@ -312,6 +312,7 @@ impl World {
         deltas: &mut Vec<WorldUpdateDelta>,
     ) -> Result<(), WorldUpdateError> {
         'outer: loop {
+            println!("scene events: {:?}", self.scene.event_queue);
             let scene_event = self.scene.current_event();
             if scene_event.is_some() {
                 match scene_event.unwrap() {

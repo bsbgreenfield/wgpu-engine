@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 
 use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
@@ -15,6 +15,18 @@ enum RegisteredAsset<A: Asset + ?Sized> {
     },
     Loaded(AssetResidency),
 }
+impl<A: Asset + ?Sized> Debug for RegisteredAsset<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unloaded { data, _t } => f
+                .debug_struct("Unloaded")
+                .field("data", data)
+                .field("_t", _t)
+                .finish(),
+            Self::Loaded(arg0) => f.debug_tuple("Loaded").field(arg0).finish(),
+        }
+    }
+}
 
 impl<A: Asset + ?Sized> RegisteredAsset<A> {
     fn set_as_gpu_loaded(&mut self, alloc_handle: GPUAllocationHandle) {
@@ -22,7 +34,11 @@ impl<A: Asset + ?Sized> RegisteredAsset<A> {
             panic!("set gpu called on unloaded asset");
         };
         let AssetResidency::CPU(la_index) = res else {
-            panic!("asset residency must be cpu to set loaded");
+            if let AssetResidency::GPU(_, _) = res {
+                return;
+            } else {
+                panic!("tried to set gpu loaded on asset with residency of {res:?}");
+            }
         };
         *res = AssetResidency::GPU(alloc_handle, *la_index);
     }
@@ -167,6 +183,7 @@ impl AssetManager {
             .registered_assets
             .get(asset_handle)
             .expect("asset is not registered!");
+
         let RegisteredAsset::Loaded(res) = a else {
             panic!("asset is not loaded!")
         };
