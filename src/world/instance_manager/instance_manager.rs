@@ -180,7 +180,6 @@ impl InstanceManager {
             .contains_key(&instance_handle.entity_handle);
 
         if is_instanced {
-            println!("INSTANCED!!!!!!!!!!!!!!!!!!!!");
             let group_idx = self.entity_group_index.get(entity_handle).unwrap();
             let group = self.render_groups.get_mut(*group_idx).unwrap();
             group.instance_handles.push(instance_handle.clone());
@@ -208,6 +207,9 @@ impl InstanceManager {
                     instance_upload_data.joint_transforms = JointTransforms::CopiedFrom {
                         donor: group.instance_handles[0].clone(),
                     }
+                }
+                JointTransforms::None => {
+                    //
                 }
                 _ => panic!("unexpected JointTransforms value"),
             }
