@@ -55,6 +55,11 @@ impl<'frame> Renderer {
                     Operations::Pop => {
                         stack.pop();
                     }
+                    Operations::Push => {
+                        let val_idx = Self::get_constant_idx(&mut instr_peek);
+                        let val = constants[val_idx as usize].clone();
+                        stack.push(val);
+                    }
 
                     Operations::PNUUpload => {
                         let global_alloc_key = stack.pop().expect("should be gac");
@@ -154,21 +159,6 @@ impl<'frame> Renderer {
                         stack.push(RenderConstant::Offset(lt_offset as u64));
                         stack.push(gpu_handle_key);
                     }
-                    Operations::ResolveSharedLTBinding => {
-                        //  let donor_handle = constants
-                        //      [Self::get_constant_idx(&mut instr_peek) as usize]
-                        //      .unwrap_key();
-                        //  let new_handle = stack.pop().expect("should be key");
-                        //  let lt_offset = self
-                        //      .instance_arenas
-                        //      .local_transforms
-                        //      .register_shared_binding(
-                        //          &InstanceHandle::from_key(donor_handle),
-                        //          &InstanceHandle::from_key(new_handle.unwrap_key()),
-                        //      )?;
-                        //  stack.push(RenderConstant::Offset(lt_offset as u64));
-                        //  stack.push(new_handle);
-                    }
                     Operations::CreatePrototype => {
                         let gpu_handle_key = stack.pop().expect("should be key");
                         let gpu_instance_handle =
@@ -212,21 +202,10 @@ impl<'frame> Renderer {
                         stack.push(RenderConstant::Offset(jt_offset as u64));
                         stack.push(gpu_handle_key);
                     }
-                    Operations::ResolveSharedJTBinding => {
-                        // let donor_handle = constants
-                        //     [Self::get_constant_idx(&mut instr_peek) as usize]
-                        //     .unwrap_key();
-                        // let new_handle = stack.pop().expect("should be key");
-                        // let jt_offset = self.instance_arenas.skinning.register_shared_binding(
-                        //     &InstanceHandle::from_key(donor_handle),
-                        //     &InstanceHandle::from_key(new_handle.unwrap_key()),
-                        // )?;
-                        // stack.push(RenderConstant::Offset(jt_offset as u64));
-                        // stack.push(new_handle);
-                    }
                     Operations::SpawnFromPrototype => {
                         let prototype_key = stack.pop().expect("should be prototype key");
-                        let prototype_handle = PrototypeHandle(prototype_key.unwrap_key() as u16);
+                        let prototype_handle =
+                            PrototypeHandle::from_key(prototype_key.unwrap_key());
                         let donor_gpu_handle = self
                             .instance_arenas
                             .get_prototype_gpu_handle(&prototype_handle);

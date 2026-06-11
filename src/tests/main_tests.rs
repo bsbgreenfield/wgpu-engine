@@ -32,6 +32,7 @@ mod integration_tests {
     enum WorldDeltaKind {
         AssetDidLoad,
         EntityDidSpawn,
+        EntityInstanceSpawn,
     }
 
     /// Variant-only mirrors of RenderUpdateDelta — use these to declare what the renderer should emit.
@@ -70,6 +71,9 @@ mod integration_tests {
                 ) | (
                     WorldUpdateDelta::NewEntitySpawn(_),
                     WorldDeltaKind::EntityDidSpawn
+                ) | (
+                    WorldUpdateDelta::EntityInstanceSpawn(..),
+                    WorldDeltaKind::EntityInstanceSpawn
                 )
             );
             assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
@@ -607,7 +611,7 @@ mod integration_tests {
 
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::EntityDidSpawn],
+                &[WorldDeltaKind::EntityInstanceSpawn],
                 &[RenderDeltaKind::EntitySpawn],
             );
 
@@ -616,16 +620,7 @@ mod integration_tests {
             let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
-            assert_eq!(groups[0].instance_handles.len(), 2);
             assert_eq!(groups[0].views.len(), 1);
-            assert_eq!(
-                groups[0].instance_handles[0],
-                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0)
-            );
-            assert_eq!(
-                groups[0].instance_handles[1],
-                InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 1, 0)
-            );
 
             let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
             let pnujw_items: Vec<&DrawItem> =

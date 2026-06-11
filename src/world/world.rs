@@ -6,7 +6,7 @@ use crate::{
         GPUAssetUploadJob,
         app::AppCommand,
         renderer::{
-            GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
+            BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
             RenderConstant, RenderUpdateDelta,
         },
     },
@@ -50,15 +50,11 @@ pub struct RenderView {
 }
 
 pub struct RenderGroup {
-    pub instance_handles: Vec<InstanceHandle>,
     pub views: Vec<RenderView>,
 }
 impl RenderGroup {
     pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>) -> Self {
-        Self {
-            instance_handles: vec![instance_handle],
-            views,
-        }
+        Self { views }
     }
 }
 
@@ -75,31 +71,17 @@ pub enum LocalTransforms {
 #[derive(Debug)]
 pub enum JointTransforms {
     None,
-    Uninit,
     Owned { data: Vec<Mat4F32> },
-    CopiedFrom { donor: InstanceHandle },
     NeedsCopy,
-    SharedWith { donor: InstanceHandle },
     NeedsShared,
 }
 
 #[derive(Debug)]
 pub enum InverseBindMatrices {
     None,
-    Uninit,
     Owned { data: Vec<Mat4F32> },
-    CopiedFrom { donor: InstanceHandle },
     NeedsCopy,
-    SharedWith { donor: InstanceHandle },
     NeedsShared,
-}
-
-#[derive(Debug)]
-pub struct InstanceUploadData {
-    pub instance_handle: InstanceHandle,
-    pub local_transforms: LocalTransforms,
-    pub joint_transforms: JointTransforms,
-    pub ibms: InverseBindMatrices,
 }
 
 #[derive(Debug)]
@@ -133,7 +115,7 @@ pub struct CopiedInstanceData {
 }
 
 #[derive(Debug)]
-pub enum InstanceUploadDataNew {
+pub enum InstanceUploadData {
     New(NewInstanceData),
     Copied(CopiedInstanceData),
 }
@@ -272,83 +254,47 @@ impl World {
                     }
                 }
                 WorldUpdateDelta::EntityInstanceSpawn(copied_instance) => {
-                    todo!()
-                } // WorldUpdateDelta::EntityDidSpawn(instance_upload_data) => {
-                  //     let mut bind_mask = GPUBindings::empty();
-                  //     instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                  //     constants.push(RenderConstant::Key(
-                  //         instance_upload_data.instance_handle.as_key(),
-                  //     ));
-                  //     instructions.push(Self::const_last(constants));
-                  //     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
-                  //     match instance_upload_data.local_transforms {
-                  //         LocalTransforms::Owned { mut data } => {
-                  //             instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                  //             let lt_bytes: Vec<u8> = {
-                  //                 let ptr = data.as_mut_ptr() as *mut u8;
-                  //                 let len = data.len() * std::mem::size_of::<LocalTransform>();
-                  //                 let cap = data.capacity() * std::mem::size_of::<LocalTransform>();
-                  //                 std::mem::forget(data);
-                  //                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                  //             };
-                  //             constants.push(RenderConstant::DataOwned(lt_bytes));
-                  //             instructions.push(Self::const_last(constants));
-                  //         }
-                  //         LocalTransforms::CopiedFrom { donor } => {
-                  //             todo!()
-                  //         }
-                  //         LocalTransforms::SharedWith { donor } => {
-                  //             instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
-                  //             constants.push(RenderConstant::Key(donor.as_key()));
-                  //             instructions.push(Self::const_last(constants));
-                  //         }
-                  //         _ => panic!("instance data not properly initialized"),
-                  //     }
-                  //     match instance_upload_data.joint_transforms {
-                  //         JointTransforms::None => {
-                  //             // none
-                  //         }
-                  //         JointTransforms::Owned { mut data } => {
-                  //             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                  //             instructions.push(Instruction::Op(Operations::JointTransformUpload));
-                  //             let jt_bytes: Vec<u8> = {
-                  //                 let ptr = data.as_mut_ptr() as *mut u8;
-                  //                 let len = data.len() * std::mem::size_of::<Mat4F32>();
-                  //                 let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
-                  //                 std::mem::forget(data);
-                  //                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                  //             };
-                  //             let InverseBindMatrices::Owned { mut data } = instance_upload_data.ibms
-                  //             else {
-                  //                 panic!("joint transforms must be accompanied by ibms");
-                  //             };
-                  //             let ibm_bytes: Vec<u8> = {
-                  //                 let ptr = data.as_mut_ptr() as *mut u8;
-                  //                 let len = data.len() * std::mem::size_of::<Mat4F32>();
-                  //                 let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
-                  //                 std::mem::forget(data);
-                  //                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                  //             };
-                  //             constants.push(RenderConstant::DataOwned(jt_bytes));
-                  //             instructions.push(Self::const_last(constants));
-                  //             constants.push(RenderConstant::DataOwned(ibm_bytes));
-                  //             instructions.push(Self::const_last(constants));
-                  //         }
-                  //         JointTransforms::SharedWith { donor } => {
-                  //             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                  //             instructions.push(Instruction::Op(Operations::ResolveSharedJTBinding));
-                  //             constants.push(RenderConstant::Key(donor.as_key()));
-                  //             instructions.push(Self::const_last(constants));
-                  //         }
-                  //         JointTransforms::CopiedFrom { donor } => {
-                  //             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                  //             todo!();
-                  //         }
-                  //         _ => panic!("joint data not properly initialized"),
-                  //     }
-                  //     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
-                  //     instructions.push(Instruction::Byte(bind_mask.bits()));
-                  // }
+                    let mut bind_mask = GPUBindings::empty();
+                    instructions.push(Instruction::Op(Operations::Push));
+                    constants.push(RenderConstant::Key(
+                        copied_instance.prototype_handle.as_key(),
+                    ));
+                    instructions.push(Self::const_last(constants));
+
+                    instructions.push(Instruction::Op(Operations::SpawnFromPrototype));
+                    constants.push(RenderConstant::Key(copied_instance.handle.as_key()));
+                    instructions.push(Self::const_last(constants));
+
+                    bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
+                    match copied_instance.local_transforms {
+                        LocalTransforms::NeedsCopy => {
+                            instructions.push(Instruction::Op(Operations::CopyData));
+                        }
+                        LocalTransforms::NeedsShared => {
+                            instructions.push(Instruction::Op(Operations::ShareData));
+                        }
+                        _ => panic!(),
+                    }
+                    instructions.push(Instruction::Buffer(BufferType::LocalTransform));
+
+                    match copied_instance.joint_transforms {
+                        JointTransforms::None => {}
+                        JointTransforms::NeedsCopy => {
+                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
+                            instructions.push(Instruction::Op(Operations::CopyData))
+                        }
+                        JointTransforms::NeedsShared => {
+                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
+                            instructions.push(Instruction::Op(Operations::ShareData))
+                        }
+                        _ => panic!(),
+                    }
+                    instructions.push(Instruction::Buffer(BufferType::JointTransform));
+
+                    instructions.push(Instruction::Op(Operations::Pop));
+                    instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+                    instructions.push(Instruction::Byte(bind_mask.bits()));
+                }
             }
         }
     }
@@ -385,7 +331,7 @@ impl World {
     pub fn spawn(
         &mut self,
         instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
-    ) -> Vec<InstanceUploadDataNew> {
+    ) -> Vec<InstanceUploadData> {
         self.instance_manager
             .spawn_instances(&self.entity_manager, instance_data)
             .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e))
@@ -459,10 +405,10 @@ impl World {
                             let upload_data = self.spawn(instance_data);
                             for datum in upload_data {
                                 match datum {
-                                    InstanceUploadDataNew::New(new_instance) => {
+                                    InstanceUploadData::New(new_instance) => {
                                         deltas.push(WorldUpdateDelta::NewEntitySpawn(new_instance));
                                     }
-                                    InstanceUploadDataNew::Copied(copied_instance) => {
+                                    InstanceUploadData::Copied(copied_instance) => {
                                         deltas.push(WorldUpdateDelta::EntityInstanceSpawn(
                                             copied_instance,
                                         ));

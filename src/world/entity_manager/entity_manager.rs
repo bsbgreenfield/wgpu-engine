@@ -17,8 +17,8 @@ use crate::{
         },
         instance_manager::InstanceHandle,
         world::{
-            CopiedInstanceData, InstanceUploadData, InstanceUploadDataNew, InverseBindMatrices,
-            JointTransforms, LocalTransforms,
+            CopiedInstanceData, InstanceUploadData, InverseBindMatrices, JointTransforms,
+            LocalTransforms,
         },
     },
 };
@@ -65,33 +65,8 @@ impl EntityManager {
     pub fn get_entity_cloned<'frame>(
         &'frame self,
         instance_handle: &InstanceHandle,
-    ) -> InstanceUploadData {
-        let mut res = InstanceUploadData {
-            instance_handle: instance_handle.clone(),
-            local_transforms: crate::world::world::LocalTransforms::NeedsShared,
-            joint_transforms: JointTransforms::None,
-            ibms: InverseBindMatrices::NeedsShared,
-        };
-        if let Some(anim) = self
-            .animations
-            .get(instance_handle.entity_handle.0 as usize)
-        {
-            match anim.rigid_animation_mode {
-                AnimationMode::Shared => res.local_transforms = LocalTransforms::NeedsShared,
-                AnimationMode::Independent => res.local_transforms = LocalTransforms::NeedsCopy,
-            }
-            match anim.skinned_animation_mode {
-                AnimationMode::Shared => res.joint_transforms = JointTransforms::NeedsShared,
-                AnimationMode::Independent => res.joint_transforms = JointTransforms::NeedsCopy,
-            }
-        }
-        res
-    }
-    pub fn get_entity_cloned_new<'frame>(
-        &'frame self,
-        instance_handle: &InstanceHandle,
         prototype_handle: PrototypeHandle,
-    ) -> InstanceUploadDataNew {
+    ) -> InstanceUploadData {
         let mut copied: CopiedInstanceData = CopiedInstanceData {
             handle: instance_handle.clone(),
             prototype_handle,
@@ -114,14 +89,7 @@ impl EntityManager {
             }
         }
 
-        InstanceUploadDataNew::Copied(copied)
-    }
-
-    pub fn get_render_data_new<'frame>(
-        &'frame self,
-        instance_handle: &InstanceHandle,
-    ) -> Result<InstanceUploadDataNew, EntityManagerError> {
-        todo!()
+        InstanceUploadData::Copied(copied)
     }
 
     pub fn get_entity_render_data<'frame>(

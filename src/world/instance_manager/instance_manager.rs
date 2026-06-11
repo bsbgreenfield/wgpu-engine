@@ -6,7 +6,7 @@ use crate::{
     animation::animation::EntityAnimations,
     app::{
         app::AppCommand,
-        renderer::{DrawItem, DrawPacket, PrototypeHandle, renderer::GPUInstanceHandle},
+        renderer::{DrawPacket, PrototypeHandle, renderer::GPUInstanceHandle},
     },
     asset_manager::asset_manager_new::AssetManager,
     world::{
@@ -19,13 +19,10 @@ use crate::{
             Archetype, ArchetypeId, InstanceGPUBindings, InstanceHandle, RenderFrame,
             animation_controller::AnimationController,
             archetype_table::{APositionTable, ArchetypeTable},
-            draw_palette::{DrawData, InstanceDrawSlot, PipelineDrawData},
+            draw_palette::{DrawData, PipelineDrawData},
             gpu_bind_registry::GPUBindRegistry,
         },
-        world::{
-            DrawSet, InstanceUploadData, InstanceUploadDataNew, InverseBindMatrices,
-            JointTransforms, LocalTransforms, NewInstanceData, RenderGroup, RenderView,
-        },
+        world::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
     },
 };
 #[cfg(test)]
@@ -243,8 +240,8 @@ impl InstanceManager {
         &mut self,
         entity_manager: &EntityManager,
         instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
-    ) -> Result<Vec<InstanceUploadDataNew>, WorldUpdateError> {
-        let mut res: Vec<InstanceUploadDataNew> = Vec::new();
+    ) -> Result<Vec<InstanceUploadData>, WorldUpdateError> {
+        let mut res: Vec<InstanceUploadData> = Vec::new();
 
         // loop through the instances being uploaded and sort them by entity handle
         let mut sorted: HashMap<EntityHandle, Vec<Box<dyn Archetype>>> = HashMap::new();
@@ -270,7 +267,7 @@ impl InstanceManager {
                     let instance_handle = arch.insert_self(self, &entity_handle);
                     additional.push(instance_handle);
                 }
-                if let InstanceUploadDataNew::New(new) = &mut first_instance_upload_data {
+                if let InstanceUploadData::New(new) = &mut first_instance_upload_data {
                     if !additional.is_empty() {
                         new.additional_handles = Some(additional);
                     }
@@ -290,14 +287,14 @@ impl InstanceManager {
                 let first_instance_handle = first_arch.insert_self(self, &entity_handle);
 
                 let mut copied_instance_data = entity_manager
-                    .get_entity_cloned_new(&first_instance_handle, prototype_handle.clone());
+                    .get_entity_cloned(&first_instance_handle, prototype_handle.clone());
                 let mut additional = Vec::<InstanceHandle>::with_capacity(arch_list.len());
                 // for the rest, independant data should be copied, and shared should be shared
                 for arch in arch_list {
                     let instance_handle = arch.insert_self(self, &entity_handle);
                     additional.push(instance_handle);
                 }
-                if let InstanceUploadDataNew::Copied(copied) = &mut copied_instance_data {
+                if let InstanceUploadData::Copied(copied) = &mut copied_instance_data {
                     copied.additional = Some(additional);
                 }
                 res.push(copied_instance_data);
@@ -306,7 +303,7 @@ impl InstanceManager {
         Ok(res)
     }
 
-    pub fn add_render_group(&mut self, mut renderables: Renderables) -> InstanceUploadDataNew {
+    pub fn add_render_group(&mut self, mut renderables: Renderables) -> InstanceUploadData {
         let mut new_instance_data = NewInstanceData::new(renderables.instance_handle.clone());
         // ******* MESH DATA ********
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
@@ -338,10 +335,7 @@ impl InstanceManager {
             renderables.instance_handle.entity_handle,
             self.render_groups.len(),
         );
-        self.render_groups.push(RenderGroup {
-            instance_handles: vec![renderables.instance_handle.clone()],
-            views,
-        });
+        self.render_groups.push(RenderGroup { views });
         // ******** ANIMATION DATA *********
         if let Some(entity_animation_data) = renderables.animations {
             if !entity_animation_data.joint_transforms.is_empty() {
@@ -373,7 +367,7 @@ impl InstanceManager {
                 },
             );
         }
-        InstanceUploadDataNew::New(new_instance_data)
+        InstanceUploadData::New(new_instance_data)
     }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {

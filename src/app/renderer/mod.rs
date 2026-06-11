@@ -1,4 +1,10 @@
-use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt::Display,
+    marker::PhantomData,
+    ops::{Deref, Range},
+};
 
 use bytemuck::Pod;
 
@@ -24,6 +30,16 @@ mod vm;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PrototypeHandle(pub(super) u16);
+
+impl RenderKey for PrototypeHandle {
+    fn as_key(&self) -> u64 {
+        self.0 as u64
+    }
+
+    fn from_key(key: u64) -> Self {
+        Self(key as u16)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct DrawPacket {
@@ -134,14 +150,13 @@ pub enum Operations {
     SpawnFromPrototype,
     ShareData,
     CopyData,
-    ResolveSharedLTBinding,
-    ResolveSharedJTBinding,
     PNUUpload,
     PNUJWUpload,
     IndexUpload,
     EmitAssetUpload,
     EmitEntitySpawn,
     Pop,
+    Push,
 }
 
 #[derive(Debug)]
