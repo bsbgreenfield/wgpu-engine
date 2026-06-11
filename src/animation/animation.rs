@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::{
+    app::renderer::renderer::GPUInstanceHandle,
     util::types::{LocalTransform, Mat4F32},
     world::instance_manager::InstanceHandle,
 };
@@ -172,6 +173,7 @@ where
 
 #[derive(Debug)]
 pub struct EntityAnimations {
+    pub gpu_instance_handle: Option<GPUInstanceHandle>,
     pub animation: Vec<Arc<dyn Animation>>,
     pub local_transforms: Vec<LocalTransform>,
     pub joint_transforms: Vec<Mat4F32>,

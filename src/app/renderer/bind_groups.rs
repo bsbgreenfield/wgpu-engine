@@ -9,18 +9,25 @@ use crate::{
             GPUInstanceAllocator, SharedInstanceData, VertexArenaError,
             instance_arena::InstanceArena,
         },
+        renderer::GPUInstanceHandle,
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
     world::instance_manager::InstanceHandle,
 };
 
 pub(super) trait BindGroupProvider {
+    fn write_data(&mut self, gpu_handle: &GPUInstanceHandle, data: &[u8], queue: &wgpu::Queue);
     fn get_bind_group(&self, alloc_handle: &InstanceHandle) -> &wgpu::BindGroup;
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
     fn new(device: &wgpu::Device) -> Self;
 }
 
 impl BindGroupProvider for SkinningBindGroup {
+    fn write_data(&mut self, gpu_handle: &GPUInstanceHandle, data: &[u8], queue: &wgpu::Queue) {
+        let buffer = self.get_joint_buffer();
+        let jt_offset = self.joint_arena.resolve(gpu_handle);
+        queue.write_buffer(buffer, jt_offset.into(), data);
+    }
     fn new(device: &wgpu::Device) -> Self {
         let joints = InstanceArena::<JointTransform>::new(device);
         let ibms = InstanceArena::<InverseBindMatrix>::new(device);
@@ -116,11 +123,49 @@ impl SkinningBindGroup {
 
     pub(super) fn register_shared_binding(
         &mut self,
-        donor_handle: &InstanceHandle,
-        new_handle: &InstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
-        self.joint_arena
-            .register_shared_binding(donor_handle, new_handle)
+        donor_handle: &GPUInstanceHandle,
+        new_handle: &GPUInstanceHandle,
+    ) -> Result<(u32, u32), VertexArenaError> {
+        let jt = self
+            .joint_arena
+            .register_shared_binding(donor_handle, new_handle);
+        let ibm = self
+            .ibm_arena
+            .register_shared_binding(donor_handle, new_handle);
+
+        if let Ok(jt) = jt {
+            if let Ok(ibm) = ibm {
+                return Ok((jt, ibm));
+            } else {
+                return Err(ibm.unwrap_err());
+            }
+        } else {
+            return Err(jt.unwrap_err());
+        }
+    }
+
+    pub(super) fn register_copy_binding(
+        &mut self,
+        donor_handle: &GPUInstanceHandle,
+        new_handle: &GPUInstanceHandle,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<(u32, u32), VertexArenaError> {
+        let jt = self
+            .joint_arena
+            .register_copy_binding(donor_handle, new_handle, queue, device);
+        let ibm = self
+            .ibm_arena
+            .register_shared_binding(donor_handle, new_handle);
+        if let Ok(jt) = jt {
+            if let Ok(ibm) = ibm {
+                return Ok((jt, ibm));
+            } else {
+                return Err(ibm.unwrap_err());
+            }
+        } else {
+            return Err(jt.unwrap_err());
+        }
     }
 
     pub(super) fn get_first_bg(&self) -> &wgpu::BindGroup {
@@ -129,6 +174,11 @@ impl SkinningBindGroup {
 }
 
 impl BindGroupProvider for LocalTransformBindGroup {
+    fn write_data(&mut self, gpu_handle: &GPUInstanceHandle, data: &[u8], queue: &wgpu::Queue) {
+        let buffer = self.get_buffer();
+        let lt_offset = self.lt_arena.resolve(gpu_handle);
+        queue.write_buffer(buffer, lt_offset.into(), data);
+    }
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("LT bind group layout"),
@@ -195,10 +245,21 @@ impl LocalTransformBindGroup {
     }
     pub(super) fn register_shared_binding(
         &mut self,
-        donor_handle: &InstanceHandle,
-        new_handle: &InstanceHandle,
+        donor_handle: &GPUInstanceHandle,
+        new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
         self.lt_arena
             .register_shared_binding(donor_handle, new_handle)
+    }
+
+    pub(super) fn register_copy_binding(
+        &mut self,
+        donor_handle: &GPUInstanceHandle,
+        new_handle: &GPUInstanceHandle,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<u32, VertexArenaError> {
+        self.lt_arena
+            .register_copy_binding(donor_handle, new_handle, queue, device)
     }
 }

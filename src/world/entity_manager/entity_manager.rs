@@ -2,7 +2,7 @@ use std::{collections::HashSet, mem::MaybeUninit, ops::Range, sync::Arc};
 
 use crate::{
     animation::animation::{Animation, EntityAnimationData},
-    app::renderer::GPUAllocationHandle,
+    app::renderer::{GPUAllocationHandle, PrototypeHandle},
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
     },
@@ -16,7 +16,10 @@ use crate::{
             },
         },
         instance_manager::InstanceHandle,
-        world::{InstanceUploadData, InverseBindMatrices, JointTransforms, LocalTransforms},
+        world::{
+            CopiedInstanceData, InstanceUploadData, InstanceUploadDataNew, InverseBindMatrices,
+            JointTransforms, LocalTransforms,
+        },
     },
 };
 
@@ -54,7 +57,7 @@ pub struct MeshRenderables {
 
 pub struct Renderables {
     pub instance_handle: InstanceHandle,
-    pub mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
+    pub mesh_renderables: Vec<(AssetHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimationData>,
 }
 
@@ -84,6 +87,42 @@ impl EntityManager {
         }
         res
     }
+    pub fn get_entity_cloned_new<'frame>(
+        &'frame self,
+        instance_handle: &InstanceHandle,
+        prototype_handle: PrototypeHandle,
+    ) -> InstanceUploadDataNew {
+        let mut copied: CopiedInstanceData = CopiedInstanceData {
+            handle: instance_handle.clone(),
+            prototype_handle,
+            additional: None,
+            local_transforms: LocalTransforms::NeedsShared,
+            joint_transforms: JointTransforms::None,
+        };
+
+        if let Some(anim) = self
+            .animations
+            .get(instance_handle.entity_handle.0 as usize)
+        {
+            match anim.rigid_animation_mode {
+                AnimationMode::Shared => copied.local_transforms = LocalTransforms::NeedsShared,
+                AnimationMode::Independent => copied.local_transforms = LocalTransforms::NeedsCopy,
+            }
+            match anim.skinned_animation_mode {
+                AnimationMode::Shared => copied.joint_transforms = JointTransforms::NeedsShared,
+                AnimationMode::Independent => copied.joint_transforms = JointTransforms::NeedsCopy,
+            }
+        }
+
+        InstanceUploadDataNew::Copied(copied)
+    }
+
+    pub fn get_render_data_new<'frame>(
+        &'frame self,
+        instance_handle: &InstanceHandle,
+    ) -> Result<InstanceUploadDataNew, EntityManagerError> {
+        todo!()
+    }
 
     pub fn get_entity_render_data<'frame>(
         &'frame self,
@@ -99,22 +138,23 @@ impl EntityManager {
             .mesh_collections
             .get(instance_handle.entity_handle.0 as usize)
         {
-            let (alloc_handle, asset) = self
+            let asset = self
                 .asset_manager
                 .get_loaded_asset(&mesh_collection.resource_backing.asset_handle);
 
             let mesh_renderables =
                 mesh_collection.get_output_data(asset.as_mesh_provider().unwrap());
 
-            renderables
-                .mesh_renderables
-                .push((alloc_handle.clone(), mesh_renderables));
+            renderables.mesh_renderables.push((
+                mesh_collection.resource_backing.asset_handle.clone(),
+                mesh_renderables,
+            ));
         }
         if let Some(animation_component) = self
             .animations
             .get(instance_handle.entity_handle.0 as usize)
         {
-            let (_, asset) = self
+            let asset = self
                 .asset_manager
                 .get_loaded_asset(&animation_component.resource_backing.asset_handle);
 

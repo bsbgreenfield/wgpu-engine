@@ -1,4 +1,4 @@
-use std::num::NonZero;
+use std::{collections::HashMap, num::NonZero, ops::Deref};
 
 use wgpu::RenderPass;
 
@@ -6,9 +6,9 @@ use crate::{
     app::{
         app_config::AppConfig,
         renderer::{
-            DrawPacket, InstanceUploadJob, Instruction, RenderCategory, RenderConstant,
-            RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaError,
-            VertexArenaSelector,
+            DrawPacket, InstanceUploadJob, Instruction, PrototypeHandle, RenderCategory,
+            RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
+            VertexArenaError, VertexArenaSelector,
             bind_groups::{BindGroupProvider, LocalTransformBindGroup, SkinningBindGroup},
             gpu_allocator::{
                 GPUAllocator, UploadIndexJob,
@@ -78,14 +78,51 @@ impl VertexArenaCollection {
     }
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct GPUInstanceHandle(pub(super) u32);
+impl Deref for GPUInstanceHandle {
+    type Target = u32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub(super) struct BindGroupCollection {
+    next_handle: u32,
+    next_prototype: u32,
+    prototypes: HashMap<PrototypeHandle, GPUInstanceHandle>,
     pub(super) local_transforms: LocalTransformBindGroup,
     pub(super) skinning: SkinningBindGroup,
 }
 
 impl BindGroupCollection {
+    pub(super) fn gen_GPU_instance_handle(&mut self) -> GPUInstanceHandle {
+        self.next_handle += 1;
+        GPUInstanceHandle(self.next_handle - 1)
+    }
+
+    fn add_prototype(&mut self, handle: GPUInstanceHandle) -> PrototypeHandle {
+        self.next_prototype += 1;
+        self.prototypes
+            .insert(PrototypeHandle((self.next_prototype - 1) as u16), handle);
+        PrototypeHandle((self.next_prototype - 1) as u16)
+    }
+
+    pub(super) fn get_prototype_gpu_handle(
+        &self,
+        prototype: &PrototypeHandle,
+    ) -> GPUInstanceHandle {
+        *self.prototypes.get(prototype).expect("should exist")
+    }
+}
+
+impl BindGroupCollection {
     fn new(device: &wgpu::Device) -> Self {
         Self {
+            next_handle: 0,
+            next_prototype: 0,
+            prototypes: HashMap::new(),
             local_transforms: LocalTransformBindGroup::new(device),
             skinning: SkinningBindGroup::new(device),
         }
@@ -121,13 +158,21 @@ impl Renderer {
         (self.allocations.len() - 1) as u32
     }
 
+    pub(super) fn get_gpu_instance_handle(&mut self) -> GPUInstanceHandle {
+        self.instance_arenas.gen_GPU_instance_handle()
+    }
+
+    pub(super) fn add_prototype(&mut self, handle: GPUInstanceHandle) -> PrototypeHandle {
+        self.instance_arenas.add_prototype(handle)
+    }
     pub fn update(
         &mut self,
         constants: Vec<RenderConstant>,
         ops: Vec<Instruction>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
-        self.interpret(constants, ops, queue)
+        self.interpret(constants, ops, queue, device)
     }
 
     pub fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {
@@ -155,12 +200,11 @@ impl Renderer {
             if animations.is_empty() {
                 break 'rigid_animations;
             }
-            let buffer_ref = self.instance_arenas.local_transforms.get_buffer();
             for animation in animations {
-                queue.write_buffer(
-                    buffer_ref,
-                    animation.buffer_offset.into(),
+                self.instance_arenas.local_transforms.write_data(
+                    &animation.gpu_handle,
                     animation.transforms,
+                    queue,
                 );
             }
         }
@@ -169,12 +213,11 @@ impl Renderer {
             if animations.is_empty() {
                 break 'skinned_animations;
             }
-            let buffer_ref = self.instance_arenas.skinning.get_joint_buffer();
             for animation in animations {
-                queue.write_buffer(
-                    buffer_ref,
-                    animation.buffer_offset.into(),
+                self.instance_arenas.skinning.write_data(
+                    &animation.gpu_handle,
                     animation.transforms,
+                    queue,
                 );
             }
         }
@@ -265,12 +308,15 @@ impl Renderer {
             {
                 let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
 
+                // camera bind group
                 render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
+                // local transform bind group
                 render_pass.set_bind_group(
                     1,
                     self.instance_arenas.local_transforms.get_first_bg(),
                     &[],
                 );
+                // instance step mode gt buffer
                 render_pass.set_vertex_buffer(1, self.global_transform_buffer.slice(..));
                 for render_category in pass.categories.iter() {
                     match render_category {

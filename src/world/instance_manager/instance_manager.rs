@@ -6,19 +6,25 @@ use crate::{
     animation::animation::EntityAnimations,
     app::{
         app::AppCommand,
-        renderer::{DrawItem, DrawPacket},
+        renderer::{DrawItem, DrawPacket, PrototypeHandle, renderer::GPUInstanceHandle},
     },
+    asset_manager::asset_manager_new::AssetManager,
     world::{
         WorldUpdateError,
-        entity_manager::{EntityHandle, entity_manager::EntityManager},
+        entity_manager::{
+            EntityHandle,
+            entity_manager::{EntityManager, Renderables},
+        },
         instance_manager::{
             Archetype, ArchetypeId, InstanceGPUBindings, InstanceHandle, RenderFrame,
             animation_controller::AnimationController,
             archetype_table::{APositionTable, ArchetypeTable},
+            draw_palette::{DrawData, InstanceDrawSlot, PipelineDrawData},
+            gpu_bind_registry::GPUBindRegistry,
         },
         world::{
-            DrawSet, InstanceUploadData, InverseBindMatrices, JointTransforms, LocalTransforms,
-            RenderGroup, RenderView,
+            DrawSet, InstanceUploadData, InstanceUploadDataNew, InverseBindMatrices,
+            JointTransforms, LocalTransforms, NewInstanceData, RenderGroup, RenderView,
         },
     },
 };
@@ -27,9 +33,10 @@ use crate::{
     animation::animation::{Animation, AnimationInstance},
     util::types::GlobalTransform,
 };
+
 pub struct InstanceManager {
     pub(super) _next_id: u16,
-    gpu_bindings: HashMap<InstanceHandle, InstanceGPUBindings>,
+    gpu_bind_registry: GPUBindRegistry,
     pub(super) pos: APositionTable,
     render_groups: Vec<RenderGroup>,
     pub(super) entity_group_index: HashMap<EntityHandle, usize>,
@@ -45,10 +52,6 @@ impl InstanceManager {
                 .contains_key(&instance_handle.entity_handle)
         )
     }
-    #[cfg(test)]
-    pub fn get_gpu_bindings(&self, handle: &InstanceHandle) -> Option<&InstanceGPUBindings> {
-        self.gpu_bindings.get(handle)
-    }
 
     #[cfg(test)]
     pub fn get_joint_slot_map(&self, entity_handle: &EntityHandle) -> &Vec<usize> {
@@ -63,6 +66,15 @@ impl InstanceManager {
     #[cfg(test)]
     pub fn get_active_animations(&self) -> &[AnimationInstance] {
         &self.animation_controller.active_animations
+    }
+
+    #[cfg(test)]
+    pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
+        self.gpu_bind_registry
+            .registered_instances
+            .values()
+            .cloned()
+            .collect()
     }
 
     #[cfg(test)]
@@ -87,11 +99,6 @@ impl InstanceManager {
     }
 
     #[cfg(test)]
-    pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
-        self.gpu_bindings.keys().cloned().collect()
-    }
-
-    #[cfg(test)]
     pub fn get_pos_table_positions(&self) -> Vec<GlobalTransform> {
         self.pos.get_positions()
     }
@@ -101,14 +108,78 @@ impl InstanceManager {
         &self.render_groups
     }
 
-    pub fn update_gpu_bindings(&mut self, data: (InstanceHandle, InstanceGPUBindings)) {
-        self.gpu_bindings.insert(data.0, data.1);
+    pub fn register_prototype(
+        &mut self,
+        entity_handle: EntityHandle,
+        prototype_handle: PrototypeHandle,
+    ) {
+        self.gpu_bind_registry
+            .registered_prototypes
+            .insert(entity_handle, prototype_handle);
     }
+
+    pub fn add_draw_data(
+        &mut self,
+        instance_handle: &InstanceHandle,
+        bindings: InstanceGPUBindings,
+        gpu_instance_handle: GPUInstanceHandle,
+        asset_manager: &AssetManager,
+    ) {
+        self.gpu_bind_registry
+            .registered_instances
+            .insert(gpu_instance_handle, instance_handle.clone());
+        let group = &self.render_groups[self.entity_group_index[&instance_handle.entity_handle]];
+        let mut data: Vec<DrawData> = Vec::new();
+        for view in &group.views {
+            let alloc_handle = asset_manager.resolve_asset_handle(&view.asset_handle);
+            if let Some(pnu) = &view.pnu_draws {
+                for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {
+                    let draw_data = DrawData::Static(PipelineDrawData {
+                        alloc_handle: alloc_handle.clone(),
+                        lt_idx: bindings.lt_offset + pnu.mesh_map[i],
+                        joint_offset: None,
+                        primitives: prim_range.clone(),
+                        indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
+                    });
+                    data.push(draw_data);
+                }
+            }
+            if let Some(pnujw) = &view.pnujw_draws {
+                for (i, prim_range) in pnujw.primtitive_ranges.iter().enumerate() {
+                    let draw_data = DrawData::Skinned(PipelineDrawData {
+                        alloc_handle: alloc_handle.clone(),
+                        lt_idx: bindings.lt_offset + pnujw.mesh_map[i],
+                        joint_offset: bindings
+                            .joint_offset
+                            .map(|offset| offset + pnujw.joint_map[i]),
+                        primitives: prim_range.clone(),
+                        indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
+                    });
+                    data.push(draw_data);
+                }
+            }
+        }
+        match instance_handle.archetype {
+            ArchetypeId::Position => {
+                self.pos.write_draw_data(instance_handle, data);
+            }
+        }
+
+        // animation
+        if let Some(entity_animations) = self
+            .animation_controller
+            .registered_animations
+            .get_mut(&instance_handle.entity_handle)
+        {
+            entity_animations.gpu_instance_handle = Some(gpu_instance_handle);
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             _next_id: 0,
+            gpu_bind_registry: GPUBindRegistry::default(),
             pos: APositionTable::new(),
-            gpu_bindings: HashMap::new(),
             render_groups: Vec::new(),
             entity_group_index: HashMap::new(),
             animation_controller: AnimationController::default(),
@@ -139,10 +210,10 @@ impl InstanceManager {
                 AppCommand::Two => idx = 1,
                 AppCommand::Three => idx = 2,
             }
-            if self.gpu_bindings.is_empty() {
+            if self.gpu_bind_registry.registered_prototypes.is_empty() {
                 commands.push(command);
             } else {
-                for stored_handle in self.gpu_bindings.keys() {
+                for stored_handle in self.gpu_bind_registry.registered_instances.values() {
                     handle = Some(stored_handle.clone());
                 }
                 self.activate_animation(handle.as_ref().unwrap(), idx, None);
@@ -168,147 +239,141 @@ impl InstanceManager {
         &entity_anim.mesh_slot_map
     }
 
-    pub fn spawn(
+    pub fn spawn_instances(
         &mut self,
-        entity_handle: &EntityHandle,
         entity_manager: &EntityManager,
-        data: Box<dyn Archetype>,
-    ) -> Result<InstanceUploadData, WorldUpdateError> {
-        let instance_handle = &data.insert_self(self, entity_handle);
-        let is_instanced = self
-            .entity_group_index
-            .contains_key(&instance_handle.entity_handle);
+        instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
+    ) -> Result<Vec<InstanceUploadDataNew>, WorldUpdateError> {
+        let mut res: Vec<InstanceUploadDataNew> = Vec::new();
 
-        if is_instanced {
-            let group_idx = self.entity_group_index.get(entity_handle).unwrap();
-            let group = self.render_groups.get_mut(*group_idx).unwrap();
-            group.instance_handles.push(instance_handle.clone());
-            let mut instance_upload_data = entity_manager.get_entity_cloned(&instance_handle);
-            match instance_upload_data.local_transforms {
-                LocalTransforms::NeedsCopy => {
-                    instance_upload_data.local_transforms = LocalTransforms::CopiedFrom {
-                        donor: group.instance_handles[0].clone(), // TODO: manage shared slots
-                    }
-                }
-                LocalTransforms::NeedsShared => {
-                    instance_upload_data.local_transforms = LocalTransforms::SharedWith {
-                        donor: group.instance_handles[0].clone(), // TODO: manage shared slots
-                    }
-                }
-                _ => panic!("unexpected local transform value"),
-            }
-            match instance_upload_data.joint_transforms {
-                JointTransforms::NeedsShared => {
-                    instance_upload_data.joint_transforms = JointTransforms::SharedWith {
-                        donor: group.instance_handles[0].clone(),
-                    }
-                }
-                JointTransforms::NeedsCopy => {
-                    instance_upload_data.joint_transforms = JointTransforms::CopiedFrom {
-                        donor: group.instance_handles[0].clone(),
-                    }
-                }
-                JointTransforms::None => {
-                    //
-                }
-                _ => panic!("unexpected JointTransforms value"),
-            }
-            return Ok(instance_upload_data);
-        } else {
-            let mut res = InstanceUploadData {
-                instance_handle: instance_handle.clone(),
-                local_transforms: LocalTransforms::Uninit,
-                joint_transforms: JointTransforms::None,
-                ibms: InverseBindMatrices::Uninit,
-            };
-            let mut renderables = entity_manager
-                .get_entity_render_data(&instance_handle)
-                .expect("renderables fetch fail");
+        // loop through the instances being uploaded and sort them by entity handle
+        let mut sorted: HashMap<EntityHandle, Vec<Box<dyn Archetype>>> = HashMap::new();
+        for instance in instance_data {
+            sorted
+                .entry(instance.0)
+                .or_insert_with(Vec::new)
+                .push(instance.1);
+        }
+        for (entity_handle, mut arch_list) in sorted {
+            // for the first instance spawn of an entity, collect asset-relative common data
+            if !self.entity_group_index.contains_key(&entity_handle) {
+                let first_arch = arch_list.swap_remove(0);
+                let first_instance_handle = first_arch.insert_self(self, &entity_handle);
+                let renderables = entity_manager
+                    .get_entity_render_data(&first_instance_handle)
+                    .expect("renderables fetch fail");
+                let mut first_instance_upload_data = self.add_render_group(renderables);
 
-            // ******* MESH DATA ********
-            let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
-
-            for (alloc_handle, mesh_data) in renderables.mesh_renderables.drain(..) {
-                let view = RenderView {
-                    gpu_handle: alloc_handle,
-                    pnu_draws: mesh_data.pnu_vertex_ranges.map(|pnu| DrawSet {
-                        joint_map: vec![], // TODO: seprate draw set struct for pnu to avoid this?
-                        mesh_map: mesh_data.pnu_mesh_map,
-                        primtitive_ranges: pnu,
-                        index_ranges: mesh_data.index_ranges.clone(),
-                    }),
-                    pnujw_draws: mesh_data.pnujw_vertex_ranges.map(|pnujw| DrawSet {
-                        joint_map: mesh_data.joint_map,
-                        mesh_map: mesh_data.pnujw_mesh_map,
-                        primtitive_ranges: pnujw,
-                        index_ranges: mesh_data.index_ranges.clone(),
-                    }),
-                };
-
-                views.push(view);
-                match &mut res.local_transforms {
-                    LocalTransforms::Uninit => {
-                        res.local_transforms = LocalTransforms::Owned {
-                            data: mesh_data.local_transforms,
-                        }
-                    }
-                    LocalTransforms::Owned { data } => data.extend(mesh_data.local_transforms),
-                    _ => panic!("unexpected local transform data val"),
+                let mut additional = Vec::<InstanceHandle>::with_capacity(arch_list.len());
+                // for the rest, independant data should be copied, and shared should be shared
+                for arch in arch_list {
+                    let instance_handle = arch.insert_self(self, &entity_handle);
+                    additional.push(instance_handle);
                 }
-            }
-
-            self.entity_group_index
-                .insert(*entity_handle, self.render_groups.len());
-            self.render_groups.push(RenderGroup {
-                instance_handles: vec![instance_handle.clone()],
-                views,
-            });
-
-            // ******** ANIMATION DATA *********
-            if let Some(entity_animation_data) = renderables.animations {
-                res.joint_transforms = JointTransforms::Uninit;
-                if !entity_animation_data.joint_transforms.is_empty() {
-                    match &mut res.joint_transforms {
-                        JointTransforms::Uninit | JointTransforms::None => {
-                            res.joint_transforms = JointTransforms::Owned {
-                                data: entity_animation_data.joint_transforms.clone(),
-                            }
-                        }
-                        JointTransforms::Owned { data } => {
-                            data.extend(entity_animation_data.joint_transforms.clone());
-                        }
-                        _ => panic!("unexpected joint transform data"),
-                    }
-                    match res.ibms {
-                        InverseBindMatrices::None | InverseBindMatrices::Uninit => {
-                            res.ibms = InverseBindMatrices::Owned {
-                                data: entity_animation_data.inverse_bind_matrices,
-                            }
-                        }
-                        InverseBindMatrices::Owned { mut data } => {
-                            data.extend(entity_animation_data.inverse_bind_matrices);
-                            res.ibms = InverseBindMatrices::Owned { data: data }
-                        }
-                        _ => panic!("unexpected ibm result"),
+                if let InstanceUploadDataNew::New(new) = &mut first_instance_upload_data {
+                    if !additional.is_empty() {
+                        new.additional_handles = Some(additional);
                     }
                 } else {
-                    res.joint_transforms = JointTransforms::None;
+                    panic!()
                 }
-                self.animation_controller.registered_animations.insert(
-                    instance_handle.entity_handle.clone(),
-                    EntityAnimations {
-                        animation: entity_animation_data.animation,
-                        local_transforms: entity_animation_data.local_transforms,
-                        joint_transforms: entity_animation_data.joint_transforms,
-                        mesh_slot_map: entity_animation_data.mesh_slot_map,
-                        skin_offset_map: entity_animation_data.skin_offset_map,
-                    },
-                );
+                res.push(first_instance_upload_data);
             } else {
-                res.ibms = InverseBindMatrices::None;
+                let prototype_handle = self
+                    .gpu_bind_registry
+                    .registered_prototypes
+                    .get(&entity_handle)
+                    .expect("prototype should be registered")
+                    .clone();
+
+                let first_arch = arch_list.swap_remove(0);
+                let first_instance_handle = first_arch.insert_self(self, &entity_handle);
+
+                let mut copied_instance_data = entity_manager
+                    .get_entity_cloned_new(&first_instance_handle, prototype_handle.clone());
+                let mut additional = Vec::<InstanceHandle>::with_capacity(arch_list.len());
+                // for the rest, independant data should be copied, and shared should be shared
+                for arch in arch_list {
+                    let instance_handle = arch.insert_self(self, &entity_handle);
+                    additional.push(instance_handle);
+                }
+                if let InstanceUploadDataNew::Copied(copied) = &mut copied_instance_data {
+                    copied.additional = Some(additional);
+                }
+                res.push(copied_instance_data);
             }
-            Ok(res)
         }
+        Ok(res)
+    }
+
+    pub fn add_render_group(&mut self, mut renderables: Renderables) -> InstanceUploadDataNew {
+        let mut new_instance_data = NewInstanceData::new(renderables.instance_handle.clone());
+        // ******* MESH DATA ********
+        let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
+
+        for (asset_handle, mesh_data) in renderables.mesh_renderables.drain(..) {
+            let view = RenderView {
+                asset_handle: asset_handle,
+                pnu_draws: mesh_data.pnu_vertex_ranges.map(|pnu| DrawSet {
+                    joint_map: vec![], // TODO: seprate draw set struct for pnu to avoid this?
+                    mesh_map: mesh_data.pnu_mesh_map,
+                    primtitive_ranges: pnu,
+                    index_ranges: mesh_data.index_ranges.clone(),
+                }),
+                pnujw_draws: mesh_data.pnujw_vertex_ranges.map(|pnujw| DrawSet {
+                    joint_map: mesh_data.joint_map,
+                    mesh_map: mesh_data.pnujw_mesh_map,
+                    primtitive_ranges: pnujw,
+                    index_ranges: mesh_data.index_ranges.clone(),
+                }),
+            };
+
+            views.push(view);
+            new_instance_data
+                .local_transforms
+                .extend(mesh_data.local_transforms);
+        }
+
+        self.entity_group_index.insert(
+            renderables.instance_handle.entity_handle,
+            self.render_groups.len(),
+        );
+        self.render_groups.push(RenderGroup {
+            instance_handles: vec![renderables.instance_handle.clone()],
+            views,
+        });
+        // ******** ANIMATION DATA *********
+        if let Some(entity_animation_data) = renderables.animations {
+            if !entity_animation_data.joint_transforms.is_empty() {
+                match &mut new_instance_data.joint_transforms {
+                    Some(jt) => {
+                        jt.extend(entity_animation_data.joint_transforms.clone());
+                        new_instance_data
+                            .ibms
+                            .clone()
+                            .expect("ibms")
+                            .extend(entity_animation_data.inverse_bind_matrices);
+                    }
+                    None => {
+                        new_instance_data.joint_transforms =
+                            Some(entity_animation_data.joint_transforms.clone());
+                        new_instance_data.ibms = Some(entity_animation_data.inverse_bind_matrices);
+                    }
+                }
+            }
+            self.animation_controller.registered_animations.insert(
+                renderables.instance_handle.entity_handle.clone(),
+                EntityAnimations {
+                    gpu_instance_handle: None,
+                    animation: entity_animation_data.animation,
+                    local_transforms: entity_animation_data.local_transforms,
+                    joint_transforms: entity_animation_data.joint_transforms,
+                    mesh_slot_map: entity_animation_data.mesh_slot_map,
+                    skin_offset_map: entity_animation_data.skin_offset_map,
+                },
+            );
+        }
+        InstanceUploadDataNew::New(new_instance_data)
     }
 
     pub fn despawn(&mut self, handle: InstanceHandle) {
@@ -327,60 +392,22 @@ impl InstanceManager {
     }
 
     pub fn gen_draw_calls<'frame>(&'frame self, packet: &mut DrawPacket) {
-        for group in self.render_groups.iter() {
-            for view in group.views.iter() {
-                if let Some(pnu) = &view.pnu_draws {
-                    let entry = packet
+        // TODO: could probably save some time by just clearing the vecs, not the key value
+        packet.clear();
+        // pos
+        for (instance_idx, draw_chunk) in self.pos.draw_palette.iter().enumerate() {
+            for data in draw_chunk.iter() {
+                let entry = match data {
+                    DrawData::Static(pnu_data) => packet
                         .pnu
-                        .entry(view.gpu_handle.clone())
-                        .or_insert_with(Vec::new);
-                    for instance_handle in group.instance_handles.iter() {
-                        // calculate the instance idx of each draw call
-                        let offset = self.offset_of(instance_handle.archetype);
-                        let instance_idx =
-                            self.resolve_idx(instance_handle).expect("should be valid") as u32
-                                + offset as u32;
-                        if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
-                            for (i, pr) in pnu.primtitive_ranges.iter().enumerate() {
-                                entry.push(DrawItem {
-                                    joint_offset: None,
-                                    lt_idx: bindings.lt_offset + pnu.mesh_map[i],
-                                    instances: instance_idx..instance_idx + 1,
-                                    primitives: pr.clone(),
-                                    indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
-                                });
-                            }
-                        }
-                    }
-                }
-                if let Some(pnujw) = &view.pnujw_draws {
-                    let entry = packet
+                        .entry(pnu_data.alloc_handle.clone())
+                        .or_insert_with(Vec::new),
+                    DrawData::Skinned(pnujw_data) => packet
                         .pnujw
-                        .entry(view.gpu_handle.clone())
-                        .or_insert_with(Vec::new);
-                    for instance_handle in group.instance_handles.iter() {
-                        // calculate the instance idx of each draw call
-                        let offset = self.offset_of(instance_handle.archetype);
-                        let instance_idx =
-                            self.resolve_idx(instance_handle).expect("should be valid") as u32
-                                + offset as u32;
-                        if let Some(bindings) = self.gpu_bindings.get(instance_handle) {
-                            for (i, pr) in pnujw.primtitive_ranges.iter().enumerate() {
-                                entry.push(DrawItem {
-                                    joint_offset: bindings
-                                        .joint_offset
-                                        .map(|offset| offset + pnujw.joint_map[i]),
-                                    lt_idx: bindings.lt_offset + pnujw.mesh_map[i],
-                                    instances: instance_idx..instance_idx + 1,
-                                    primitives: pr.clone(),
-                                    indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
-                                });
-                            }
-                        } else {
-                            // skip rendering
-                        }
-                    }
-                }
+                        .entry(pnujw_data.alloc_handle.clone())
+                        .or_insert_with(Vec::new),
+                };
+                entry.push(data.as_draw_item(instance_idx as u32));
             }
         }
     }
@@ -390,7 +417,7 @@ impl InstanceManager {
         self.pos.collect(&mut render_frame);
 
         self.animation_controller
-            .prepare_animation_frame(&mut render_frame, &self.gpu_bindings);
+            .prepare_animation_frame(&mut render_frame);
         render_frame
     }
 }

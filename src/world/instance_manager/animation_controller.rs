@@ -85,25 +85,22 @@ impl AnimationController {
     pub(super) fn prepare_animation_frame<'frame>(
         &'frame self,
         render_frame: &mut RenderFrame<'frame>,
-        gpu_bindings: &HashMap<InstanceHandle, InstanceGPUBindings>,
     ) {
         for animation_instance in self.active_animations.iter() {
-            let lt_offset = gpu_bindings
-                .get(&animation_instance.instance_handle)
+            let gpu_handle = self
+                .registered_animations
+                .get(&animation_instance.instance_handle.entity_handle)
                 .unwrap()
-                .lt_offset;
-
+                .gpu_instance_handle
+                .unwrap();
             render_frame.rigid_animation_data.push(AnimationUpdate {
-                buffer_offset: lt_offset,
+                gpu_handle,
                 transforms: bytemuck::cast_slice(&animation_instance.mesh_buffer),
             });
-            if let Some(joint_offset) = gpu_bindings
-                .get(&animation_instance.instance_handle)
-                .unwrap()
-                .joint_offset
-            {
+
+            if !animation_instance.joint_buffer.is_empty() {
                 render_frame.joint_animation_data.push(AnimationUpdate {
-                    buffer_offset: joint_offset,
+                    gpu_handle,
                     transforms: bytemuck::cast_slice(&animation_instance.joint_buffer),
                 });
             }

@@ -427,3 +427,49 @@ needs:
 6. mesh old instance independant mode
 needs:
     - local transform data 
+
+
+
+### new new new new instance spawn
+
+1. scene.spawn()
+    - sets scene as dirty
+    - adds load level change and spawn even to the scene queue
+
+2. world.update()
+    - handle scene event processes the load level change command
+    - try_handle_scene_load polls the load queue and ensure that the relevant assets are loaded on the CPU
+    - push AssetDidLoad events to the delta list
+3. bytecode generated for the VM to load the asset
+4. renderer returns GPUAllocationHandles for the loaded assets, and they are registered in the asset manager as GPU resident
+5. world update again, scene spawn event is fired with the archetype data
+6. instance_manager.spawn_instances()
+    - takes the list of archetype data and sorts by entity
+    - if the entity is not registered in the instance manager with a render group, then it is the first time this entity has been spawned
+    - grab "renderable" data using the entity_manager to create the render group and the InstanceUploadData
+    - for any additional handles: TODO
+    - WorldUpdateDelta::NewEntitySpawn is generated
+7. bytecode is generated for the new entity spawn
+    - should be:    
+                SpawnEntityInstance (instance handle constant)
+                CreatePrototype
+                LocalTransformUpload (local transform byte data)
+                JointTransformUpload (joint transform byte data)
+                EmitEntitySpawn (bind mask)
+    - render update deltas should be:
+                PrototypeCreated(prototype handle, instance handle)
+                EntitySpawned(instance handle, gpu instance handle, bind data)
+
+8. post frame update
+    - prototype update received -> register to prototype map in instance manager
+    - entity spawned received -> add draw data
+        - this writes draw data to the archetype table's draw palette list
+        - also adds GPUInstance handle to any animations
+
+9. gen draw calls
+    - iterate over the draw palette list and split draw calls between pipeline and unique GPU alloc handle, populating draw packet 
+        
+
+
+
+

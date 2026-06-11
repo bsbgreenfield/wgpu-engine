@@ -3,7 +3,10 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData,
 use bytemuck::Pod;
 
 use crate::{
-    app::renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
+    app::renderer::{
+        gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
+        renderer::GPUInstanceHandle,
+    },
     asset_manager::AssetHandle,
     util::types::ModelVertex,
     world::{
@@ -18,6 +21,9 @@ mod gpu_allocator;
 mod pipeline;
 pub mod renderer;
 mod vm;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct PrototypeHandle(pub(super) u16);
 
 #[derive(Debug, Default)]
 pub struct DrawPacket {
@@ -48,7 +54,15 @@ impl DrawPacket {
 pub enum RenderUpdateDelta {
     AssetGPULoaded(AssetHandle, GPUAllocationHandle),
     EntityGPULoaded(EntityHandle),
-    EntitySpawned((InstanceHandle, InstanceGPUBindings)),
+    EntitySpawned {
+        instance_handle: InstanceHandle,
+        gpu_instance_handle: GPUInstanceHandle,
+        bindings: InstanceGPUBindings,
+    },
+    ProtypeCreated {
+        instance_handle: InstanceHandle,
+        prototype: PrototypeHandle,
+    },
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -79,15 +93,15 @@ impl GPUAllocationHandle {
 #[derive(Debug)]
 pub struct InstanceUploadJob<'a, T: Pod> {
     pub data: &'a [u8],
-    pub instance_handle: InstanceHandle,
+    pub gpu_instance_handle: GPUInstanceHandle,
     _t: PhantomData<T>,
 }
 
 impl<'a, T: Pod> InstanceUploadJob<'a, T> {
-    pub fn new(data: &'a [u8], instance_handle: InstanceHandle) -> Self {
+    pub fn new(data: &'a [u8], gpu_instance_handle: GPUInstanceHandle) -> Self {
         Self {
             data,
-            instance_handle,
+            gpu_instance_handle,
             _t: PhantomData,
         }
     }
@@ -99,15 +113,27 @@ pub enum Instruction {
     Op(Operations),
     Byte(u8),
     ConstIdx(u8),
+    Buffer(BufferType),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BufferType {
+    LocalTransform,
+    JointTransform,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operations {
+    CreatePrototype,
     AddAsset,
     MoveEntity,
     SpawnEntityInstance,
     LocalTransformUpload,
     JointTransformUpload,
+    LoadPrototype,
+    SpawnFromPrototype,
+    ShareData,
+    CopyData,
     ResolveSharedLTBinding,
     ResolveSharedJTBinding,
     PNUUpload,

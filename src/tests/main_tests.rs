@@ -39,6 +39,7 @@ mod integration_tests {
     enum RenderDeltaKind {
         AssetGPULoaded,
         EntitySpawn,
+        PrototypeCreated,
     }
 
     fn get_bytecode<'a>(
@@ -67,11 +68,11 @@ mod integration_tests {
                     WorldUpdateDelta::AssetDidLoad(_),
                     WorldDeltaKind::AssetDidLoad
                 ) | (
-                    WorldUpdateDelta::EntityDidSpawn(_),
+                    WorldUpdateDelta::NewEntitySpawn(_),
                     WorldDeltaKind::EntityDidSpawn
                 )
             );
-            assert!(matches, "world delta[{i}] variant mismatch");
+            assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
         }
     }
 
@@ -90,11 +91,14 @@ mod integration_tests {
                     RenderUpdateDelta::AssetGPULoaded(..),
                     RenderDeltaKind::AssetGPULoaded
                 ) | (
-                    RenderUpdateDelta::EntitySpawned(_),
+                    RenderUpdateDelta::EntitySpawned { .. },
                     RenderDeltaKind::EntitySpawn
+                ) | (
+                    RenderUpdateDelta::ProtypeCreated { .. },
+                    RenderDeltaKind::PrototypeCreated
                 )
             );
-            assert!(matches, "render delta[{i}] variant mismatch");
+            assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
         }
     }
 
@@ -144,6 +148,7 @@ mod integration_tests {
                 constants,
                 instructions,
                 &app.app_config.as_ref().unwrap().queue,
+                &app.app_config.as_ref().unwrap().device,
             )
             .unwrap_or_else(|e| panic!("{}", e));
 
@@ -168,6 +173,7 @@ mod integration_tests {
                 constants,
                 instructions,
                 &app.app_config.as_ref().unwrap().queue,
+                &app.app_config.as_ref().unwrap().device,
             )
             .unwrap_or_else(|e| panic!("{}", e));
         app.world.as_mut().unwrap().post_frame_update(render_deltas);
@@ -198,7 +204,10 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::EntityDidSpawn],
-                &[RenderDeltaKind::EntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
             );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
@@ -234,7 +243,10 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::EntityDidSpawn],
-                &[RenderDeltaKind::EntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
             );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
@@ -271,7 +283,10 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::EntityDidSpawn],
-                &[RenderDeltaKind::EntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
             );
 
             gen_draw_calls(&mut app);
@@ -311,7 +326,12 @@ mod integration_tests {
                     WorldDeltaKind::EntityDidSpawn,
                     WorldDeltaKind::EntityDidSpawn,
                 ],
-                &[RenderDeltaKind::EntitySpawn, RenderDeltaKind::EntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
             );
 
             gen_draw_calls(&mut app);
@@ -353,7 +373,12 @@ mod integration_tests {
                     WorldDeltaKind::EntityDidSpawn,
                     WorldDeltaKind::EntityDidSpawn,
                 ],
-                &[RenderDeltaKind::EntitySpawn, RenderDeltaKind::EntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
             );
             let instance_manager = &app.world.as_ref().unwrap().instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 2);
@@ -637,7 +662,10 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::EntityDidSpawn],
-                &[RenderDeltaKind::EntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
             );
             let instance_handle =
                 InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
@@ -677,18 +705,6 @@ mod integration_tests {
                 24,
                 "the fox has 24 joints"
             );
-
-            let bindings = app
-                .world
-                .as_ref()
-                .unwrap()
-                .instance_manager
-                .get_gpu_bindings(&instance_handle)
-                .expect("the instance should have bidings ");
-
-            assert!(bindings.joint_offset.is_some());
-            assert_eq!(bindings.joint_offset.unwrap(), 0);
-            assert_eq!(bindings.lt_offset, 0);
 
             gen_draw_calls(&mut app);
             let pnujw_items: Vec<&DrawItem> =
@@ -744,7 +760,10 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::EntityDidSpawn],
-                &[RenderDeltaKind::EntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
             );
 
             app.world

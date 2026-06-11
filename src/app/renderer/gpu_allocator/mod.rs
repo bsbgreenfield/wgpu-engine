@@ -6,6 +6,7 @@ use bytemuck::Pod;
 use std::error::Error;
 
 use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
+use crate::app::renderer::renderer::GPUInstanceHandle;
 use crate::app::renderer::{InstanceUploadJob, StorageData};
 use crate::util::types::{InverseBindMatrix, JointTransform, LocalTransform};
 use crate::{
@@ -86,7 +87,7 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
         queue: &wgpu::Queue,
     ) -> Result<u32, Self::AllocationError>;
 
-    fn resolve(&self, handle: &InstanceHandle) -> u32;
+    fn resolve(&self, handle: &GPUInstanceHandle) -> u32;
 
     fn new(device: &wgpu::Device) -> Self;
 
@@ -118,8 +119,8 @@ pub enum VertexArenaError {
     DataTooLarge(u32, String),
     FreeListError(FreeListAllocError),
     HandleNotFound {
-        shared: InstanceHandle,
-        donor: InstanceHandle,
+        shared: GPUInstanceHandle,
+        donor: GPUInstanceHandle,
     },
     MaxAllocationReached,
 }
@@ -229,7 +230,15 @@ impl StorageData for InverseBindMatrix {
 pub(super) trait SharedInstanceData {
     fn register_shared_binding(
         &mut self,
-        donor_handle: &InstanceHandle,
-        new_handle: &InstanceHandle,
+        donor_handle: &GPUInstanceHandle,
+        new_handle: &GPUInstanceHandle,
+    ) -> Result<u32, VertexArenaError>;
+
+    fn register_copy_binding(
+        &mut self,
+        donor_handle: &GPUInstanceHandle,
+        new_handle: &GPUInstanceHandle,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError>;
 }

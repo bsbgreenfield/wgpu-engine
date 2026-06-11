@@ -175,10 +175,7 @@ impl AssetManager {
         }
     }
 
-    pub fn get_loaded_asset(
-        &self,
-        asset_handle: &AssetHandle,
-    ) -> (&GPUAllocationHandle, &Box<dyn Asset>) {
+    pub fn get_loaded_asset(&self, asset_handle: &AssetHandle) -> &Box<dyn Asset> {
         let a = self
             .registered_assets
             .get(asset_handle)
@@ -187,14 +184,25 @@ impl AssetManager {
         let RegisteredAsset::Loaded(res) = a else {
             panic!("asset is not loaded!")
         };
-        let AssetResidency::GPU(alloc_handle, la_index) = res else {
+        let AssetResidency::GPU(_alloc_handle, la_index) = res else {
             panic!("asset is not gpu resident!")
         };
-        (
-            alloc_handle,
-            self.loaded_assets
-                .get(*la_index)
-                .expect("loaded asset not found at specified index!"),
-        )
+        self.loaded_assets
+            .get(*la_index)
+            .expect("loaded asset not found at specified index!")
+    }
+
+    pub fn resolve_asset_handle(&self, asset_handle: &AssetHandle) -> GPUAllocationHandle {
+        let a = self
+            .registered_assets
+            .get(asset_handle)
+            .expect("should be registered");
+        let RegisteredAsset::Loaded(res) = a else {
+            panic!("asset is not loaded!")
+        };
+        let AssetResidency::GPU(alloc_handle, _la_index) = res else {
+            panic!("asset is not gpu resident!")
+        };
+        alloc_handle.clone()
     }
 }

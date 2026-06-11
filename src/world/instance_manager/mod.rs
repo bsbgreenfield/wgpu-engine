@@ -1,9 +1,15 @@
-use crate::world::{
-    RenderKey, entity_manager::EntityHandle, instance_manager::instance_manager::InstanceManager,
+use crate::{
+    app::renderer::renderer::GPUInstanceHandle,
+    world::{
+        RenderKey, entity_manager::EntityHandle,
+        instance_manager::instance_manager::InstanceManager,
+    },
 };
 
 mod animation_controller;
 pub mod archetype_table;
+mod draw_palette;
+mod gpu_bind_registry;
 mod instance_arena;
 pub(super) mod instance_manager;
 
@@ -84,7 +90,7 @@ impl InstanceHandle {
 
 #[derive(Debug)]
 pub struct AnimationUpdate<'frame> {
-    pub buffer_offset: u32,
+    pub gpu_handle: GPUInstanceHandle,
     pub transforms: &'frame [u8],
 }
 

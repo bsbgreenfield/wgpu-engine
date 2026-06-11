@@ -6,17 +6,19 @@ use crate::{
         GPUAssetUploadJob,
         app::AppCommand,
         renderer::{
-            GPUAllocationHandle, GPUBindings, Instruction, Operations, RenderConstant,
-            RenderUpdateDelta,
+            GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
+            RenderConstant, RenderUpdateDelta,
         },
     },
-    asset_manager::{Asset, AssetLoadError},
+    asset_manager::{Asset, AssetHandle, AssetLoadError},
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
         RenderKey, WorldInitError, WorldUpdateError,
         camera::Camera,
         entity_manager::{
-            EntityHandle, components::ResourceBacking, entity_manager::EntityManager,
+            EntityHandle,
+            components::ResourceBacking,
+            entity_manager::{EntityManager, Renderables},
         },
         instance_manager::{Archetype, InstanceHandle, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
@@ -42,7 +44,7 @@ impl DrawSet {
 }
 
 pub struct RenderView {
-    pub gpu_handle: GPUAllocationHandle,
+    pub asset_handle: AssetHandle,
     pub pnujw_draws: Option<DrawSet>,
     pub pnu_draws: Option<DrawSet>,
 }
@@ -101,8 +103,45 @@ pub struct InstanceUploadData {
 }
 
 #[derive(Debug)]
+pub struct NewInstanceData {
+    pub handle: InstanceHandle,
+    pub local_transforms: Vec<LocalTransform>,
+    pub joint_transforms: Option<Vec<Mat4F32>>,
+    pub ibms: Option<Vec<Mat4F32>>,
+    pub additional_handles: Option<Vec<InstanceHandle>>,
+}
+
+impl NewInstanceData {
+    pub fn new(handle: InstanceHandle) -> Self {
+        Self {
+            handle,
+            local_transforms: Vec::new(),
+            joint_transforms: None,
+            ibms: None,
+            additional_handles: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct CopiedInstanceData {
+    pub handle: InstanceHandle,
+    pub additional: Option<Vec<InstanceHandle>>,
+    pub prototype_handle: PrototypeHandle,
+    pub local_transforms: LocalTransforms,
+    pub joint_transforms: JointTransforms,
+}
+
+#[derive(Debug)]
+pub enum InstanceUploadDataNew {
+    New(NewInstanceData),
+    Copied(CopiedInstanceData),
+}
+
+#[derive(Debug)]
 pub enum WorldUpdateDelta<'frame> {
-    EntityDidSpawn(InstanceUploadData),
+    NewEntitySpawn(NewInstanceData),
+    EntityInstanceSpawn(CopiedInstanceData),
     AssetDidLoad(GPUAssetUploadJob<'frame>),
 }
 
@@ -149,55 +188,42 @@ impl World {
                     }
                     instructions.push(Instruction::Op(Operations::EmitAssetUpload));
                 }
-                WorldUpdateDelta::EntityDidSpawn(instance_upload_data) => {
+                WorldUpdateDelta::NewEntitySpawn(new_instance) => {
                     let mut bind_mask = GPUBindings::empty();
                     instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                    constants.push(RenderConstant::Key(
-                        instance_upload_data.instance_handle.as_key(),
-                    ));
+                    constants.push(RenderConstant::Key(new_instance.handle.as_key()));
                     instructions.push(Self::const_last(constants));
+
+                    instructions.push(Instruction::Op(Operations::CreatePrototype));
+                    let mut has_skeletal = false;
+
+                    // local transforms
                     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
-                    match instance_upload_data.local_transforms {
-                        LocalTransforms::Owned { mut data } => {
-                            instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                            let lt_bytes: Vec<u8> = {
-                                let ptr = data.as_mut_ptr() as *mut u8;
-                                let len = data.len() * std::mem::size_of::<LocalTransform>();
-                                let cap = data.capacity() * std::mem::size_of::<LocalTransform>();
-                                std::mem::forget(data);
-                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                            };
-                            constants.push(RenderConstant::DataOwned(lt_bytes));
-                            instructions.push(Self::const_last(constants));
-                        }
-                        LocalTransforms::CopiedFrom { donor } => {
-                            todo!()
-                        }
-                        LocalTransforms::SharedWith { donor } => {
-                            instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
-                            constants.push(RenderConstant::Key(donor.as_key()));
-                            instructions.push(Self::const_last(constants));
-                        }
-                        _ => panic!("instance data not properly initialized"),
-                    }
-                    match instance_upload_data.joint_transforms {
-                        JointTransforms::None => {
-                            // none
-                        }
-                        JointTransforms::Owned { mut data } => {
-                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                            instructions.push(Instruction::Op(Operations::JointTransformUpload));
-                            let jt_bytes: Vec<u8> = {
-                                let ptr = data.as_mut_ptr() as *mut u8;
-                                let len = data.len() * std::mem::size_of::<Mat4F32>();
-                                let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
-                                std::mem::forget(data);
-                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                            };
-                            let InverseBindMatrices::Owned { mut data } = instance_upload_data.ibms
-                            else {
-                                panic!("joint transforms must be accompanied by ibms");
-                            };
+                    instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                    let lt_bytes: Vec<u8> = {
+                        let mut data = new_instance.local_transforms;
+                        let ptr = data.as_mut_ptr() as *mut u8;
+                        let len = data.len() * std::mem::size_of::<LocalTransform>();
+                        let cap = data.capacity() * std::mem::size_of::<LocalTransform>();
+                        std::mem::forget(data);
+                        unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                    };
+                    constants.push(RenderConstant::DataOwned(lt_bytes));
+                    instructions.push(Self::const_last(constants));
+
+                    // joints and ibms
+                    if let Some(mut data) = new_instance.joint_transforms {
+                        bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
+                        instructions.push(Instruction::Op(Operations::JointTransformUpload));
+                        has_skeletal = true;
+                        let jt_bytes: Vec<u8> = {
+                            let ptr = data.as_mut_ptr() as *mut u8;
+                            let len = data.len() * std::mem::size_of::<Mat4F32>();
+                            let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
+                            std::mem::forget(data);
+                            unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                        };
+                        let ibm_bytes = if let Some(mut data) = new_instance.ibms {
                             let ibm_bytes: Vec<u8> = {
                                 let ptr = data.as_mut_ptr() as *mut u8;
                                 let len = data.len() * std::mem::size_of::<Mat4F32>();
@@ -205,26 +231,124 @@ impl World {
                                 std::mem::forget(data);
                                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
                             };
-                            constants.push(RenderConstant::DataOwned(jt_bytes));
-                            instructions.push(Self::const_last(constants));
-                            constants.push(RenderConstant::DataOwned(ibm_bytes));
-                            instructions.push(Self::const_last(constants));
-                        }
-                        JointTransforms::SharedWith { donor } => {
-                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                            instructions.push(Instruction::Op(Operations::ResolveSharedJTBinding));
-                            constants.push(RenderConstant::Key(donor.as_key()));
-                            instructions.push(Self::const_last(constants));
-                        }
-                        JointTransforms::CopiedFrom { donor } => {
-                            bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                            todo!();
-                        }
-                        _ => panic!("joint data not properly initialized"),
+                            ibm_bytes
+                        } else {
+                            panic!("joint transforms must be accompanied by ibms");
+                        };
+                        constants.push(RenderConstant::DataOwned(jt_bytes));
+                        instructions.push(Self::const_last(constants));
+                        constants.push(RenderConstant::DataOwned(ibm_bytes));
+                        instructions.push(Self::const_last(constants));
                     }
-                    instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
-                    instructions.push(Instruction::Byte(bind_mask.bits()));
+
+                    if let Some(additional_handles) = new_instance.additional_handles {
+                        todo!("MULTI INSTANCE SPAWN");
+
+                        for additional in additional_handles {
+                            let mut bind_mask = GPUBindings::empty();
+                            instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                            constants.push(RenderConstant::Key(additional.as_key()));
+                            instructions.push(Self::const_last(constants));
+
+                            bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
+                            if has_skeletal {
+                                instructions
+                                    .push(Instruction::Op(Operations::JointTransformUpload));
+                                instructions.push(Self::const_last(constants));
+                            }
+                            instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                            // if there are joints and ibms, then the lt will be the third from the
+                            // back. More elegant solution TBD
+                            if has_skeletal {
+                                instructions
+                                    .push(Instruction::ConstIdx((constants.len() - 3) as u8));
+                            } else {
+                                instructions.push(Self::const_last(constants));
+                            }
+                        }
+                    } else {
+                        instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+                        instructions.push(Instruction::Byte(bind_mask.bits()));
+                    }
                 }
+                WorldUpdateDelta::EntityInstanceSpawn(copied_instance) => {
+                    todo!()
+                } // WorldUpdateDelta::EntityDidSpawn(instance_upload_data) => {
+                  //     let mut bind_mask = GPUBindings::empty();
+                  //     instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+                  //     constants.push(RenderConstant::Key(
+                  //         instance_upload_data.instance_handle.as_key(),
+                  //     ));
+                  //     instructions.push(Self::const_last(constants));
+                  //     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
+                  //     match instance_upload_data.local_transforms {
+                  //         LocalTransforms::Owned { mut data } => {
+                  //             instructions.push(Instruction::Op(Operations::LocalTransformUpload));
+                  //             let lt_bytes: Vec<u8> = {
+                  //                 let ptr = data.as_mut_ptr() as *mut u8;
+                  //                 let len = data.len() * std::mem::size_of::<LocalTransform>();
+                  //                 let cap = data.capacity() * std::mem::size_of::<LocalTransform>();
+                  //                 std::mem::forget(data);
+                  //                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                  //             };
+                  //             constants.push(RenderConstant::DataOwned(lt_bytes));
+                  //             instructions.push(Self::const_last(constants));
+                  //         }
+                  //         LocalTransforms::CopiedFrom { donor } => {
+                  //             todo!()
+                  //         }
+                  //         LocalTransforms::SharedWith { donor } => {
+                  //             instructions.push(Instruction::Op(Operations::ResolveSharedLTBinding));
+                  //             constants.push(RenderConstant::Key(donor.as_key()));
+                  //             instructions.push(Self::const_last(constants));
+                  //         }
+                  //         _ => panic!("instance data not properly initialized"),
+                  //     }
+                  //     match instance_upload_data.joint_transforms {
+                  //         JointTransforms::None => {
+                  //             // none
+                  //         }
+                  //         JointTransforms::Owned { mut data } => {
+                  //             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
+                  //             instructions.push(Instruction::Op(Operations::JointTransformUpload));
+                  //             let jt_bytes: Vec<u8> = {
+                  //                 let ptr = data.as_mut_ptr() as *mut u8;
+                  //                 let len = data.len() * std::mem::size_of::<Mat4F32>();
+                  //                 let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
+                  //                 std::mem::forget(data);
+                  //                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                  //             };
+                  //             let InverseBindMatrices::Owned { mut data } = instance_upload_data.ibms
+                  //             else {
+                  //                 panic!("joint transforms must be accompanied by ibms");
+                  //             };
+                  //             let ibm_bytes: Vec<u8> = {
+                  //                 let ptr = data.as_mut_ptr() as *mut u8;
+                  //                 let len = data.len() * std::mem::size_of::<Mat4F32>();
+                  //                 let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
+                  //                 std::mem::forget(data);
+                  //                 unsafe { Vec::from_raw_parts(ptr, len, cap) }
+                  //             };
+                  //             constants.push(RenderConstant::DataOwned(jt_bytes));
+                  //             instructions.push(Self::const_last(constants));
+                  //             constants.push(RenderConstant::DataOwned(ibm_bytes));
+                  //             instructions.push(Self::const_last(constants));
+                  //         }
+                  //         JointTransforms::SharedWith { donor } => {
+                  //             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
+                  //             instructions.push(Instruction::Op(Operations::ResolveSharedJTBinding));
+                  //             constants.push(RenderConstant::Key(donor.as_key()));
+                  //             instructions.push(Self::const_last(constants));
+                  //         }
+                  //         JointTransforms::CopiedFrom { donor } => {
+                  //             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
+                  //             todo!();
+                  //         }
+                  //         _ => panic!("joint data not properly initialized"),
+                  //     }
+                  //     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+                  //     instructions.push(Instruction::Byte(bind_mask.bits()));
+                  // }
             }
         }
     }
@@ -260,11 +384,10 @@ impl World {
 
     pub fn spawn(
         &mut self,
-        entity_handle: &EntityHandle,
-        archetype: Box<dyn Archetype>,
-    ) -> InstanceUploadData {
+        instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
+    ) -> Vec<InstanceUploadDataNew> {
         self.instance_manager
-            .spawn(entity_handle, &self.entity_manager, archetype)
+            .spawn_instances(&self.entity_manager, instance_data)
             .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e))
     }
 
@@ -313,7 +436,6 @@ impl World {
         deltas: &mut Vec<WorldUpdateDelta>,
     ) -> Result<(), WorldUpdateError> {
         'outer: loop {
-            println!("scene events: {:?}", self.scene.event_queue);
             let scene_event = self.scene.current_event();
             if scene_event.is_some() {
                 match scene_event.unwrap() {
@@ -333,10 +455,19 @@ impl World {
                         }
                     }
                     SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
-                        SceneEvent::Spawn(mut instance_data) => {
-                            for (entity_handle, archetype) in instance_data.drain(..) {
-                                let instance_upload_data = self.spawn(&entity_handle, archetype);
-                                deltas.push(WorldUpdateDelta::EntityDidSpawn(instance_upload_data));
+                        SceneEvent::Spawn(instance_data) => {
+                            let upload_data = self.spawn(instance_data);
+                            for datum in upload_data {
+                                match datum {
+                                    InstanceUploadDataNew::New(new_instance) => {
+                                        deltas.push(WorldUpdateDelta::NewEntitySpawn(new_instance));
+                                    }
+                                    InstanceUploadDataNew::Copied(copied_instance) => {
+                                        deltas.push(WorldUpdateDelta::EntityInstanceSpawn(
+                                            copied_instance,
+                                        ));
+                                    }
+                                }
                             }
                         }
                         _ => unreachable!(),
@@ -362,9 +493,24 @@ impl World {
                 RenderUpdateDelta::EntityGPULoaded(_) => {
                     // TODO wait to dequeue until GPU reports it has successfully loaded entity?
                 }
-                RenderUpdateDelta::EntitySpawned(gpu_bindings) => {
-                    self.instance_manager.update_gpu_bindings(gpu_bindings);
+                RenderUpdateDelta::EntitySpawned {
+                    instance_handle,
+                    gpu_instance_handle,
+                    bindings,
+                } => {
+                    self.instance_manager.add_draw_data(
+                        &instance_handle,
+                        bindings,
+                        gpu_instance_handle,
+                        &self.entity_manager.asset_manager,
+                    );
                 }
+                RenderUpdateDelta::ProtypeCreated {
+                    instance_handle,
+                    prototype,
+                } => self
+                    .instance_manager
+                    .register_prototype(instance_handle.entity_handle, prototype),
             }
         }
     }
