@@ -350,7 +350,7 @@ impl InstanceManager {
                         jt.extend(entity_animation_data.joint_transforms.clone());
                         new_instance_data
                             .ibms
-                            .clone()
+                            .as_mut()
                             .expect("ibms")
                             .extend(entity_animation_data.inverse_bind_matrices);
                     }
