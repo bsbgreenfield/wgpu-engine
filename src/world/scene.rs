@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use cgmath::SquareMatrix;
+use cgmath::{SquareMatrix, Vector3};
 
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
@@ -311,6 +311,13 @@ impl Scene {
                         .into(),
                 }),
             ),
+            (
+                entity1,
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(-3., 0., 0.))
+                        .into(),
+                }),
+            ),
         ]);
 
         Ok(scene)
@@ -378,6 +385,127 @@ impl Scene {
                 position: cgmath::Matrix4::<f32>::identity().into(),
             }),
         )]);
+        Ok(scene)
+    }
+
+    pub fn multi_box_scene(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let box_asset = world.register_asset::<GltfAsset>("box")?; // asset
+
+        let box_entity = world.entity_manager.new_entity()?;
+
+        world.entity_manager.add_mesh_collection_for_entity(
+            &box_entity,
+            MeshCollectionDescriptor {
+                mesh_accessor: MeshAcessor::All,
+                resource_backing: box_asset.erase(),
+                animation: None,
+            },
+        ); // mesh
+
+        let mut scene = Scene::new();
+        scene.add_entity(box_entity);
+        scene.spawn(vec![
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::identity().into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(0., 2., 0.))
+                        .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(2., 0., 0.))
+                        .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(2., 2., 0.))
+                        .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(-2., 2., 0.))
+                        .into(),
+                }),
+            ),
+        ]);
+        Ok(scene)
+    }
+    pub fn multi_fox_scene(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let fox_asset = world.register_asset::<GltfAsset>("fox")?; // asset
+
+        let fox_entity = world.entity_manager.new_entity()?;
+        let mcc = MeshCollectionDescriptor::new(fox_asset.clone(), MeshAcessor::All)
+            .with_animation(AnimationComponentDescriptor {
+                resource_backing: fox_asset.clone(),
+                accessor: AnimationAccessor::All,
+                rigid_animation_mode: AnimationMode::Shared,
+                skinned_animation_mode: AnimationMode::Shared,
+            });
+
+        world
+            .entity_manager
+            .add_mesh_collection_for_entity(&fox_entity, mcc); // mesh
+
+        let mut scene = Scene::new();
+        scene.add_entity(fox_entity);
+        scene.spawn(vec![
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::identity()
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(0., 2., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(2., 0., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(2., 2., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(-2., 2., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+        ]);
         Ok(scene)
     }
     pub fn fox_animated_scene(

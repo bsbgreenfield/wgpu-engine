@@ -29,7 +29,7 @@ pub mod renderer;
 mod vm;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct PrototypeHandle(pub(super) u16);
+pub struct PrototypeHandle(pub u16);
 
 impl RenderKey for PrototypeHandle {
     fn as_key(&self) -> u64 {

@@ -21,6 +21,7 @@ mod integration_tests {
 
     enum TestCases {
         Box,
+        MultiBox,
         Fox,
         FoxAnimated,
         BoxFox,
@@ -114,6 +115,7 @@ mod integration_tests {
         let mut world = World::new(1.0, entity_manager, &config.device).unwrap();
         let scene = match test_case {
             TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
+            TestCases::MultiBox => Scene::multi_box_scene(&mut world).expect("multi box "),
             TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),
             TestCases::FoxAnimated => Scene::fox_animated_scene(&mut world).expect("fox anim init"),
             TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
@@ -576,6 +578,54 @@ mod integration_tests {
                 seen_translation,
                 "no draw item mapped to the translation transform"
             );
+        });
+    }
+
+    #[test]
+    fn render_mutliple_immediately() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::MultiBox).await;
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+
+            run_frame(
+                &mut app,
+                &[
+                    WorldDeltaKind::EntityInstanceSpawn,
+                    WorldDeltaKind::EntityInstanceSpawn,
+                    WorldDeltaKind::EntityInstanceSpawn,
+                    WorldDeltaKind::EntityInstanceSpawn,
+                    WorldDeltaKind::EntityInstanceSpawn,
+                ],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                    RenderDeltaKind::EntitySpawn,
+                    RenderDeltaKind::EntitySpawn,
+                    RenderDeltaKind::EntitySpawn,
+                    RenderDeltaKind::EntitySpawn,
+                ],
+            );
+            let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
+
+            assert_eq!(groups.len(), 1);
+
+            assert_eq!(groups[0].views.len(), 1);
+
+            gen_draw_calls(&mut app);
+
+            let instances = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .get_all_instances();
+
+            assert_eq!(instances.len(), 5);
         });
     }
 

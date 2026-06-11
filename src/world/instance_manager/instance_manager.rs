@@ -22,7 +22,10 @@ use crate::{
             draw_palette::{DrawData, PipelineDrawData},
             gpu_bind_registry::GPUBindRegistry,
         },
-        world::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
+        world::{
+            CopiedInstanceData, DrawSet, InstanceUploadData, NewInstanceData, RenderGroup,
+            RenderView,
+        },
     },
 };
 #[cfg(test)]
@@ -259,7 +262,7 @@ impl InstanceManager {
                 let renderables = entity_manager
                     .get_entity_render_data(&first_instance_handle)
                     .expect("renderables fetch fail");
-                let mut first_instance_upload_data = self.add_render_group(renderables);
+                let first_instance_upload_data = self.add_render_group(renderables);
 
                 let mut additional = Vec::<InstanceHandle>::with_capacity(arch_list.len());
                 // for the rest, independant data should be copied, and shared should be shared
@@ -267,14 +270,22 @@ impl InstanceManager {
                     let instance_handle = arch.insert_self(self, &entity_handle);
                     additional.push(instance_handle);
                 }
-                if let InstanceUploadData::New(new) = &mut first_instance_upload_data {
-                    if !additional.is_empty() {
-                        new.additional_handles = Some(additional);
-                    }
-                } else {
-                    panic!()
-                }
                 res.push(first_instance_upload_data);
+
+                if !additional.is_empty() {
+                    let prototype_handle = self
+                        .gpu_bind_registry
+                        .registered_prototypes
+                        .get(&entity_handle)
+                        .unwrap()
+                        .clone();
+
+                    let group = &self.render_groups[self.entity_group_index[&entity_handle]];
+                    let has_joints = group.views.iter().any(|v| v.pnujw_draws.is_some());
+                    let copied =
+                        entity_manager.get_entity_cloned(additional, prototype_handle, has_joints);
+                    res.push(copied);
+                }
             } else {
                 let prototype_handle = self
                     .gpu_bind_registry
@@ -286,17 +297,17 @@ impl InstanceManager {
                 let first_arch = arch_list.swap_remove(0);
                 let first_instance_handle = first_arch.insert_self(self, &entity_handle);
 
-                let mut copied_instance_data = entity_manager
-                    .get_entity_cloned(&first_instance_handle, prototype_handle.clone());
-                let mut additional = Vec::<InstanceHandle>::with_capacity(arch_list.len());
+                let mut handles = Vec::<InstanceHandle>::with_capacity(arch_list.len());
+                handles.push(first_instance_handle);
                 // for the rest, independant data should be copied, and shared should be shared
                 for arch in arch_list {
                     let instance_handle = arch.insert_self(self, &entity_handle);
-                    additional.push(instance_handle);
+                    handles.push(instance_handle);
                 }
-                if let InstanceUploadData::Copied(copied) = &mut copied_instance_data {
-                    copied.additional = Some(additional);
-                }
+                let group = &self.render_groups[self.entity_group_index[&entity_handle]];
+                let has_joints = group.views.iter().any(|v| v.pnujw_draws.is_some());
+                let copied_instance_data =
+                    entity_manager.get_entity_cloned(handles, prototype_handle.clone(), has_joints);
                 res.push(copied_instance_data);
             }
         }
@@ -304,7 +315,11 @@ impl InstanceManager {
     }
 
     pub fn add_render_group(&mut self, mut renderables: Renderables) -> InstanceUploadData {
-        let mut new_instance_data = NewInstanceData::new(renderables.instance_handle.clone());
+        let prototype = self
+            .gpu_bind_registry
+            .gen_prototype(renderables.instance_handle.entity_handle.clone());
+        let mut new_instance_data =
+            NewInstanceData::new(renderables.instance_handle.clone(), prototype);
         // ******* MESH DATA ********
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
 
@@ -329,6 +344,23 @@ impl InstanceManager {
             new_instance_data
                 .local_transforms
                 .extend(mesh_data.local_transforms);
+
+            if let Some(joint_transforms) = mesh_data.joint_transforms {
+                match &mut new_instance_data.joint_transforms {
+                    Some(jts) => {
+                        jts.extend(joint_transforms);
+                        new_instance_data
+                            .ibms
+                            .as_mut()
+                            .expect("ibms")
+                            .extend(mesh_data.ibms.expect("must have ibms"));
+                    }
+                    None => {
+                        new_instance_data.joint_transforms = Some(joint_transforms);
+                        new_instance_data.ibms = Some(mesh_data.ibms.expect("must have ibms"))
+                    }
+                }
+            }
         }
 
         self.entity_group_index.insert(
@@ -338,23 +370,6 @@ impl InstanceManager {
         self.render_groups.push(RenderGroup { views });
         // ******** ANIMATION DATA *********
         if let Some(entity_animation_data) = renderables.animations {
-            if !entity_animation_data.joint_transforms.is_empty() {
-                match &mut new_instance_data.joint_transforms {
-                    Some(jt) => {
-                        jt.extend(entity_animation_data.joint_transforms.clone());
-                        new_instance_data
-                            .ibms
-                            .as_mut()
-                            .expect("ibms")
-                            .extend(entity_animation_data.inverse_bind_matrices);
-                    }
-                    None => {
-                        new_instance_data.joint_transforms =
-                            Some(entity_animation_data.joint_transforms.clone());
-                        new_instance_data.ibms = Some(entity_animation_data.inverse_bind_matrices);
-                    }
-                }
-            }
             self.animation_controller.registered_animations.insert(
                 renderables.instance_handle.entity_handle.clone(),
                 EntityAnimations {

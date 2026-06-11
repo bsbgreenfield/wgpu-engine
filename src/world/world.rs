@@ -87,28 +87,27 @@ pub enum InverseBindMatrices {
 #[derive(Debug)]
 pub struct NewInstanceData {
     pub handle: InstanceHandle,
+    pub prototype: PrototypeHandle,
     pub local_transforms: Vec<LocalTransform>,
     pub joint_transforms: Option<Vec<Mat4F32>>,
     pub ibms: Option<Vec<Mat4F32>>,
-    pub additional_handles: Option<Vec<InstanceHandle>>,
 }
 
 impl NewInstanceData {
-    pub fn new(handle: InstanceHandle) -> Self {
+    pub fn new(handle: InstanceHandle, prototype: PrototypeHandle) -> Self {
         Self {
             handle,
+            prototype,
             local_transforms: Vec::new(),
             joint_transforms: None,
             ibms: None,
-            additional_handles: None,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct CopiedInstanceData {
-    pub handle: InstanceHandle,
-    pub additional: Option<Vec<InstanceHandle>>,
+    pub handles: Vec<InstanceHandle>,
     pub prototype_handle: PrototypeHandle,
     pub local_transforms: LocalTransforms,
     pub joint_transforms: JointTransforms,
@@ -177,7 +176,8 @@ impl World {
                     instructions.push(Self::const_last(constants));
 
                     instructions.push(Instruction::Op(Operations::CreatePrototype));
-                    let mut has_skeletal = false;
+                    constants.push(RenderConstant::Key(new_instance.prototype.as_key()));
+                    instructions.push(Self::const_last(constants));
 
                     // local transforms
                     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
@@ -197,7 +197,6 @@ impl World {
                     if let Some(mut data) = new_instance.joint_transforms {
                         bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
                         instructions.push(Instruction::Op(Operations::JointTransformUpload));
-                        has_skeletal = true;
                         let jt_bytes: Vec<u8> = {
                             let ptr = data.as_mut_ptr() as *mut u8;
                             let len = data.len() * std::mem::size_of::<Mat4F32>();
@@ -223,77 +222,51 @@ impl World {
                         instructions.push(Self::const_last(constants));
                     }
 
-                    if let Some(additional_handles) = new_instance.additional_handles {
-                        todo!("MULTI INSTANCE SPAWN");
-
-                        for additional in additional_handles {
-                            let mut bind_mask = GPUBindings::empty();
-                            instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                            constants.push(RenderConstant::Key(additional.as_key()));
-                            instructions.push(Self::const_last(constants));
-
-                            bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
-                            if has_skeletal {
-                                instructions
-                                    .push(Instruction::Op(Operations::JointTransformUpload));
-                                instructions.push(Self::const_last(constants));
-                            }
-                            instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                            // if there are joints and ibms, then the lt will be the third from the
-                            // back. More elegant solution TBD
-                            if has_skeletal {
-                                instructions
-                                    .push(Instruction::ConstIdx((constants.len() - 3) as u8));
-                            } else {
-                                instructions.push(Self::const_last(constants));
-                            }
-                        }
-                    } else {
-                        instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
-                        instructions.push(Instruction::Byte(bind_mask.bits()));
-                    }
+                    instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+                    instructions.push(Instruction::Byte(bind_mask.bits()));
                 }
                 WorldUpdateDelta::EntityInstanceSpawn(copied_instance) => {
                     let mut bind_mask = GPUBindings::empty();
-                    instructions.push(Instruction::Op(Operations::Push));
                     constants.push(RenderConstant::Key(
                         copied_instance.prototype_handle.as_key(),
                     ));
-                    instructions.push(Self::const_last(constants));
-
-                    instructions.push(Instruction::Op(Operations::SpawnFromPrototype));
-                    constants.push(RenderConstant::Key(copied_instance.handle.as_key()));
-                    instructions.push(Self::const_last(constants));
+                    let prototype_const_idx = Self::const_last(constants);
 
                     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
-                    match copied_instance.local_transforms {
-                        LocalTransforms::NeedsCopy => {
-                            instructions.push(Instruction::Op(Operations::CopyData));
-                        }
-                        LocalTransforms::NeedsShared => {
-                            instructions.push(Instruction::Op(Operations::ShareData));
-                        }
+                    let lt_instr = match copied_instance.local_transforms {
+                        LocalTransforms::NeedsCopy => Instruction::Op(Operations::CopyData),
+                        LocalTransforms::NeedsShared => Instruction::Op(Operations::ShareData),
                         _ => panic!(),
-                    }
-                    instructions.push(Instruction::Buffer(BufferType::LocalTransform));
-
-                    match copied_instance.joint_transforms {
-                        JointTransforms::None => {}
+                    };
+                    let joint_instr = match copied_instance.joint_transforms {
+                        JointTransforms::None => None,
                         JointTransforms::NeedsCopy => {
                             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                            instructions.push(Instruction::Op(Operations::CopyData))
+                            Some(Instruction::Op(Operations::CopyData))
                         }
                         JointTransforms::NeedsShared => {
                             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-                            instructions.push(Instruction::Op(Operations::ShareData))
+                            Some(Instruction::Op(Operations::ShareData))
                         }
                         _ => panic!(),
-                    }
-                    instructions.push(Instruction::Buffer(BufferType::JointTransform));
+                    };
 
-                    instructions.push(Instruction::Op(Operations::Pop));
-                    instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
-                    instructions.push(Instruction::Byte(bind_mask.bits()));
+                    for handle in copied_instance.handles {
+                        instructions.push(Instruction::Op(Operations::Push));
+                        instructions.push(prototype_const_idx);
+                        instructions.push(Instruction::Op(Operations::SpawnFromPrototype));
+                        constants.push(RenderConstant::Key(handle.as_key()));
+                        instructions.push(Self::const_last(constants));
+                        instructions.push(lt_instr);
+                        instructions.push(Instruction::Buffer(BufferType::LocalTransform));
+                        if let Some(joint_instr) = joint_instr {
+                            instructions.push(joint_instr);
+                            instructions.push(Instruction::Buffer(BufferType::JointTransform));
+                        }
+                        instructions.push(Instruction::Op(Operations::Pop));
+                        instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+                        instructions.push(Instruction::Byte(bind_mask.bits()));
+                    }
                 }
             }
         }

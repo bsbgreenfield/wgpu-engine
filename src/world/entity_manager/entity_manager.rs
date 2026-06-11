@@ -6,7 +6,7 @@ use crate::{
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
     },
-    util::types::LocalTransform,
+    util::types::{LocalTransform, Mat4F32},
     world::{
         entity_manager::{
             EntityHandle, EntityManagerError,
@@ -50,7 +50,9 @@ pub struct MeshRenderables {
     pub pnu_mesh_map: Vec<u32>,
     pub pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
     pub pnujw_mesh_map: Vec<u32>,
+    pub joint_transforms: Option<Vec<Mat4F32>>,
     pub joint_map: Vec<u32>,
+    pub ibms: Option<Vec<Mat4F32>>,
     pub index_ranges: Option<Vec<Range<u32>>>,
     pub local_transforms: Vec<LocalTransform>,
 }
@@ -64,30 +66,38 @@ pub struct Renderables {
 impl EntityManager {
     pub fn get_entity_cloned<'frame>(
         &'frame self,
-        instance_handle: &InstanceHandle,
+        instance_handles: Vec<InstanceHandle>,
         prototype_handle: PrototypeHandle,
+        has_joints: bool,
     ) -> InstanceUploadData {
-        let mut copied: CopiedInstanceData = CopiedInstanceData {
-            handle: instance_handle.clone(),
-            prototype_handle,
-            additional: None,
-            local_transforms: LocalTransforms::NeedsShared,
-            joint_transforms: JointTransforms::None,
-        };
+        let mut local_transforms = LocalTransforms::NeedsShared;
+        let mut joint_transforms = JointTransforms::None;
 
         if let Some(anim) = self
             .animations
-            .get(instance_handle.entity_handle.0 as usize)
+            .get(instance_handles.get(0).as_ref().unwrap().entity_handle.0 as usize)
         {
             match anim.rigid_animation_mode {
-                AnimationMode::Shared => copied.local_transforms = LocalTransforms::NeedsShared,
-                AnimationMode::Independent => copied.local_transforms = LocalTransforms::NeedsCopy,
+                AnimationMode::Shared => local_transforms = LocalTransforms::NeedsShared,
+                AnimationMode::Independent => local_transforms = LocalTransforms::NeedsCopy,
+                AnimationMode::None => local_transforms = LocalTransforms::NeedsShared,
             }
-            match anim.skinned_animation_mode {
-                AnimationMode::Shared => copied.joint_transforms = JointTransforms::NeedsShared,
-                AnimationMode::Independent => copied.joint_transforms = JointTransforms::NeedsCopy,
-            }
+            joint_transforms = if has_joints {
+                match anim.skinned_animation_mode {
+                    AnimationMode::Shared => JointTransforms::NeedsShared,
+                    AnimationMode::Independent => JointTransforms::NeedsCopy,
+                    AnimationMode::None => JointTransforms::None,
+                }
+            } else {
+                JointTransforms::None
+            };
         }
+        let copied = CopiedInstanceData {
+            handles: instance_handles,
+            prototype_handle,
+            local_transforms,
+            joint_transforms,
+        };
 
         InstanceUploadData::Copied(copied)
     }

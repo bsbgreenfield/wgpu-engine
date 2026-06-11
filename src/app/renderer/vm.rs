@@ -58,6 +58,7 @@ impl<'frame> Renderer {
                     Operations::Push => {
                         let val_idx = Self::get_constant_idx(&mut instr_peek);
                         let val = constants[val_idx as usize].clone();
+                        println!("PROTOTYPE?>???? {:?}", val.unwrap_key());
                         stack.push(val);
                     }
 
@@ -135,6 +136,7 @@ impl<'frame> Renderer {
                             } else {
                                 None
                             };
+                        println!("JOINT OFFSET IN EMIT SPAWN: {joint_offset:?}");
                         let lt_offset = stack.pop().expect("should be offset").unwrap_offset();
 
                         let instance_handle_key = stack.pop().expect("should be key").unwrap_key();
@@ -163,16 +165,19 @@ impl<'frame> Renderer {
                         let gpu_handle_key = stack.pop().expect("should be key");
                         let gpu_instance_handle =
                             GPUInstanceHandle(gpu_handle_key.unwrap_key() as u32);
-                        let prototype_handle = self.add_prototype(gpu_instance_handle);
+                        let prototype_idx = Self::get_constant_idx(&mut instr_peek);
+                        let prototype_handle = PrototypeHandle::from_key(
+                            constants[prototype_idx as usize].unwrap_key(),
+                        );
+                        self.add_prototype(gpu_instance_handle, prototype_handle.clone());
                         let instance_handle_key =
                             stack.pop().expect("should be instance handle key");
                         let instance_handle =
                             InstanceHandle::from_key(instance_handle_key.unwrap_key());
                         res.push(RenderUpdateDelta::ProtypeCreated {
                             instance_handle: instance_handle.clone(),
-                            prototype: prototype_handle.clone(),
+                            prototype: prototype_handle,
                         });
-                        stack.push(RenderConstant::Key(prototype_handle.0 as u64));
                         stack.push(instance_handle_key);
                         stack.push(gpu_handle_key);
                     }
@@ -199,6 +204,7 @@ impl<'frame> Renderer {
                             self.upload_skin_data(jt_upload_job, ibm_upload_job, queue)?;
 
                         // NOTE: ibm offset should always be the same as joint offset
+                        println!("PUSHING JT OFFSET: {jt_offset}");
                         stack.push(RenderConstant::Offset(jt_offset as u64));
                         stack.push(gpu_handle_key);
                     }
@@ -211,9 +217,11 @@ impl<'frame> Renderer {
                             .get_prototype_gpu_handle(&prototype_handle);
                         let new_gpu_handle = self.get_gpu_instance_handle();
 
+                        // instance handle
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
                         stack.push(constants[const_idx as usize].clone());
 
+                        // new -> donor
                         stack.push(RenderConstant::Key(new_gpu_handle.0 as u64));
                         stack.push(RenderConstant::Key(donor_gpu_handle.0 as u64));
                     }
@@ -232,8 +240,6 @@ impl<'frame> Renderer {
                                         .register_shared_binding(&donor_handle, &new_handle)
                                         .expect("register shared lt fail");
                                     stack.push(RenderConstant::Offset(lt_offset as u64));
-                                    stack.push(new_handle_key);
-                                    stack.push(donor_handle_key);
                                 }
                                 BufferType::JointTransform => {
                                     let (jt_offset, ibm_offset) = self
@@ -242,10 +248,10 @@ impl<'frame> Renderer {
                                         .register_shared_binding(&donor_handle, &new_handle)
                                         .expect("register shared skin fail");
                                     stack.push(RenderConstant::Offset(jt_offset as u64));
-                                    stack.push(new_handle_key);
-                                    stack.push(donor_handle_key);
                                 }
                             }
+                            stack.push(new_handle_key);
+                            stack.push(donor_handle_key);
                         } else {
                             panic!("expected buffer type instr for share")
                         }

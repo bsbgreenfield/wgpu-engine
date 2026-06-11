@@ -29,11 +29,26 @@ pub(super) struct MeshInstance {
 
 impl ProvidesMeshData for GltfAsset {
     fn render_mesh_data<'a>(&self, mesh_accesor: &'a MeshAcessor) -> MeshRenderables {
+        let mut jts: Vec<Vec<Mat4F32>> = self
+            .skins
+            .iter()
+            .map(|skin| {
+                skin.iter()
+                    .map(|_joint| cgmath::Matrix4::<f32>::identity().into())
+                    .collect()
+            })
+            .collect();
         let mesh_instances: Vec<MeshInstance> = match mesh_accesor {
             MeshAcessor::All => self
                 .node_tree
                 .iter()
-                .flat_map(|node| collect_mesh_instances(node, cgmath::Matrix4::<f32>::identity()))
+                .flat_map(|node| {
+                    collect_mesh_instances_with_jts(
+                        node,
+                        cgmath::Matrix4::<f32>::identity(),
+                        &mut jts,
+                    )
+                })
                 .collect(),
             MeshAcessor::GltfRootNode(root) => {
                 match get_root_node(&self.node_tree, *root as usize) {
@@ -88,8 +103,21 @@ impl ProvidesMeshData for GltfAsset {
             local_transforms.push(mesh_instance.local_transform);
             relative_lt_offset += 1;
         }
+        let joint_transforms: Option<Vec<Mat4F32>> = if jts.is_empty() {
+            None
+        } else {
+            Some(jts.drain(..).flatten().collect())
+        };
+
+        let inverse_bind_matrices = if self.ibms.is_empty() {
+            None
+        } else {
+            Some(self.ibms.iter().cloned().flatten().collect())
+        };
         MeshRenderables {
             joint_map,
+            joint_transforms,
+            ibms: inverse_bind_matrices,
             pnu_mesh_map,
             pnujw_mesh_map,
             pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),

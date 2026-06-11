@@ -16,6 +16,7 @@ pub enum MeshAcessor {
 pub enum AnimationMode {
     Shared,
     Independent,
+    None,
 }
 
 pub struct ResourceBacking<A: Asset + ?Sized> {

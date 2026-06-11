@@ -90,7 +90,6 @@ impl Deref for GPUInstanceHandle {
 
 pub(super) struct BindGroupCollection {
     next_handle: u32,
-    next_prototype: u32,
     prototypes: HashMap<PrototypeHandle, GPUInstanceHandle>,
     pub(super) local_transforms: LocalTransformBindGroup,
     pub(super) skinning: SkinningBindGroup,
@@ -102,11 +101,8 @@ impl BindGroupCollection {
         GPUInstanceHandle(self.next_handle - 1)
     }
 
-    fn add_prototype(&mut self, handle: GPUInstanceHandle) -> PrototypeHandle {
-        self.next_prototype += 1;
-        self.prototypes
-            .insert(PrototypeHandle((self.next_prototype - 1) as u16), handle);
-        PrototypeHandle((self.next_prototype - 1) as u16)
+    fn add_prototype(&mut self, handle: GPUInstanceHandle, prototype: PrototypeHandle) {
+        self.prototypes.insert(prototype, handle);
     }
 
     pub(super) fn get_prototype_gpu_handle(
@@ -121,7 +117,6 @@ impl BindGroupCollection {
     fn new(device: &wgpu::Device) -> Self {
         Self {
             next_handle: 0,
-            next_prototype: 0,
             prototypes: HashMap::new(),
             local_transforms: LocalTransformBindGroup::new(device),
             skinning: SkinningBindGroup::new(device),
@@ -162,8 +157,8 @@ impl Renderer {
         self.instance_arenas.gen_GPU_instance_handle()
     }
 
-    pub(super) fn add_prototype(&mut self, handle: GPUInstanceHandle) -> PrototypeHandle {
-        self.instance_arenas.add_prototype(handle)
+    pub(super) fn add_prototype(&mut self, handle: GPUInstanceHandle, prototype: PrototypeHandle) {
+        self.instance_arenas.add_prototype(handle, prototype);
     }
     pub fn update(
         &mut self,

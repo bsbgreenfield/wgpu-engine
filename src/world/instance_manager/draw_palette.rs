@@ -1,15 +1,8 @@
 use std::ops::Range;
 
-use crate::{
-    app::renderer::{DrawItem, GPUAllocationHandle},
-    asset_manager::AssetHandle,
-    world::instance_manager::InstanceHandle,
-};
+use crate::app::renderer::{DrawItem, GPUAllocationHandle};
 
-pub(super) struct InstanceDrawSlot {
-    pub(super) draw_data: Vec<DrawData>,
-}
-
+#[derive(Debug)]
 pub(super) enum DrawData {
     Skinned(PipelineDrawData),
     Static(PipelineDrawData),
@@ -30,6 +23,7 @@ impl DrawData {
         }
     }
 }
+#[derive(Debug)]
 pub(super) struct PipelineDrawData {
     pub(super) alloc_handle: GPUAllocationHandle,
     pub(super) lt_idx: u32,
