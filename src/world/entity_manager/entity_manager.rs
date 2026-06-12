@@ -16,10 +16,7 @@ use crate::{
             },
         },
         instance_manager::InstanceHandle,
-        world::{
-            CopiedInstanceData, InstanceUploadData, InverseBindMatrices, JointTransforms,
-            LocalTransforms,
-        },
+        world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},
     },
 };
 

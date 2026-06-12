@@ -96,7 +96,7 @@ pub(super) struct BindGroupCollection {
 }
 
 impl BindGroupCollection {
-    pub(super) fn gen_GPU_instance_handle(&mut self) -> GPUInstanceHandle {
+    pub(super) fn gen_gpu_instance_handle(&mut self) -> GPUInstanceHandle {
         self.next_handle += 1;
         GPUInstanceHandle(self.next_handle - 1)
     }
@@ -154,7 +154,7 @@ impl Renderer {
     }
 
     pub(super) fn get_gpu_instance_handle(&mut self) -> GPUInstanceHandle {
-        self.instance_arenas.gen_GPU_instance_handle()
+        self.instance_arenas.gen_gpu_instance_handle()
     }
 
     pub(super) fn add_prototype(&mut self, handle: GPUInstanceHandle, prototype: PrototypeHandle) {

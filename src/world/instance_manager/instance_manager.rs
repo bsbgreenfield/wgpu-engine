@@ -22,10 +22,7 @@ use crate::{
             draw_palette::{DrawData, PipelineDrawData},
             gpu_bind_registry::GPUBindRegistry,
         },
-        world::{
-            CopiedInstanceData, DrawSet, InstanceUploadData, NewInstanceData, RenderGroup,
-            RenderView,
-        },
+        world::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
     },
 };
 #[cfg(test)]

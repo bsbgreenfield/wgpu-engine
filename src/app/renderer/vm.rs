@@ -48,7 +48,7 @@ impl<'frame> Renderer {
         while instr_peek.peek().is_some() {
             let instr = instr_peek.next().unwrap();
             match instr {
-                Instruction::Buffer(bt) => {
+                Instruction::Buffer(_bt) => {
                     //
                 }
                 Instruction::Op(op) => match op {
@@ -242,7 +242,7 @@ impl<'frame> Renderer {
                                     stack.push(RenderConstant::Offset(lt_offset as u64));
                                 }
                                 BufferType::JointTransform => {
-                                    let (jt_offset, ibm_offset) = self
+                                    let (jt_offset, _ibm_offset) = self
                                         .instance_arenas
                                         .skinning
                                         .register_shared_binding(&donor_handle, &new_handle)
@@ -279,7 +279,7 @@ impl<'frame> Renderer {
                                     stack.push(donor_handle_key);
                                 }
                                 BufferType::JointTransform => {
-                                    let (jt_offset, ibm_offset) =
+                                    let (jt_offset, _ibm_offset) =
                                         self.instance_arenas.skinning.register_copy_binding(
                                             &donor_handle,
                                             &new_handle,

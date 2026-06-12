@@ -6,8 +6,8 @@ use crate::{
         GPUAssetUploadJob,
         app::AppCommand,
         renderer::{
-            BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
-            RenderConstant, RenderUpdateDelta,
+            BufferType, GPUBindings, Instruction, Operations, PrototypeHandle, RenderConstant,
+            RenderUpdateDelta,
         },
     },
     asset_manager::{Asset, AssetHandle, AssetLoadError},
@@ -16,9 +16,7 @@ use crate::{
         RenderKey, WorldInitError, WorldUpdateError,
         camera::Camera,
         entity_manager::{
-            EntityHandle,
-            components::ResourceBacking,
-            entity_manager::{EntityManager, Renderables},
+            EntityHandle, components::ResourceBacking, entity_manager::EntityManager,
         },
         instance_manager::{Archetype, InstanceHandle, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
@@ -53,7 +51,7 @@ pub struct RenderGroup {
     pub views: Vec<RenderView>,
 }
 impl RenderGroup {
-    pub fn new(instance_handle: InstanceHandle, views: Vec<RenderView>) -> Self {
+    pub fn new(views: Vec<RenderView>) -> Self {
         Self { views }
     }
 }

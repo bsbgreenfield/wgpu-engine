@@ -7,7 +7,7 @@ use crate::{
     util::types::Mat4F32,
     world::{
         entity_manager::EntityHandle,
-        instance_manager::{AnimationUpdate, InstanceGPUBindings, InstanceHandle, RenderFrame},
+        instance_manager::{AnimationUpdate, InstanceHandle, RenderFrame},
     },
 };
 
