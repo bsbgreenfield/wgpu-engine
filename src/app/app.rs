@@ -5,7 +5,10 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{DrawPacket, Instruction, RenderCategory, RenderConstant, renderer::Renderer},
+        renderer::{
+            DrawPacket, Instruction, RenderCategory, RenderConstant, RenderPacket,
+            renderer::Renderer,
+        },
     },
     world::{entity_manager::entity_manager::EntityManager, scene::Scene, world::World},
 };
@@ -25,7 +28,7 @@ pub struct App<'a> {
     pub renderer: Option<Renderer>,
     pub app_state: AppState,
     pub surface_ready: bool,
-    pub draw_packet: DrawPacket,
+    pub render_packet: RenderPacket,
     pub app_commands: Vec<AppCommand>,
 }
 
@@ -44,7 +47,7 @@ impl App<'_> {
             surface_ready: false,
             renderer: None,
             world: None,
-            draw_packet: DrawPacket::default(),
+            render_packet: RenderPacket::new(),
             app_commands: Vec::with_capacity(100),
         }
     }
@@ -88,21 +91,24 @@ impl App<'_> {
             .as_ref()
             .unwrap()
             .instance_manager
-            .gen_draw_calls(&mut self.draw_packet);
+            .gen_draw_calls(
+                &mut self.render_packet,
+                &self.world.as_ref().unwrap().entity_manager.asset_manager,
+            );
 
         let render_frame = self
             .world
             .as_ref()
             .unwrap()
             .instance_manager
-            .prepare_render_frame();
+            .prepare_render_frame(&self.render_packet);
 
         self.renderer
             .as_mut()
             .unwrap()
             .prepare_frame(render_frame, &self.app_config.as_ref().unwrap().queue);
 
-        if !self.draw_packet.is_empty() {
+        if !self.render_packet.draw_packet.is_empty() {
             let _ = self
                 .renderer
                 .as_ref()
@@ -110,7 +116,7 @@ impl App<'_> {
                 .render(
                     self.app_config.as_ref().unwrap(),
                     &self.world.as_ref().unwrap().camera,
-                    &self.draw_packet,
+                    &self.render_packet.draw_packet,
                 )
                 .map_err(|e| FrameError::RenderError(e));
         } else {

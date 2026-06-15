@@ -11,23 +11,20 @@ use crate::{
         },
         renderer::GPUInstanceHandle,
     },
-    util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
-    world::instance_manager::InstanceHandle,
+    util::types::{
+        InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
+        Mat4F32,
+    },
+    world::instance_manager::{InstanceGPUBindings, InstanceHandle, RenderFrame},
 };
 
 pub(super) trait BindGroupProvider {
-    fn write_data(&mut self, gpu_handle: &GPUInstanceHandle, data: &[u8], queue: &wgpu::Queue);
     fn get_bind_group(&self, alloc_handle: &InstanceHandle) -> &wgpu::BindGroup;
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
     fn new(device: &wgpu::Device) -> Self;
 }
 
 impl BindGroupProvider for SkinningBindGroup {
-    fn write_data(&mut self, gpu_handle: &GPUInstanceHandle, data: &[u8], queue: &wgpu::Queue) {
-        let buffer = self.get_joint_buffer();
-        let jt_offset = self.joint_arena.resolve(gpu_handle);
-        queue.write_buffer(buffer, jt_offset.into(), data);
-    }
     fn new(device: &wgpu::Device) -> Self {
         let joints = InstanceArena::<JointTransform>::new(device);
         let ibms = InstanceArena::<InverseBindMatrix>::new(device);
@@ -106,6 +103,17 @@ pub(super) struct SkinningBindGroup {
 }
 
 impl SkinningBindGroup {
+    pub(super) fn write_joint_anim_data(
+        &self,
+        gpu_handle: &GPUInstanceHandle,
+        joint_data: &[u8],
+        queue: &wgpu::Queue,
+    ) {
+        let buffer = self.get_joint_buffer();
+        let jt_offset = self.joint_arena.resolve(gpu_handle);
+        queue.write_buffer(buffer, jt_offset.into(), joint_data);
+    }
+
     pub(super) fn get_joint_buffer(&self) -> &wgpu::Buffer {
         //TODO: resolve using handle
         self.joint_arena.get_first_buffer()
@@ -174,45 +182,84 @@ impl SkinningBindGroup {
 }
 
 impl BindGroupProvider for LocalTransformBindGroup {
-    fn write_data(&mut self, gpu_handle: &GPUInstanceHandle, data: &[u8], queue: &wgpu::Queue) {
-        let buffer = self.get_buffer();
-        let lt_offset = self.lt_arena.resolve(gpu_handle);
-        queue.write_buffer(buffer, lt_offset.into(), data);
-    }
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("LT bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: NonZero::<u64>::new(16),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: NonZero::<u64>::new(4),
+                    },
+                    count: None,
+                },
+            ],
         })
     }
 
     fn new(device: &wgpu::Device) -> Self {
         let lts = InstanceArena::<LocalTransform>::new(device);
+        let instance_records = InstanceArena::<InstanceRecordData>::new(device);
+        let instance_offsets = InstanceArena::<InstanceOffset>::new(device);
         let bgl = Self::get_bind_group_layout(device);
         let initial_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lt bind group"),
             layout: &bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: lts.get_first_buffer(),
-                    offset: 0,
-                    size: None,
-                }),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: lts.get_first_buffer(),
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: instance_records.get_first_buffer(),
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: instance_offsets.get_first_buffer(),
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
         });
         Self {
             bind_groups: vec![initial_bind_group],
             lt_arena: lts,
+            record_arena: instance_records,
+            offsets: instance_offsets,
         }
     }
 
@@ -225,10 +272,22 @@ impl BindGroupProvider for LocalTransformBindGroup {
 pub(super) struct LocalTransformBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
     lt_arena: InstanceArena<LocalTransform>,
+    record_arena: InstanceArena<InstanceRecordData>,
+    offsets: InstanceArena<InstanceOffset>,
 }
 
 impl LocalTransformBindGroup {
-    pub(super) fn get_buffer(&self) -> &wgpu::Buffer {
+    pub(super) fn write_lt_anim_data(
+        &self,
+        handle: &GPUInstanceHandle,
+        lt_data: &[u8],
+        queue: &wgpu::Queue,
+    ) {
+        let buf = self.get_lt_buffer();
+        let offset = self.lt_arena.resolve(handle) as u64;
+        queue.write_buffer(buf, offset, lt_data);
+    }
+    pub(super) fn get_lt_buffer(&self) -> &wgpu::Buffer {
         self.lt_arena.get_first_buffer()
     }
 
@@ -236,13 +295,33 @@ impl LocalTransformBindGroup {
         &self.bind_groups[0]
     }
 
-    pub(super) fn upload<'frame>(
+    pub(super) fn upload_local_transforms<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
         self.lt_arena.upload(job, queue)
     }
+
+    pub(super) fn upload_instance_record<'frame>(
+        &mut self,
+        job: InstanceUploadJob<'frame, InstanceRecordData>,
+        queue: &wgpu::Queue,
+    ) -> Result<u32, VertexArenaError> {
+        self.record_arena.upload(job, queue)
+    }
+    pub(super) fn upload_instance_offsets<'frame>(
+        &mut self,
+        offset_data: &'frame [u32],
+        queue: &wgpu::Queue,
+    ) {
+        queue.write_buffer(
+            self.offsets.get_first_buffer(),
+            0,
+            bytemuck::cast_slice(offset_data),
+        );
+    }
+
     pub(super) fn register_shared_binding(
         &mut self,
         donor_handle: &GPUInstanceHandle,

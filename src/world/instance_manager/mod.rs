@@ -1,5 +1,6 @@
 use crate::{
     app::renderer::renderer::GPUInstanceHandle,
+    util::types::{GlobalTransform, InstanceOffset},
     world::{
         RenderKey, entity_manager::EntityHandle,
         instance_manager::instance_manager::InstanceManager,
@@ -96,8 +97,8 @@ pub struct AnimationUpdate<'frame> {
 
 #[derive(Debug, Default)]
 pub struct RenderFrame<'frame> {
-    pub global_transforms: Vec<&'frame [u8]>,
-    pub local_transforms: Vec<&'frame [u8]>,
+    pub global_transforms: &'frame [GlobalTransform],
+    pub indirection_list: &'frame [u32],
     pub rigid_animation_data: Vec<AnimationUpdate<'frame>>,
     pub joint_animation_data: Vec<AnimationUpdate<'frame>>,
 }

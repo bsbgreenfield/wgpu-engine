@@ -8,7 +8,9 @@ use std::error::Error;
 use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::app::renderer::renderer::GPUInstanceHandle;
 use crate::app::renderer::{InstanceUploadJob, StorageData};
-use crate::util::types::{InverseBindMatrix, JointTransform, LocalTransform};
+use crate::util::types::{
+    InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
+};
 use crate::{
     app::renderer::GPUAllocationHandle, util::types::ModelVertex,
     world::instance_manager::InstanceHandle,
@@ -223,6 +225,42 @@ impl StorageData for InverseBindMatrix {
             remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
             buffer: buf,
             allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
+            _t: PhantomData,
+        }
+    }
+}
+
+impl StorageData for InstanceRecordData {
+    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("instance record storage buffer"),
+            size: CHUNK_SIZE as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        GPUChunk {
+            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
+            buffer: buf,
+            allocator: FreeListAllocator::new(size_of::<InstanceRecordData>()),
+            _t: PhantomData,
+        }
+    }
+}
+
+impl StorageData for InstanceOffset {
+    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("instance offset storage buffer"),
+            size: CHUNK_SIZE as u64 / 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        GPUChunk {
+            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
+            buffer: buf,
+            allocator: FreeListAllocator::new(size_of::<InstanceOffset>()),
             _t: PhantomData,
         }
     }

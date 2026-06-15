@@ -340,24 +340,15 @@ impl InstanceData for GlobalTransform {
     }
 }
 
-pub struct NonEmptyVec<T> {
-    data: Vec<T>,
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
+pub struct InstanceRecordData {
+    lt_base: u32,
+    jt_base: u32,
+    pad_1: u32,
+    pad_2: u32,
 }
 
-impl<T> NonEmptyVec<T> {
-    pub fn new(data: Vec<T>) -> Option<Self> {
-        if data.is_empty() {
-            return None;
-        } else {
-            return Some(Self { data });
-        }
-    }
-}
-
-impl<T> Deref for NonEmptyVec<T> {
-    type Target = Vec<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
+pub struct InstanceOffset(pub u32);

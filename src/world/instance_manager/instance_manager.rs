@@ -1,12 +1,14 @@
-use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::Arc;
+use std::{collections::HashMap, num::NonZero, ops::Range};
 
 use crate::{
     animation::animation::EntityAnimations,
     app::{
         app::AppCommand,
-        renderer::{DrawPacket, PrototypeHandle, renderer::GPUInstanceHandle},
+        renderer::{
+            DrawItem, DrawPacket, PrototypeHandle, RenderPacket, renderer::GPUInstanceHandle,
+        },
     },
     asset_manager::asset_manager_new::AssetManager,
     world::{
@@ -16,10 +18,9 @@ use crate::{
             entity_manager::{EntityManager, Renderables},
         },
         instance_manager::{
-            Archetype, ArchetypeId, InstanceGPUBindings, InstanceHandle, RenderFrame,
+            Archetype, ArchetypeId, InstanceHandle, RenderFrame,
             animation_controller::AnimationController,
             archetype_table::{APositionTable, ArchetypeTable},
-            draw_palette::{DrawData, PipelineDrawData},
             gpu_bind_registry::GPUBindRegistry,
         },
         world::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
@@ -36,7 +37,7 @@ pub struct InstanceManager {
     gpu_bind_registry: GPUBindRegistry,
     pub(super) pos: APositionTable,
     render_groups: Vec<RenderGroup>,
-    pub(super) entity_group_index: HashMap<EntityHandle, usize>,
+    pub(super) sparse_entity_group: Vec<usize>,
     animation_controller: AnimationController,
 }
 
@@ -115,50 +116,18 @@ impl InstanceManager {
             .insert(entity_handle, prototype_handle);
     }
 
-    pub fn add_draw_data(
+    pub fn add_record_index(
         &mut self,
         instance_handle: &InstanceHandle,
-        bindings: InstanceGPUBindings,
+        record_index: u32,
         gpu_instance_handle: GPUInstanceHandle,
-        asset_manager: &AssetManager,
     ) {
         self.gpu_bind_registry
             .registered_instances
             .insert(gpu_instance_handle, instance_handle.clone());
-        let group = &self.render_groups[self.entity_group_index[&instance_handle.entity_handle]];
-        let mut data: Vec<DrawData> = Vec::new();
-        for view in &group.views {
-            let alloc_handle = asset_manager.resolve_asset_handle(&view.asset_handle);
-            if let Some(pnu) = &view.pnu_draws {
-                for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {
-                    let draw_data = DrawData::Static(PipelineDrawData {
-                        alloc_handle: alloc_handle.clone(),
-                        lt_idx: bindings.lt_offset + pnu.mesh_map[i],
-                        joint_offset: None,
-                        primitives: prim_range.clone(),
-                        indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
-                    });
-                    data.push(draw_data);
-                }
-            }
-            if let Some(pnujw) = &view.pnujw_draws {
-                for (i, prim_range) in pnujw.primtitive_ranges.iter().enumerate() {
-                    let draw_data = DrawData::Skinned(PipelineDrawData {
-                        alloc_handle: alloc_handle.clone(),
-                        lt_idx: bindings.lt_offset + pnujw.mesh_map[i],
-                        joint_offset: bindings
-                            .joint_offset
-                            .map(|offset| offset + pnujw.joint_map[i]),
-                        primitives: prim_range.clone(),
-                        indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
-                    });
-                    data.push(draw_data);
-                }
-            }
-        }
         match instance_handle.archetype {
             ArchetypeId::Position => {
-                self.pos.write_draw_data(instance_handle, data);
+                self.pos.write_record_index(instance_handle, record_index);
             }
         }
 
@@ -177,8 +146,8 @@ impl InstanceManager {
             _next_id: 0,
             gpu_bind_registry: GPUBindRegistry::default(),
             pos: APositionTable::new(),
+            sparse_entity_group: Vec::from_iter(std::iter::repeat_n(usize::MAX, 100)),
             render_groups: Vec::new(),
-            entity_group_index: HashMap::new(),
             animation_controller: AnimationController::default(),
         }
     }
@@ -253,7 +222,11 @@ impl InstanceManager {
         }
         for (entity_handle, mut arch_list) in sorted {
             // for the first instance spawn of an entity, collect asset-relative common data
-            if !self.entity_group_index.contains_key(&entity_handle) {
+            if !self
+                .gpu_bind_registry
+                .registered_prototypes
+                .contains_key(&entity_handle)
+            {
                 let first_arch = arch_list.swap_remove(0);
                 let first_instance_handle = first_arch.insert_self(self, &entity_handle);
                 let renderables = entity_manager
@@ -277,7 +250,8 @@ impl InstanceManager {
                         .unwrap()
                         .clone();
 
-                    let group = &self.render_groups[self.entity_group_index[&entity_handle]];
+                    let group =
+                        &self.render_groups[self.sparse_entity_group[entity_handle.0 as usize]];
                     let has_joints = group.views.iter().any(|v| v.pnujw_draws.is_some());
                     let copied =
                         entity_manager.get_entity_cloned(additional, prototype_handle, has_joints);
@@ -301,7 +275,7 @@ impl InstanceManager {
                     let instance_handle = arch.insert_self(self, &entity_handle);
                     handles.push(instance_handle);
                 }
-                let group = &self.render_groups[self.entity_group_index[&entity_handle]];
+                let group = &self.render_groups[self.sparse_entity_group[entity_handle.0 as usize]];
                 let has_joints = group.views.iter().any(|v| v.pnujw_draws.is_some());
                 let copied_instance_data =
                     entity_manager.get_entity_cloned(handles, prototype_handle.clone(), has_joints);
@@ -360,11 +334,18 @@ impl InstanceManager {
             }
         }
 
-        self.entity_group_index.insert(
-            renderables.instance_handle.entity_handle,
-            self.render_groups.len(),
-        );
-        self.render_groups.push(RenderGroup { views });
+        if self.sparse_entity_group.len() < renderables.instance_handle.entity_handle.0 as usize {
+            self.sparse_entity_group.resize(
+                renderables.instance_handle.entity_handle.0 as usize,
+                usize::MAX,
+            );
+        }
+        self.sparse_entity_group[renderables.instance_handle.entity_handle.0 as usize] =
+            self.render_groups.len();
+        self.render_groups.push(RenderGroup {
+            views,
+            entity_handle: renderables.instance_handle.entity_handle,
+        });
         // ******** ANIMATION DATA *********
         if let Some(entity_animation_data) = renderables.animations {
             self.animation_controller.registered_animations.insert(
@@ -396,31 +377,72 @@ impl InstanceManager {
             ArchetypeId::Position => 0,
         }
     }
+    pub fn gen_draw_calls<'frame>(
+        &'frame self,
+        packet: &mut RenderPacket,
+        asset_manager: &AssetManager,
+    ) {
+        // adjust as archetype tables are added
+        let record_len = self.pos.positions.len();
 
-    pub fn gen_draw_calls<'frame>(&'frame self, packet: &mut DrawPacket) {
-        // TODO: could probably save some time by just clearing the vecs, not the key value
-        packet.clear();
-        // pos
-        for (instance_idx, draw_chunk) in self.pos.draw_palette.iter().enumerate() {
-            for data in draw_chunk.iter() {
-                let entry = match data {
-                    DrawData::Static(pnu_data) => packet
-                        .pnu
-                        .entry(pnu_data.alloc_handle.clone())
-                        .or_insert_with(Vec::new),
-                    DrawData::Skinned(pnujw_data) => packet
-                        .pnujw
-                        .entry(pnujw_data.alloc_handle.clone())
-                        .or_insert_with(Vec::new),
-                };
-                entry.push(data.as_draw_item(instance_idx as u32));
+        packet.reset(self.render_groups.len(), record_len);
+
+        packet.draw_packet.count_sort(
+            &self.pos.arena.handles,
+            &self.pos.record_indices,
+            &self.sparse_entity_group,
+        );
+
+        for (i, record_slot) in self.pos.record_indices.iter().enumerate() {
+            packet.global_transforms[*record_slot as usize] = self.pos.positions[i].into();
+        }
+
+        for (group_idx, group) in self.render_groups.iter().enumerate() {
+            for view in group.views.iter() {
+                let alloc_handle = asset_manager.resolve_asset_handle(&view.asset_handle);
+                if let Some(pnu) = &view.pnu_draws {
+                    for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {
+                        let entry = packet
+                            .draw_packet
+                            .pnu
+                            .entry(alloc_handle.clone())
+                            .or_insert_with(Vec::new);
+                        entry.push(DrawItem {
+                            lt_idx: pnu.mesh_map[i],
+                            joint_offset: None,
+                            instances: (packet.draw_packet.instance_ranges[group_idx]).clone(),
+                            primitives: prim_range.clone(),
+                            indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
+                        });
+                    }
+                }
+                if let Some(pnujw) = &view.pnujw_draws {
+                    for (i, prim_range) in pnujw.primtitive_ranges.iter().enumerate() {
+                        let entry = packet
+                            .draw_packet
+                            .pnujw
+                            .entry(alloc_handle.clone())
+                            .or_insert_with(Vec::new);
+                        entry.push(DrawItem {
+                            lt_idx: pnujw.mesh_map[i],
+                            joint_offset: Some(pnujw.joint_map[i]),
+                            instances: (packet.draw_packet.instance_ranges[group_idx]).clone(),
+                            primitives: prim_range.clone(),
+                            indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
+                        });
+                    }
+                }
             }
         }
     }
 
-    pub fn prepare_render_frame<'frame>(&'frame self) -> RenderFrame<'frame> {
+    pub fn prepare_render_frame<'frame>(
+        &'frame self,
+        render_packet: &'frame RenderPacket,
+    ) -> RenderFrame<'frame> {
         let mut render_frame = RenderFrame::default();
-        self.pos.collect(&mut render_frame);
+        render_frame.indirection_list = &render_packet.draw_packet.indirection_list;
+        render_frame.global_transforms = &render_packet.global_transforms;
 
         self.animation_controller
             .prepare_animation_frame(&mut render_frame);

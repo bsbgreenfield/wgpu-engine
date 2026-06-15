@@ -18,8 +18,8 @@ use crate::{
         },
     },
     util::types::{
-        GlobalTransform, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex, PNUVertex,
-        VIndex,
+        GlobalTransform, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
+        PNUJWVertex, PNUVertex, VIndex,
     },
     world::{camera::Camera, instance_manager::RenderFrame, world::DrawSet},
 };
@@ -171,24 +171,20 @@ impl Renderer {
     }
 
     pub fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {
+        // offsets
+        self.instance_arenas
+            .local_transforms
+            .upload_instance_offsets(render_frame.indirection_list, queue);
+
         'global_transforms: {
-            let global_transforms = &render_frame.global_transforms;
-            if global_transforms.is_empty() {
+            if render_frame.global_transforms.is_empty() {
                 break 'global_transforms;
             }
-            let gt_size = global_transforms.iter().fold(0, |acc, e| acc + e.len());
-            if let Some(mut buffer_view) = queue.write_buffer_with(
+            queue.write_buffer(
                 &self.global_transform_buffer,
                 0,
-                NonZero::new(gt_size as u64).unwrap(),
-            ) {
-                let mut offset: usize = 0;
-                for pos_slice in global_transforms {
-                    buffer_view[offset..offset + pos_slice.len()]
-                        .copy_from_slice(bytemuck::cast_slice(pos_slice));
-                    offset += pos_slice.len();
-                }
-            }
+                bytemuck::cast_slice(render_frame.global_transforms),
+            );
         }
         'rigid_animations: {
             let animations = &render_frame.rigid_animation_data;
@@ -196,7 +192,7 @@ impl Renderer {
                 break 'rigid_animations;
             }
             for animation in animations {
-                self.instance_arenas.local_transforms.write_data(
+                self.instance_arenas.local_transforms.write_lt_anim_data(
                     &animation.gpu_handle,
                     animation.transforms,
                     queue,
@@ -209,7 +205,7 @@ impl Renderer {
                 break 'skinned_animations;
             }
             for animation in animations {
-                self.instance_arenas.skinning.write_data(
+                self.instance_arenas.skinning.write_joint_anim_data(
                     &animation.gpu_handle,
                     animation.transforms,
                     queue,
@@ -227,12 +223,24 @@ impl Renderer {
         Ok(())
     }
 
+    pub(super) fn upload_instance_record<'frame>(
+        &mut self,
+        job: InstanceUploadJob<'frame, InstanceRecordData>,
+        queue: &wgpu::Queue,
+    ) -> Result<u32, VertexArenaError> {
+        self.instance_arenas
+            .local_transforms
+            .upload_instance_record(job, queue)
+    }
+
     pub(super) fn upload_local_transforms<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas.local_transforms.upload(job, queue)
+        self.instance_arenas
+            .local_transforms
+            .upload_local_transforms(job, queue)
     }
 
     pub(super) fn upload_skin_data<'frame>(

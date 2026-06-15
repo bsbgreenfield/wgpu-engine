@@ -10,7 +10,7 @@ use crate::{
         renderer::{GPUInstanceHandle, Renderer},
     },
     asset_manager::AssetHandle,
-    util::types::{PNUJWVertex, PNUVertex},
+    util::types::{InstanceRecordData, PNUJWVertex, PNUVertex},
     world::{
         RenderKey,
         instance_manager::{InstanceGPUBindings, InstanceHandle},
@@ -136,17 +136,22 @@ impl<'frame> Renderer {
                             } else {
                                 None
                             };
-                        println!("JOINT OFFSET IN EMIT SPAWN: {joint_offset:?}");
-                        let lt_offset = stack.pop().expect("should be offset").unwrap_offset();
+                        let lt_offset =
+                            stack.pop().expect("should be offset").unwrap_offset() as u32;
+
+                        let record_data: Vec<u8> = bytemuck::pod_collect_to_vec(&[
+                            lt_offset,
+                            joint_offset.unwrap_or_default(),
+                        ]);
+                        let record_job: InstanceUploadJob<InstanceRecordData> =
+                            InstanceUploadJob::new(&record_data, gpu_instance_handle);
+                        let record_offset = self.upload_instance_record(record_job, queue)?;
 
                         let instance_handle_key = stack.pop().expect("should be key").unwrap_key();
                         res.push(RenderUpdateDelta::EntitySpawned {
                             instance_handle: InstanceHandle::from_key(instance_handle_key),
                             gpu_instance_handle,
-                            bindings: InstanceGPUBindings {
-                                lt_offset: lt_offset as u32,
-                                joint_offset,
-                            },
+                            record_offset,
                         });
                     }
                     Operations::LocalTransformUpload => {

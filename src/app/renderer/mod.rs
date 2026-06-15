@@ -1,4 +1,7 @@
-use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range};
+use std::{
+    cell::OnceCell, collections::HashMap, error::Error, fmt::Display, marker::PhantomData,
+    ops::Range,
+};
 
 use bytemuck::Pod;
 
@@ -8,11 +11,11 @@ use crate::{
         renderer::GPUInstanceHandle,
     },
     asset_manager::AssetHandle,
-    util::types::ModelVertex,
+    util::types::{GlobalTransform, ModelVertex},
     world::{
         RenderKey,
         entity_manager::EntityHandle,
-        instance_manager::{InstanceGPUBindings, InstanceHandle},
+        instance_manager::{InstanceGPUBindings, InstanceHandle, RenderFrame},
     },
 };
 
@@ -35,20 +38,73 @@ impl RenderKey for PrototypeHandle {
     }
 }
 
+pub struct RenderPacket {
+    pub global_transforms: Vec<GlobalTransform>,
+    pub draw_packet: DrawPacket,
+}
+
+impl RenderPacket {
+    pub fn new() -> Self {
+        Self {
+            global_transforms: Vec::new(),
+            draw_packet: DrawPacket::default(),
+        }
+    }
+
+    pub fn reset(&mut self, group_len: usize, record_len: usize) {
+        use cgmath::SquareMatrix;
+        self.global_transforms
+            .resize(record_len, cgmath::Matrix4::<f32>::identity().into());
+        self.draw_packet.reset(group_len, record_len);
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct DrawPacket {
     pub pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
     pub pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
+    pub entity_count: Vec<usize>,
+    pub cursors: Vec<u32>,
+    pub instance_ranges: Vec<Range<u32>>,
+    pub indirection_list: Vec<u32>,
 }
 
 impl DrawPacket {
+    pub fn count_sort(
+        &mut self,
+        handles: &[InstanceHandle],
+        record_idxs: &[u32],
+        sparse_entity_group: &[usize],
+    ) {
+        for handle in handles {
+            let group_id = sparse_entity_group[handle.entity_handle.0 as usize];
+            self.entity_count[group_id] += 1;
+        }
+        let mut sum = 0;
+        for (group_id, count) in self.entity_count.iter().enumerate() {
+            self.instance_ranges[group_id] = sum..(sum + *count as u32);
+            self.cursors[group_id] = sum;
+            sum += *count as u32;
+        }
+        for (record_index, handle) in record_idxs.iter().zip(handles) {
+            let group_id = sparse_entity_group[handle.entity_handle.0 as usize];
+            self.indirection_list[self.cursors[group_id] as usize] = *record_index;
+            self.cursors[group_id] += 1;
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.pnu.is_empty() && self.pnujw.is_empty()
     }
 
-    pub fn clear(&mut self) {
+    pub fn reset(&mut self, group_len: usize, record_len: usize) {
         self.pnu.clear();
         self.pnujw.clear();
+        self.entity_count.resize(group_len, usize::MAX);
+        self.cursors.resize(group_len, u32::MAX);
+        self.instance_ranges
+            .resize(group_len, Range::<u32> { start: 0, end: 0 });
+        self.indirection_list.resize(record_len, u32::MAX);
     }
 
     #[cfg(test)]
@@ -67,7 +123,7 @@ pub enum RenderUpdateDelta {
     EntitySpawned {
         instance_handle: InstanceHandle,
         gpu_instance_handle: GPUInstanceHandle,
-        bindings: InstanceGPUBindings,
+        record_offset: u32,
     },
     ProtypeCreated {
         instance_handle: InstanceHandle,

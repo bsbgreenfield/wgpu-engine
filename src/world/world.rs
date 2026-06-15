@@ -48,12 +48,8 @@ pub struct RenderView {
 }
 
 pub struct RenderGroup {
+    pub entity_handle: EntityHandle,
     pub views: Vec<RenderView>,
-}
-impl RenderGroup {
-    pub fn new(views: Vec<RenderView>) -> Self {
-        Self { views }
-    }
 }
 
 #[derive(Debug)]
@@ -413,13 +409,12 @@ impl World {
                 RenderUpdateDelta::EntitySpawned {
                     instance_handle,
                     gpu_instance_handle,
-                    bindings,
+                    record_offset,
                 } => {
-                    self.instance_manager.add_draw_data(
+                    self.instance_manager.add_record_index(
                         &instance_handle,
-                        bindings,
+                        record_offset,
                         gpu_instance_handle,
-                        &self.entity_manager.asset_manager,
                     );
                 }
                 RenderUpdateDelta::ProtypeCreated {
