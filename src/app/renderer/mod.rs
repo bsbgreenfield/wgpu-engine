@@ -100,7 +100,7 @@ impl DrawPacket {
     pub fn reset(&mut self, group_len: usize, record_len: usize) {
         self.pnu.clear();
         self.pnujw.clear();
-        self.entity_count.resize(group_len, usize::MAX);
+        self.entity_count.resize(group_len, usize::MIN);
         self.cursors.resize(group_len, u32::MAX);
         self.instance_ranges
             .resize(group_len, Range::<u32> { start: 0, end: 0 });

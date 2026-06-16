@@ -58,7 +58,6 @@ impl<'frame> Renderer {
                     Operations::Push => {
                         let val_idx = Self::get_constant_idx(&mut instr_peek);
                         let val = constants[val_idx as usize].clone();
-                        println!("PROTOTYPE?>???? {:?}", val.unwrap_key());
                         stack.push(val);
                     }
 
@@ -142,6 +141,8 @@ impl<'frame> Renderer {
                         let record_data: Vec<u8> = bytemuck::pod_collect_to_vec(&[
                             lt_offset,
                             joint_offset.unwrap_or_default(),
+                            0,
+                            0,
                         ]);
                         let record_job: InstanceUploadJob<InstanceRecordData> =
                             InstanceUploadJob::new(&record_data, gpu_instance_handle);
@@ -209,7 +210,6 @@ impl<'frame> Renderer {
                             self.upload_skin_data(jt_upload_job, ibm_upload_job, queue)?;
 
                         // NOTE: ibm offset should always be the same as joint offset
-                        println!("PUSHING JT OFFSET: {jt_offset}");
                         stack.push(RenderConstant::Offset(jt_offset as u64));
                         stack.push(gpu_handle_key);
                     }

@@ -3,9 +3,7 @@ use crate::{
     world::{
         entity_manager::EntityHandle,
         instance_manager::{
-            Archetype, ArchetypeId, ArchetypeIdent, InstanceHandle, RenderFrame,
-            draw_palette::{DrawData, DrawPalette, PaletteChunk},
-            instance_arena::InstanceArena,
+            Archetype, ArchetypeId, ArchetypeIdent, InstanceHandle, instance_arena::InstanceArena,
             instance_manager::InstanceManager,
         },
     },

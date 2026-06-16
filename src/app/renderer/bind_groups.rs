@@ -12,8 +12,8 @@ use crate::{
         renderer::GPUInstanceHandle,
     },
     util::types::{
-        InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
-        Mat4F32,
+        GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
+        LocalTransform, Mat4F32,
     },
     world::instance_manager::{InstanceGPUBindings, InstanceHandle, RenderFrame},
 };
@@ -216,6 +216,16 @@ impl BindGroupProvider for LocalTransformBindGroup {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: NonZero::<u64>::new(64),
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -224,6 +234,7 @@ impl BindGroupProvider for LocalTransformBindGroup {
         let lts = InstanceArena::<LocalTransform>::new(device);
         let instance_records = InstanceArena::<InstanceRecordData>::new(device);
         let instance_offsets = InstanceArena::<InstanceOffset>::new(device);
+        let global_transforms = InstanceArena::<GlobalTransform>::new(device);
         let bgl = Self::get_bind_group_layout(device);
         let initial_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lt bind group"),
@@ -253,6 +264,14 @@ impl BindGroupProvider for LocalTransformBindGroup {
                         size: None,
                     }),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: global_transforms.get_first_buffer(),
+                        offset: 0,
+                        size: None,
+                    }),
+                },
             ],
         });
         Self {
@@ -260,6 +279,7 @@ impl BindGroupProvider for LocalTransformBindGroup {
             lt_arena: lts,
             record_arena: instance_records,
             offsets: instance_offsets,
+            global_transforms: global_transforms,
         }
     }
 
@@ -274,6 +294,7 @@ pub(super) struct LocalTransformBindGroup {
     lt_arena: InstanceArena<LocalTransform>,
     record_arena: InstanceArena<InstanceRecordData>,
     offsets: InstanceArena<InstanceOffset>,
+    global_transforms: InstanceArena<GlobalTransform>,
 }
 
 impl LocalTransformBindGroup {
@@ -287,6 +308,12 @@ impl LocalTransformBindGroup {
         let offset = self.lt_arena.resolve(handle) as u64;
         queue.write_buffer(buf, offset, lt_data);
     }
+
+    pub(super) fn write_gt_data(&self, data: &[u8], queue: &wgpu::Queue) {
+        let buf = self.global_transforms.get_first_buffer();
+        queue.write_buffer(buf, 0, data);
+    }
+
     pub(super) fn get_lt_buffer(&self) -> &wgpu::Buffer {
         self.lt_arena.get_first_buffer()
     }

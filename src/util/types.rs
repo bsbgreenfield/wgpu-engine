@@ -330,16 +330,6 @@ impl From<cgmath::Matrix4<f32>> for GlobalTransform {
     }
 }
 
-impl InstanceData for GlobalTransform {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: (std::mem::size_of::<Mat4F32>() as wgpu::BufferAddress),
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &ATTRIBUTES,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 pub struct InstanceRecordData {

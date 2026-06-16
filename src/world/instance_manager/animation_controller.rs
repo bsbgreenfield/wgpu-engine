@@ -26,15 +26,19 @@ impl AnimationController {
         anim_idx: usize,
         time_offset: Option<f32>,
     ) -> Option<()> {
+        println!("ACTIVATING animation!!!");
         let entity_animation = self
             .registered_animations
             .get(&instance_handle.entity_handle)?;
+        println!("{:?}", entity_animation.gpu_instance_handle);
+        println!("JOINT COUNT: {}", entity_animation.joint_transforms.len());
 
         let mesh_buffer: Vec<Mat4F32> = entity_animation
             .local_transforms
             .iter()
             .map(|lt| **lt)
             .collect();
+
         self.active_animations.push(AnimationInstance {
             complete: false,
             samples: entity_animation.animation[anim_idx].init_samples(),

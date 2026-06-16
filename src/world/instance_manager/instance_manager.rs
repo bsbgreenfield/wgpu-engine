@@ -348,6 +348,7 @@ impl InstanceManager {
         });
         // ******** ANIMATION DATA *********
         if let Some(entity_animation_data) = renderables.animations {
+            println!("INSERTING ANIMATION????");
             self.animation_controller.registered_animations.insert(
                 renderables.instance_handle.entity_handle.clone(),
                 EntityAnimations {

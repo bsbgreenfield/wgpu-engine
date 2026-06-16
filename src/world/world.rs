@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{fmt::Debug, ops::Range};
 
 use super::scene::Scene;
 use crate::{
@@ -113,11 +113,20 @@ pub enum InstanceUploadData {
     Copied(CopiedInstanceData),
 }
 
-#[derive(Debug)]
 pub enum WorldUpdateDelta<'frame> {
     NewEntitySpawn(NewInstanceData),
     EntityInstanceSpawn(CopiedInstanceData),
     AssetDidLoad(GPUAssetUploadJob<'frame>),
+}
+
+impl<'frame> Debug for WorldUpdateDelta<'frame> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WorldUpdateDelta::NewEntitySpawn(_) => f.write_str("NewEntitySpawn"),
+            WorldUpdateDelta::EntityInstanceSpawn(_) => f.write_str("EntityInstanceSpawn"),
+            WorldUpdateDelta::AssetDidLoad(_) => f.write_str("AssetDidLoad"),
+        }
+    }
 }
 
 pub struct World {

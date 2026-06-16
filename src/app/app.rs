@@ -159,7 +159,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                     )
                     .unwrap(),
                 );
-                let scene = Scene::box_animated_shared(self.world.as_mut().unwrap()).unwrap();
+                let scene = Scene::buggy(self.world.as_mut().unwrap()).unwrap();
                 self.world.as_mut().unwrap().add_scene(scene);
                 //  #[cfg(test)]
                 //  {

@@ -104,7 +104,6 @@ impl SharedInstanceData for InstanceArena<LocalTransform> {
         donor_handle: &GPUInstanceHandle,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
-        println!("REGSITERING LOCAL");
         let meta = self
             .alloc_table
             .get(donor_handle)

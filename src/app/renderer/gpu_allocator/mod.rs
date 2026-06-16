@@ -9,7 +9,8 @@ use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::app::renderer::renderer::GPUInstanceHandle;
 use crate::app::renderer::{InstanceUploadJob, StorageData};
 use crate::util::types::{
-    InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
+    GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
+    LocalTransform,
 };
 use crate::{
     app::renderer::GPUAllocationHandle, util::types::ModelVertex,
@@ -225,6 +226,24 @@ impl StorageData for InverseBindMatrix {
             remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
             buffer: buf,
             allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
+            _t: PhantomData,
+        }
+    }
+}
+
+impl StorageData for GlobalTransform {
+    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("GT buffer"),
+            size: (CHUNK_SIZE / 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        GPUChunk {
+            remaining_space: CHUNK_SIZE / 4,
+            buffer: buf,
+            allocator: FreeListAllocator::new(size_of::<GlobalTransform>()),
             _t: PhantomData,
         }
     }

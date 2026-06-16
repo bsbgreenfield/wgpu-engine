@@ -88,7 +88,7 @@ impl PipelineCollection {
                             vertex: wgpu::VertexState {
                                 module: &shader,
                                 entry_point: Some("vs_main"),
-                                buffers: &[PNUVertex::desc(), GlobalTransform::desc()],
+                                buffers: &[PNUVertex::desc()],
                                 compilation_options: Default::default(),
                             },
                             primitive: wgpu::PrimitiveState {
@@ -152,7 +152,7 @@ impl PipelineCollection {
                             vertex: wgpu::VertexState {
                                 module: &shader,
                                 entry_point: Some("vs_main"),
-                                buffers: &[PNUJWVertex::desc(), GlobalTransform::desc()],
+                                buffers: &[PNUJWVertex::desc()],
                                 compilation_options: Default::default(),
                             },
                             primitive: wgpu::PrimitiveState {

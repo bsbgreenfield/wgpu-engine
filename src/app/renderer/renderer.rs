@@ -128,7 +128,6 @@ pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
     pub(super) instance_arenas: BindGroupCollection,
-    global_transform_buffer: StaticGPUBuffer<GlobalTransform>,
     pub pipelines: PipelineCollection,
     passes: Vec<EngineRenderPass>,
 }
@@ -139,7 +138,6 @@ impl Renderer {
             allocations: Vec::new(),
             vertex_arenas: VertexArenaCollection::new(&config.device),
             instance_arenas: BindGroupCollection::new(&config.device),
-            global_transform_buffer: StaticGPUBuffer::<GlobalTransform>::new(&config.device),
             pipelines: PipelineCollection::new(config),
             passes: Vec::new(),
         }
@@ -180,11 +178,9 @@ impl Renderer {
             if render_frame.global_transforms.is_empty() {
                 break 'global_transforms;
             }
-            queue.write_buffer(
-                &self.global_transform_buffer,
-                0,
-                bytemuck::cast_slice(render_frame.global_transforms),
-            );
+            self.instance_arenas
+                .local_transforms
+                .write_gt_data(bytemuck::cast_slice(render_frame.global_transforms), queue);
         }
         'rigid_animations: {
             let animations = &render_frame.rigid_animation_data;
@@ -319,8 +315,6 @@ impl Renderer {
                     self.instance_arenas.local_transforms.get_first_bg(),
                     &[],
                 );
-                // instance step mode gt buffer
-                render_pass.set_vertex_buffer(1, self.global_transform_buffer.slice(..));
                 for render_category in pass.categories.iter() {
                     match render_category {
                         RenderCategory::OpaqueStatic => {

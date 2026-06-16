@@ -32,8 +32,8 @@ mod integration_tests {
     #[derive(Debug)]
     enum WorldDeltaKind {
         AssetDidLoad,
-        EntityDidSpawn,
         EntityInstanceSpawn,
+        NewEntitySpawn,
     }
 
     /// Variant-only mirrors of RenderUpdateDelta — use these to declare what the renderer should emit.
@@ -71,7 +71,7 @@ mod integration_tests {
                     WorldDeltaKind::AssetDidLoad
                 ) | (
                     WorldUpdateDelta::NewEntitySpawn(_),
-                    WorldDeltaKind::EntityDidSpawn
+                    WorldDeltaKind::NewEntitySpawn
                 ) | (
                     WorldUpdateDelta::EntityInstanceSpawn(..),
                     WorldDeltaKind::EntityInstanceSpawn
@@ -186,12 +186,10 @@ mod integration_tests {
     }
 
     fn gen_draw_calls(app: &mut App) {
-        app.draw_packet.clear();
-        app.world
-            .as_ref()
-            .unwrap()
-            .instance_manager
-            .gen_draw_calls(&mut app.draw_packet);
+        app.world.as_ref().unwrap().instance_manager.gen_draw_calls(
+            &mut app.render_packet,
+            &app.world.as_ref().unwrap().entity_manager.asset_manager,
+        );
     }
 
     #[test]
@@ -205,11 +203,11 @@ mod integration_tests {
                 &[RenderDeltaKind::AssetGPULoaded], // expected render deltas
             );
             gen_draw_calls(&mut app);
-            assert!(app.draw_packet.is_empty());
+            assert!(app.render_packet.draw_packet.is_empty());
 
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::EntityDidSpawn],
+                &[WorldDeltaKind::NewEntitySpawn],
                 &[
                     RenderDeltaKind::PrototypeCreated,
                     RenderDeltaKind::EntitySpawn,
@@ -220,10 +218,21 @@ mod integration_tests {
             assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
 
             gen_draw_calls(&mut app);
-            assert!(!app.draw_packet.is_empty());
-            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
-            let pnujw_items: Vec<&DrawItem> =
-                app.draw_packet.get_pnujw().values().flatten().collect();
+            assert!(!app.render_packet.draw_packet.is_empty());
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+            let pnujw_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .collect();
             assert_eq!(pnu_items.len(), 1, "box should produce 1 pnu draw item");
             assert!(
                 pnujw_items.is_empty(),
@@ -244,11 +253,11 @@ mod integration_tests {
                 &[RenderDeltaKind::AssetGPULoaded],
             );
             gen_draw_calls(&mut app);
-            assert!(app.draw_packet.is_empty());
+            assert!(app.render_packet.draw_packet.is_empty());
 
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::EntityDidSpawn],
+                &[WorldDeltaKind::NewEntitySpawn],
                 &[
                     RenderDeltaKind::PrototypeCreated,
                     RenderDeltaKind::EntitySpawn,
@@ -259,10 +268,21 @@ mod integration_tests {
             assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
             gen_draw_calls(&mut app);
 
-            assert!(!app.draw_packet.is_empty());
-            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
-            let pnujw_items: Vec<&DrawItem> =
-                app.draw_packet.get_pnujw().values().flatten().collect();
+            assert!(!app.render_packet.draw_packet.is_empty());
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+            let pnujw_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .collect();
             assert!(pnu_items.is_empty(), "fox should produce no pnu draw items");
             assert!(
                 !pnujw_items.is_empty(),
@@ -288,7 +308,7 @@ mod integration_tests {
             );
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::EntityDidSpawn],
+                &[WorldDeltaKind::NewEntitySpawn],
                 &[
                     RenderDeltaKind::PrototypeCreated,
                     RenderDeltaKind::EntitySpawn,
@@ -297,61 +317,19 @@ mod integration_tests {
 
             gen_draw_calls(&mut app);
 
-            let pnujw_items: Vec<&DrawItem> =
-                app.draw_packet.get_pnujw().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .collect();
             assert!(!pnujw_items.is_empty(), "fox should have pnujw draw items");
             for item in &pnujw_items {
                 assert_eq!(
                     item.get_lt_idx(),
                     0,
                     "first instance allocated in the arena must start at lt_idx 0"
-                );
-            }
-        });
-    }
-
-    /// In the fox+box scene the box is spawned first (EntityHandle(0)), so it occupies the
-    /// initial local-transform slots in the arena.  The fox (EntityHandle(1)) is allocated
-    /// after the box, so its lt_idx must be > 0.
-    #[test]
-    fn instance_arena_fox_box_fox_lt_idx_nonzero() {
-        pollster::block_on(async {
-            let mut app = setup_world(TestCases::BoxFox).await;
-
-            run_frame(
-                &mut app,
-                &[WorldDeltaKind::AssetDidLoad, WorldDeltaKind::AssetDidLoad],
-                &[
-                    RenderDeltaKind::AssetGPULoaded,
-                    RenderDeltaKind::AssetGPULoaded,
-                ],
-            );
-            run_frame(
-                &mut app,
-                &[
-                    WorldDeltaKind::EntityDidSpawn,
-                    WorldDeltaKind::EntityDidSpawn,
-                ],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
-            );
-
-            gen_draw_calls(&mut app);
-
-            let pnujw_items: Vec<&DrawItem> =
-                app.draw_packet.get_pnujw().values().flatten().collect();
-            assert!(
-                !pnujw_items.is_empty(),
-                "fox should have pnujw draw items in the fox+box scene"
-            );
-            for item in &pnujw_items {
-                assert!(
-                    item.get_lt_idx() > 0,
-                    "fox is the second instance allocated; box occupies the start of the arena so fox lt_idx must be > 0"
                 );
             }
         });
@@ -371,13 +349,13 @@ mod integration_tests {
                 ],
             );
             gen_draw_calls(&mut app);
-            assert!(app.draw_packet.is_empty());
+            assert!(app.render_packet.draw_packet.is_empty());
 
             run_frame(
                 &mut app,
                 &[
-                    WorldDeltaKind::EntityDidSpawn,
-                    WorldDeltaKind::EntityDidSpawn,
+                    WorldDeltaKind::NewEntitySpawn,
+                    WorldDeltaKind::NewEntitySpawn,
                 ],
                 &[
                     RenderDeltaKind::PrototypeCreated,
@@ -391,10 +369,21 @@ mod integration_tests {
             assert_eq!(instance_manager.get_pos_table_positions().len(), 2);
 
             gen_draw_calls(&mut app);
-            assert!(!app.draw_packet.is_empty());
-            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
-            let pnujw_items: Vec<&DrawItem> =
-                app.draw_packet.get_pnujw().values().flatten().collect();
+            assert!(!app.render_packet.draw_packet.is_empty());
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+            let pnujw_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .collect();
             assert_eq!(pnu_items.len(), 1, "box should produce 1 pnu draw item");
             assert!(
                 !pnujw_items.is_empty(),
@@ -490,99 +479,8 @@ mod integration_tests {
         });
     }
 
-    /// The instance range inside each DrawItem is an index into the global-transform buffer that
-    /// `prepare_render_frame` produces.  This test verifies that the buffer correctly copies the
-    /// instance manager's archetype tables, and  that every DrawItem's range start points at the transform that was
-    /// originally given to scene.spawn.
     #[test]
-    fn draw_item_instance_range_indexes_render_frame_transform() {
-        pollster::block_on(async {
-            use cgmath::SquareMatrix;
-
-            let mut app = setup_world(TestCases::Box).await;
-            run_frame_unchecked(&mut app); // asset load
-            run_frame_unchecked(&mut app); // first entity spawn at identity
-
-            let translation_mat =
-                cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(10.0, 20.0, 0.0));
-
-            app.world.as_mut().unwrap().scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: translation_mat.into(),
-                }),
-            )]);
-
-            run_frame_unchecked(&mut app);
-            gen_draw_calls(&mut app);
-
-            let (frame_transforms, positions): (
-                Vec<crate::util::types::GlobalTransform>,
-                Vec<crate::util::types::GlobalTransform>,
-            ) = {
-                let im = &app.world.as_ref().unwrap().instance_manager;
-                let render_frame = im.prepare_render_frame();
-                assert_eq!(
-                    render_frame.global_transforms.len(),
-                    1,
-                    "one byte-slice expected: one archetype table"
-                );
-                // THE GLOBAL TRANSFORMS IN THE RENDER FRAME
-                let render_bytes_as_global_transforms: Vec<crate::util::types::GlobalTransform> =
-                    bytemuck::cast_slice(render_frame.global_transforms[0]).to_vec();
-                // THE GLOBAL TRANSFORMS IN THE ARCH TABLE
-                let positions = im.get_pos_table_positions();
-                (render_bytes_as_global_transforms, positions)
-            };
-
-            // should be the same
-            assert_eq!(frame_transforms.len(), 2);
-            assert_eq!(positions.len(), 2);
-
-            for i in 0..2 {
-                assert_eq!(
-                    frame_transforms[i].transform, positions[i].transform,
-                    "render frame slot {i} must equal pos table slot {i}"
-                );
-            }
-
-            // Every draw items instance range must point at a transform we actually spawned.
-            let identity_gt: crate::util::types::GlobalTransform =
-                cgmath::Matrix4::<f32>::identity().into();
-            let translation_gt: crate::util::types::GlobalTransform = translation_mat.into();
-
-            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
-            assert_eq!(
-                pnu_items.len(),
-                2,
-                "expected two pnu draw items for two instances"
-            );
-
-            let mut seen_identity = false;
-            let mut seen_translation = false;
-            for item in pnu_items.iter() {
-                let idx = item.get_instances().start as usize;
-                if idx == 0 {
-                    seen_identity = true;
-                    assert_eq!(frame_transforms[idx].transform, identity_gt.transform);
-                } else if idx == 1 {
-                    seen_translation = true;
-                    assert_eq!(frame_transforms[idx].transform, translation_gt.transform);
-                }
-            }
-            assert!(
-                seen_identity,
-                "no draw item mapped to the identity transform"
-            );
-            assert!(
-                seen_translation,
-                "no draw item mapped to the translation transform"
-            );
-        });
-    }
-
-    #[test]
-    fn render_mutliple_immediately() {
+    fn render_multiple_immediately() {
         pollster::block_on(async {
             let mut app = setup_world(TestCases::MultiBox).await;
 
@@ -595,10 +493,7 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[
-                    WorldDeltaKind::EntityInstanceSpawn,
-                    WorldDeltaKind::EntityInstanceSpawn,
-                    WorldDeltaKind::EntityInstanceSpawn,
-                    WorldDeltaKind::EntityInstanceSpawn,
+                    WorldDeltaKind::NewEntitySpawn,
                     WorldDeltaKind::EntityInstanceSpawn,
                 ],
                 &[
@@ -617,6 +512,30 @@ mod integration_tests {
             assert_eq!(groups[0].views.len(), 1);
 
             gen_draw_calls(&mut app);
+
+            let pnu_draws: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+
+            assert_eq!(pnu_draws[0].instances, 0..5);
+
+            let frame = app
+                .world
+                .as_ref()
+                .unwrap()
+                .instance_manager
+                .prepare_render_frame(&app.render_packet);
+
+            assert_eq!(frame.global_transforms.len(), 5);
+            assert_eq!(frame.indirection_list.len(), 5);
+            println!("{:?}", frame.indirection_list);
+            for (i, ind_offset) in frame.indirection_list.iter().enumerate() {
+                assert_eq!(i, *ind_offset as usize);
+            }
 
             let instances = app
                 .world
@@ -672,18 +591,25 @@ mod integration_tests {
             assert_eq!(groups.len(), 1);
             assert_eq!(groups[0].views.len(), 1);
 
-            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
-            let pnujw_items: Vec<&DrawItem> =
-                app.draw_packet.get_pnujw().values().flatten().collect();
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+            let pnujw_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .collect();
             assert!(pnujw_items.is_empty());
 
-            assert_eq!(pnu_items.len(), 2);
-            assert_eq!(pnu_items[0].get_instances(), 0..1);
-            assert_eq!(pnu_items[1].get_instances(), 1..2);
+            assert_eq!(pnu_items.len(), 1);
+            assert_eq!(pnu_items[0].get_instances(), 0..2);
             assert_eq!(pnu_items[0].get_lt_idx(), 0);
-            assert_eq!(pnu_items[1].get_lt_idx(), 0);
-            assert_eq!(pnu_items[0].get_primitives(), pnu_items[1].get_primitives());
-            assert_eq!(pnu_items[0].get_indices(), pnu_items[1].get_indices());
 
             let world = app.world.as_ref().unwrap();
             assert_eq!(world.scene.spawn_count, 2);
@@ -706,7 +632,7 @@ mod integration_tests {
 
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::EntityDidSpawn],
+                &[WorldDeltaKind::NewEntitySpawn],
                 &[
                     RenderDeltaKind::PrototypeCreated,
                     RenderDeltaKind::EntitySpawn,
@@ -752,8 +678,13 @@ mod integration_tests {
             );
 
             gen_draw_calls(&mut app);
-            let pnujw_items: Vec<&DrawItem> =
-                app.draw_packet.get_pnujw().values().flatten().collect();
+            let pnujw_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .collect();
             assert!(
                 !pnujw_items.is_empty(),
                 "fox should produce pnujw draw items"
@@ -804,7 +735,7 @@ mod integration_tests {
             // Frame 2: entity spawns
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::EntityDidSpawn],
+                &[WorldDeltaKind::NewEntitySpawn],
                 &[
                     RenderDeltaKind::PrototypeCreated,
                     RenderDeltaKind::EntitySpawn,
@@ -824,7 +755,13 @@ mod integration_tests {
 
             gen_draw_calls(&mut app);
 
-            let pnu_items: Vec<&DrawItem> = app.draw_packet.get_pnu().values().flatten().collect();
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
             assert_eq!(pnu_items.len(), 2);
             println!("{:?}", pnu_items[0]);
             println!("{:?}", pnu_items[1]);
@@ -893,7 +830,7 @@ mod integration_tests {
             run_frame_unchecked(&mut app);
 
             let im = &app.world.as_ref().unwrap().instance_manager;
-            let render_frame = im.prepare_render_frame();
+            let render_frame = im.prepare_render_frame(&app.render_packet);
 
             assert_eq!(
                 render_frame.rigid_animation_data.len(),

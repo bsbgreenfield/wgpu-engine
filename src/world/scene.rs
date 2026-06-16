@@ -182,9 +182,17 @@ impl Scene {
     ) -> Result<Self, crate::world::WorldInitError> {
         let brain_asset = world.register_asset::<GltfAsset>("brain")?;
         let brain_entity = world.entity_manager.new_entity()?;
+
         world.entity_manager.add_mesh_collection_for_entity(
             &brain_entity,
-            MeshCollectionDescriptor::new(brain_asset, MeshAcessor::All),
+            MeshCollectionDescriptor::new(brain_asset.clone(), MeshAcessor::All).with_animation(
+                AnimationComponentDescriptor {
+                    resource_backing: brain_asset,
+                    accessor: AnimationAccessor::All,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                },
+            ),
         );
 
         let mut scene = Scene::new();
@@ -193,7 +201,7 @@ impl Scene {
         scene.spawn(vec![(
             brain_entity,
             Box::new(APosition {
-                position: cgmath::Matrix4::<f32>::identity().into(),
+                position: cgmath::Matrix4::<f32>::from_scale(3.).into(),
             }),
         )]);
 
