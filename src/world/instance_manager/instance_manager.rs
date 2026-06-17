@@ -38,7 +38,7 @@ pub struct InstanceManager {
     pub(super) pos: APositionTable,
     render_groups: Vec<RenderGroup>,
     pub(super) sparse_entity_group: Vec<usize>,
-    animation_controller: AnimationController,
+    pub animation_controller: AnimationController,
 }
 
 impl InstanceManager {
@@ -348,7 +348,6 @@ impl InstanceManager {
         });
         // ******** ANIMATION DATA *********
         if let Some(entity_animation_data) = renderables.animations {
-            println!("INSERTING ANIMATION????");
             self.animation_controller.registered_animations.insert(
                 renderables.instance_handle.entity_handle.clone(),
                 EntityAnimations {

@@ -155,24 +155,50 @@ impl Scene {
     pub fn buggy(
         world: &mut crate::world::world::World,
     ) -> Result<Self, crate::world::WorldInitError> {
-        let brain_asset = world.register_asset::<GltfAsset>("buggy")?;
-        let brain_entity = world.entity_manager.new_entity()?;
+        let buggy_asset = world.register_asset::<GltfAsset>("buggy")?;
+        let buggy_entity = world.entity_manager.new_entity()?;
         world.entity_manager.add_mesh_collection_for_entity(
-            &brain_entity,
-            MeshCollectionDescriptor::new(brain_asset, MeshAcessor::All),
+            &buggy_entity,
+            MeshCollectionDescriptor::new(buggy_asset, MeshAcessor::All),
         );
 
         let mut scene = Scene::new();
-        scene.add_entity(brain_entity);
+        scene.add_entity(buggy_entity);
 
-        scene.spawn(vec![(
-            brain_entity,
-            Box::new(APosition {
-                position: (cgmath::Matrix4::from_angle_y(cgmath::Deg(90.0))
-                    * cgmath::Matrix4::<f32>::from_scale(0.02))
-                .into(),
-            }),
-        )]);
+        let brain_asset = world.register_asset::<GltfAsset>("brain")?;
+        let brain_entity = world.entity_manager.new_entity()?;
+
+        world.entity_manager.add_mesh_collection_for_entity(
+            &brain_entity,
+            MeshCollectionDescriptor::new(brain_asset.clone(), MeshAcessor::All).with_animation(
+                AnimationComponentDescriptor {
+                    resource_backing: brain_asset,
+                    accessor: AnimationAccessor::All,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                },
+            ),
+        );
+        scene.add_entity(brain_entity);
+        scene.spawn(vec![
+            (
+                buggy_entity,
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::from_angle_y(cgmath::Deg(90.0))
+                        * cgmath::Matrix4::<f32>::from_scale(0.02))
+                    .into(),
+                }),
+            ),
+            (
+                brain_entity,
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
+                        3., 0., 0.,
+                    ))
+                    .into(),
+                }),
+            ),
+        ]);
 
         Ok(scene)
     }
@@ -360,6 +386,14 @@ impl Scene {
                 EntityHandle(0),
                 Box::new(APosition {
                     position: (cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(3., 0., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(-3., 0., 0.))
                         * cgmath::Matrix4::<f32>::from_scale(0.05))
                     .into(),
                 }),

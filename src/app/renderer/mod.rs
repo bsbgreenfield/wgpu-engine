@@ -81,10 +81,11 @@ impl DrawPacket {
             self.entity_count[group_id] += 1;
         }
         let mut sum = 0;
-        for (group_id, count) in self.entity_count.iter().enumerate() {
+        for (group_id, count) in self.entity_count.iter_mut().enumerate() {
             self.instance_ranges[group_id] = sum..(sum + *count as u32);
             self.cursors[group_id] = sum;
             sum += *count as u32;
+            *count = 0;
         }
         for (record_index, handle) in record_idxs.iter().zip(handles) {
             let group_id = sparse_entity_group[handle.entity_handle.0 as usize];

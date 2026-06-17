@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Ok, Result};
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub struct AppConfig<'a> {
+    pub target_fps: Duration,
     pub size: PhysicalSize<u32>,
     pub surface: Option<wgpu::Surface<'a>>,
     pub surface_config: Option<wgpu::SurfaceConfiguration>,
@@ -59,6 +60,7 @@ impl<'a> AppConfig<'a> {
             .expect("failed to create device");
 
         Self {
+            target_fps: Duration::new(1 / 100, 0),
             size: PhysicalSize::default(),
             surface: None,
             surface_config: None,
@@ -109,12 +111,13 @@ impl<'a> AppConfig<'a> {
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
         Ok(AppConfig {
+            target_fps: Duration::new(1 / 100, 0),
             size,
             surface: Some(surface),
             device,

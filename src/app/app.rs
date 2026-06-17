@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::{
     app::{
@@ -22,6 +22,7 @@ use winit::{
 };
 
 pub struct App<'a> {
+    last_frame_time: Instant,
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
     pub world: Option<World>,
@@ -41,6 +42,7 @@ pub enum AppCommand {
 impl App<'_> {
     pub fn new() -> Self {
         Self {
+            last_frame_time: Instant::now(),
             window: None,
             app_config: None,
             app_state: AppState::new(),
@@ -53,6 +55,25 @@ impl App<'_> {
     }
 
     pub fn run_frame(&mut self) -> Result<(), FrameError> {
+        use std::sync::atomic::AtomicU64;
+        use std::sync::atomic::Ordering;
+
+        static FRAME: AtomicU64 = AtomicU64::new(0);
+        let frame = FRAME.fetch_add(1, Ordering::Relaxed);
+        if frame % 60 == 0 {
+            let im = &self.world.as_ref().unwrap().instance_manager;
+
+            //  eprintln!(
+            //      "frame={} active_anims={} app_cmds={} pnu_keys={} pnujw_keys={} indirection={} gt={}",
+            //      frame,
+            //      im.animation_controller.active_animations.len(),
+            //      self.app_commands.len(),
+            //      self.render_packet.draw_packet.pnu.len(),
+            //      self.render_packet.draw_packet.pnujw.len(),
+            //      self.render_packet.draw_packet.indirection_list.len(),
+            //      self.render_packet.global_transforms.len(),
+            //  );
+        }
         if self.app_state.input_controller.key_1_down {
             self.app_commands.push(AppCommand::One);
             self.app_state.input_controller.key_1_down = false;
@@ -159,7 +180,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                     )
                     .unwrap(),
                 );
-                let scene = Scene::buggy(self.world.as_mut().unwrap()).unwrap();
+                let scene = Scene::shared_foxes(self.world.as_mut().unwrap()).unwrap();
                 self.world.as_mut().unwrap().add_scene(scene);
                 //  #[cfg(test)]
                 //  {
@@ -206,9 +227,14 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                     return;
                 }
 
+                self.last_frame_time = Instant::now();
                 match self.run_frame() {
                     Ok(_) => {
-                        self.window.as_ref().unwrap().request_redraw();
+                        let next_frame =
+                            self.last_frame_time + self.app_config.as_ref().unwrap().target_fps;
+                        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                            next_frame,
+                        ));
                     }
                     Err(FrameError::SurfaceError(_)) => {
                         // let size = self.window.as_ref().unwrap().inner_size();
@@ -223,6 +249,18 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
                 }
             }
             _ => (),
+        }
+    }
+    fn new_events(
+        &mut self,
+        _event_loop: &event_loop::ActiveEventLoop,
+        cause: winit::event::StartCause,
+    ) {
+        use winit::event::StartCause;
+        if matches!(cause, StartCause::ResumeTimeReached { .. }) {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
         }
     }
 

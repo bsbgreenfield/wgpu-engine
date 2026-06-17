@@ -12,9 +12,9 @@ use crate::{
 };
 
 #[derive(Default)]
-pub(super) struct AnimationController {
+pub struct AnimationController {
     pub(super) registered_animations: HashMap<EntityHandle, EntityAnimations>,
-    pub(super) active_animations: Vec<AnimationInstance>,
+    pub active_animations: Vec<AnimationInstance>,
 }
 
 impl AnimationController {
@@ -26,12 +26,9 @@ impl AnimationController {
         anim_idx: usize,
         time_offset: Option<f32>,
     ) -> Option<()> {
-        println!("ACTIVATING animation!!!");
         let entity_animation = self
             .registered_animations
             .get(&instance_handle.entity_handle)?;
-        println!("{:?}", entity_animation.gpu_instance_handle);
-        println!("JOINT COUNT: {}", entity_animation.joint_transforms.len());
 
         let mesh_buffer: Vec<Mat4F32> = entity_animation
             .local_transforms
