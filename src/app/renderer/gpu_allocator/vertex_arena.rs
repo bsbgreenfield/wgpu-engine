@@ -63,10 +63,10 @@ impl GPUAllocator<VIndex> for GPUArena<VIndex> {
     type UploadJob<'a> = UploadIndexJob<'a>;
     type AllocationError = VertexArenaError;
 
-    fn new(device: &wgpu::Device) -> Self {
+    fn new() -> Self {
         Self {
             max_chunks: 16,
-            chunks: vec![GPUChunk::<VIndex>::new(device)],
+            chunks: vec![],
             alloc_table: HashMap::new(),
             label: Some(String::from("Index arena allocator")),
             bind_group_layout: None,
@@ -76,7 +76,11 @@ impl GPUAllocator<VIndex> for GPUArena<VIndex> {
         &mut self,
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<(), Self::AllocationError> {
+        if self.chunks.is_empty() {
+            self.chunks.push(GPUChunk::<VIndex>::new(device));
+        }
         'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.indices, queue, self.label.as_ref().unwrap()) {
                 Ok((node_idx, _)) => {
@@ -114,11 +118,11 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
     type UploadJob<'a> = UploadMeshJob<'a, V>;
     type AllocationError = VertexArenaError;
 
-    fn new(device: &wgpu::Device) -> Self {
+    fn new() -> Self {
         Self {
             bind_group_layout: None,
             max_chunks: 16,
-            chunks: vec![GPUChunk::<V>::new(device)],
+            chunks: vec![],
             alloc_table: HashMap::new(),
             label: Some(format!("Arena Allocator for {:?}", V::debug_str())),
         }
@@ -128,7 +132,11 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
         &mut self,
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<(), Self::AllocationError> {
+        if self.chunks.is_empty() {
+            self.chunks.push(GPUChunk::<V>::new(device));
+        }
         //TODO fix these errors so they make sense
         'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.verts, queue, self.label.as_ref().unwrap()) {

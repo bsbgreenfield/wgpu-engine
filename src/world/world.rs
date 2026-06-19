@@ -6,14 +6,14 @@ use crate::{
         GPUAssetUploadJob,
         app::AppCommand,
         renderer::{
-            BufferType, GPUBindings, Instruction, Operations, PrototypeHandle, RenderConstant,
-            RenderUpdateDelta,
+            BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
+            RenderConstant, RenderUpdateDelta,
         },
     },
-    asset_manager::{Asset, AssetHandle, AssetLoadError},
+    asset_manager::{Asset, AssetLoadError},
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
-        RenderKey, WorldInitError, WorldUpdateError,
+        RenderKey, WorldUpdateError,
         camera::Camera,
         entity_manager::{
             EntityHandle, components::ResourceBacking, entity_manager::EntityManager,
@@ -42,7 +42,7 @@ impl DrawSet {
 }
 
 pub struct RenderView {
-    pub asset_handle: AssetHandle,
+    pub alloc_handle: GPUAllocationHandle,
     pub pnujw_draws: Option<DrawSet>,
     pub pnu_draws: Option<DrawSet>,
 }
@@ -130,6 +130,7 @@ impl<'frame> Debug for WorldUpdateDelta<'frame> {
 }
 
 pub struct World {
+    init: bool,
     pub camera: Camera,
     pub scene: Scene,
     pub entity_manager: EntityManager,
@@ -138,6 +139,13 @@ pub struct World {
 }
 
 impl World {
+    pub fn is_initialized(&self) -> bool {
+        self.init
+    }
+    pub fn init(&mut self, aspect_ratio: f32, device: &wgpu::Device) {
+        self.camera.build_camera_uniform(aspect_ratio, device);
+        self.init = true;
+    }
     fn const_last(constants: &Vec<RenderConstant<'_>>) -> Instruction {
         Instruction::ConstIdx((constants.len() - 1) as u8)
     }
@@ -287,21 +295,18 @@ impl World {
             .register_asset::<A>(str_dir)
     }
 
-    pub fn new(
-        aspect_ratio: f32,
-        entity_manager: EntityManager,
-        device: &wgpu::Device,
-    ) -> Result<Self, WorldInitError> {
-        let mut camera = crate::world::camera::get_camera_default();
-        camera.build_camera_uniform(aspect_ratio, device);
+    pub fn new() -> Self {
+        let camera = crate::world::camera::get_camera_default();
+        //camera.build_camera_uniform(aspect_ratio, device);
 
-        Ok(Self {
+        Self {
+            init: false,
             camera,
             scene: Scene::new(),
-            entity_manager,
+            entity_manager: EntityManager::new(),
             load_queue: EntityLoadQueue::new(),
             instance_manager: InstanceManager::new(),
-        })
+        }
     }
 
     pub fn spawn(

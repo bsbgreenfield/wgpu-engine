@@ -3,9 +3,8 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::{
     app::renderer::{
         InstanceUploadJob, StorageData,
-        gpu_allocator::{
-            AllocMetaData, GPUChunk, GPUInstanceAllocator, SharedInstanceData, VertexArenaError,
-        },
+        bind_groups::SharedInstanceData,
+        gpu_allocator::{AllocMetaData, GPUChunk, GPUInstanceAllocator, VertexArenaError},
         renderer::GPUInstanceHandle,
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
@@ -20,9 +19,16 @@ pub struct InstanceArena<T: bytemuck::Pod + Debug> {
     label: Option<String>,
 }
 
-impl<T: bytemuck::Pod + Debug> InstanceArena<T> {
+impl<T: StorageData> InstanceArena<T> {
     pub fn get_first_buffer(&self) -> &wgpu::Buffer {
         &self.chunks[0].buffer
+    }
+
+    pub fn add_buffer(&mut self, device: &wgpu::Device) {
+        self.chunks.push(T::get_chunk(device));
+    }
+    pub fn buffer_len(&self) -> usize {
+        self.chunks.len()
     }
 
     fn copy_binding_impl(
@@ -137,7 +143,6 @@ impl SharedInstanceData for InstanceArena<JointTransform> {
         donor_handle: &GPUInstanceHandle,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
-        println!("REGISTERING JOINTS");
         let meta = self
             .alloc_table
             .get(donor_handle)
@@ -195,7 +200,11 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
         &mut self,
         job: InstanceUploadJob<'a, T>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<u32, Self::AllocationError> {
+        if self.chunks.is_empty() {
+            self.add_buffer(device);
+        }
         'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.data, queue, self.label.as_ref().unwrap()) {
                 Ok((node_id, _)) => {
@@ -229,10 +238,10 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
         &self.chunks[0].buffer
     }
 
-    fn new(device: &wgpu::Device) -> Self {
+    fn new() -> Self {
         Self {
             max_chunks: 1,
-            chunks: vec![T::get_chunk(device)],
+            chunks: vec![],
             alloc_table: HashMap::new(),
             label: Some("Local Transform arena".to_string()),
         }

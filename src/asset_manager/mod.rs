@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
 
 use crate::{
     animation::animation::EntityAnimationData,
@@ -199,4 +202,17 @@ pub trait ProvidesAnimationData: Asset {
         animation_accessor: &AnimationAccessor,
         mesh_accessor: &MeshAcessor,
     ) -> EntityAnimationData;
+}
+
+pub struct LoadedAsset<'a> {
+    pub asset: &'a Box<dyn Asset>,
+    pub alloc_handle: GPUAllocationHandle,
+}
+
+impl<'a> Deref for LoadedAsset<'a> {
+    type Target = &'a Box<dyn Asset>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.asset
+    }
 }

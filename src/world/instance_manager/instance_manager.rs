@@ -1,16 +1,13 @@
+use std::collections::HashMap;
 #[cfg(test)]
 use std::sync::Arc;
-use std::{collections::HashMap, num::NonZero, ops::Range};
 
 use crate::{
     animation::animation::EntityAnimations,
     app::{
         app::AppCommand,
-        renderer::{
-            DrawItem, DrawPacket, PrototypeHandle, RenderPacket, renderer::GPUInstanceHandle,
-        },
+        renderer::{DrawItem, PrototypeHandle, RenderPacket, renderer::GPUInstanceHandle},
     },
-    asset_manager::asset_manager_new::AssetManager,
     world::{
         WorldUpdateError,
         entity_manager::{
@@ -291,12 +288,11 @@ impl InstanceManager {
             .gen_prototype(renderables.instance_handle.entity_handle.clone());
         let mut new_instance_data =
             NewInstanceData::new(renderables.instance_handle.clone(), prototype);
-        // ******* MESH DATA ********
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
 
-        for (asset_handle, mesh_data) in renderables.mesh_renderables.drain(..) {
+        for (alloc_handle, mesh_data) in renderables.mesh_renderables.drain(..) {
             let view = RenderView {
-                asset_handle: asset_handle,
+                alloc_handle: alloc_handle,
                 pnu_draws: mesh_data.pnu_vertex_ranges.map(|pnu| DrawSet {
                     joint_map: vec![], // TODO: seprate draw set struct for pnu to avoid this?
                     mesh_map: mesh_data.pnu_mesh_map,
@@ -377,11 +373,7 @@ impl InstanceManager {
             ArchetypeId::Position => 0,
         }
     }
-    pub fn gen_draw_calls<'frame>(
-        &'frame self,
-        packet: &mut RenderPacket,
-        asset_manager: &AssetManager,
-    ) {
+    pub fn gen_draw_calls<'frame>(&'frame self, packet: &mut RenderPacket) {
         // adjust as archetype tables are added
         let record_len = self.pos.positions.len();
 
@@ -399,13 +391,12 @@ impl InstanceManager {
 
         for (group_idx, group) in self.render_groups.iter().enumerate() {
             for view in group.views.iter() {
-                let alloc_handle = asset_manager.resolve_asset_handle(&view.asset_handle);
                 if let Some(pnu) = &view.pnu_draws {
                     for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {
                         let entry = packet
                             .draw_packet
                             .pnu
-                            .entry(alloc_handle.clone())
+                            .entry(view.alloc_handle.clone())
                             .or_insert_with(Vec::new);
                         entry.push(DrawItem {
                             lt_idx: pnu.mesh_map[i],
@@ -421,7 +412,7 @@ impl InstanceManager {
                         let entry = packet
                             .draw_packet
                             .pnujw
-                            .entry(alloc_handle.clone())
+                            .entry(view.alloc_handle.clone())
                             .or_insert_with(Vec::new);
                         entry.push(DrawItem {
                             lt_idx: pnujw.mesh_map[i],

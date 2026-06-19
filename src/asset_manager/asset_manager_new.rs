@@ -3,7 +3,8 @@ use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 use crate::{
     app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
     asset_manager::{
-        Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, UnloadedAssetData,
+        Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, LoadedAsset,
+        UnloadedAssetData,
     },
     world::{entity_manager::components::ResourceBacking, scene::SceneLoadLevel},
 };
@@ -175,7 +176,10 @@ impl AssetManager {
         }
     }
 
-    pub fn get_loaded_asset(&self, asset_handle: &AssetHandle) -> &Box<dyn Asset> {
+    pub fn get_loaded_asset<'frame>(
+        &'frame self,
+        asset_handle: &AssetHandle,
+    ) -> LoadedAsset<'frame> {
         let a = self
             .registered_assets
             .get(asset_handle)
@@ -184,12 +188,17 @@ impl AssetManager {
         let RegisteredAsset::Loaded(res) = a else {
             panic!("asset is not loaded!")
         };
-        let AssetResidency::GPU(_alloc_handle, la_index) = res else {
+        let AssetResidency::GPU(alloc_handle, la_index) = res else {
             panic!("asset is not gpu resident!")
         };
-        self.loaded_assets
+        let asset = self
+            .loaded_assets
             .get(*la_index)
-            .expect("loaded asset not found at specified index!")
+            .expect("loaded asset not found at specified index!");
+        LoadedAsset::<'frame> {
+            asset,
+            alloc_handle: alloc_handle.clone(),
+        }
     }
 
     pub fn resolve_asset_handle(&self, asset_handle: &AssetHandle) -> GPUAllocationHandle {

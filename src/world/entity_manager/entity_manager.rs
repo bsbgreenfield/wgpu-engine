@@ -56,7 +56,7 @@ pub struct MeshRenderables {
 
 pub struct Renderables {
     pub instance_handle: InstanceHandle,
-    pub mesh_renderables: Vec<(AssetHandle, MeshRenderables)>,
+    pub mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimationData>,
 }
 
@@ -113,17 +113,16 @@ impl EntityManager {
             .mesh_collections
             .get(instance_handle.entity_handle.0 as usize)
         {
-            let asset = self
+            let loaded_asset = self
                 .asset_manager
                 .get_loaded_asset(&mesh_collection.resource_backing.asset_handle);
 
             let mesh_renderables =
-                mesh_collection.get_output_data(asset.as_mesh_provider().unwrap());
+                mesh_collection.get_output_data(loaded_asset.as_mesh_provider().unwrap());
 
-            renderables.mesh_renderables.push((
-                mesh_collection.resource_backing.asset_handle.clone(),
-                mesh_renderables,
-            ));
+            renderables
+                .mesh_renderables
+                .push((loaded_asset.alloc_handle, mesh_renderables));
         }
         if let Some(animation_component) = self
             .animations

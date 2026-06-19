@@ -7,12 +7,10 @@ mod integration_tests {
             app::App,
             app_config::AppConfig,
             app_state::AppState,
-            renderer::{
-                DrawItem, Instruction, RenderConstant, RenderUpdateDelta, renderer::Renderer,
-            },
+            renderer::{DrawItem, Instruction, RenderConstant, RenderUpdateDelta},
         },
         world::{
-            entity_manager::{EntityHandle, entity_manager::EntityManager},
+            entity_manager::EntityHandle,
             instance_manager::{ArchetypeId, InstanceHandle, archetype_table::APosition},
             scene::Scene,
             world::{World, WorldUpdateDelta},
@@ -110,9 +108,7 @@ mod integration_tests {
     async fn setup_world<'a>(test_case: TestCases) -> App<'a> {
         let mut app = App::new();
         let config = AppConfig::new_headless().await;
-        let renderer = Renderer::new(&config);
-        let entity_manager = EntityManager::new();
-        let mut world = World::new(1.0, entity_manager, &config.device).unwrap();
+        let mut world = World::new();
         let scene = match test_case {
             TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
             TestCases::MultiBox => Scene::multi_box_scene(&mut world).expect("multi box "),
@@ -122,9 +118,9 @@ mod integration_tests {
             TestCases::BoxAnimated => Scene::box_animated(&mut world).expect("box animated init"),
         };
         world.add_scene(scene);
-        app.world = Some(world);
+        app.world = world;
         app.app_config = Some(config);
-        app.renderer = Some(renderer);
+        app.renderer.init(app.app_config.as_ref().unwrap());
         app.app_state = AppState::new();
         app.surface_ready = true;
 
@@ -138,8 +134,6 @@ mod integration_tests {
     ) {
         let deltas = app
             .world
-            .as_mut()
-            .unwrap()
             .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
         assert_world_deltas(&deltas, expected_world_deltas);
@@ -148,8 +142,6 @@ mod integration_tests {
 
         let render_deltas = app
             .renderer
-            .as_mut()
-            .unwrap()
             .update(
                 constants,
                 instructions,
@@ -159,22 +151,18 @@ mod integration_tests {
             .unwrap_or_else(|e| panic!("{}", e));
 
         assert_render_deltas(&render_deltas, expected_render_deltas);
-        app.world.as_mut().unwrap().post_frame_update(render_deltas);
+        app.world.post_frame_update(render_deltas);
     }
 
     fn run_frame_unchecked(app: &mut App<'_>) {
         let deltas = app
             .world
-            .as_mut()
-            .unwrap()
             .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
         let (constants, instructions) = get_bytecode(deltas);
 
         let render_deltas = app
             .renderer
-            .as_mut()
-            .unwrap()
             .update(
                 constants,
                 instructions,
@@ -182,14 +170,13 @@ mod integration_tests {
                 &app.app_config.as_ref().unwrap().device,
             )
             .unwrap_or_else(|e| panic!("{}", e));
-        app.world.as_mut().unwrap().post_frame_update(render_deltas);
+        app.world.post_frame_update(render_deltas);
     }
 
     fn gen_draw_calls(app: &mut App) {
-        app.world.as_ref().unwrap().instance_manager.gen_draw_calls(
-            &mut app.render_packet,
-            &app.world.as_ref().unwrap().entity_manager.asset_manager,
-        );
+        app.world
+            .instance_manager
+            .gen_draw_calls(&mut app.render_packet);
     }
 
     #[test]
@@ -213,7 +200,7 @@ mod integration_tests {
                     RenderDeltaKind::EntitySpawn,
                 ],
             );
-            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            let instance_manager = &app.world.instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
 
@@ -263,7 +250,7 @@ mod integration_tests {
                     RenderDeltaKind::EntitySpawn,
                 ],
             );
-            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            let instance_manager = &app.world.instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
             gen_draw_calls(&mut app);
@@ -364,7 +351,7 @@ mod integration_tests {
                     RenderDeltaKind::EntitySpawn,
                 ],
             );
-            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            let instance_manager = &app.world.instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 2);
             assert_eq!(instance_manager.get_pos_table_positions().len(), 2);
 
@@ -407,7 +394,7 @@ mod integration_tests {
             run_frame_unchecked(&mut app); // asset load
             run_frame_unchecked(&mut app); // entity spawn at identity
 
-            let im = &app.world.as_ref().unwrap().instance_manager;
+            let im = &app.world.instance_manager;
             let positions = im.get_pos_table_positions();
             assert_eq!(positions.len(), 1);
 
@@ -431,7 +418,7 @@ mod integration_tests {
                 cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(3.0, 5.0, 7.0));
             let translation_gt: crate::util::types::GlobalTransform = translation_mat.into();
 
-            app.world.as_mut().unwrap().scene.spawn(vec![(
+            app.world.scene.spawn(vec![(
                 EntityHandle(0),
                 Box::new(APosition {
                     position: translation_mat.into(),
@@ -440,20 +427,13 @@ mod integration_tests {
 
             run_frame_unchecked(&mut app);
 
-            let positions = app
-                .world
-                .as_ref()
-                .unwrap()
-                .instance_manager
-                .get_pos_table_positions();
+            let positions = app.world.instance_manager.get_pos_table_positions();
             assert_eq!(positions.len(), 2);
             let mock_instance_handle_2 =
                 InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 1, 0);
 
             let pos_table_idx_1 = app
                 .world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .resolve_idx(&mock_instance_handle_1)
                 .unwrap_or_else(|| {
@@ -461,8 +441,6 @@ mod integration_tests {
                 });
             let pos_table_idx_2 = app
                 .world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .resolve_idx(&mock_instance_handle_2)
                 .unwrap_or_else(|| {
@@ -505,7 +483,7 @@ mod integration_tests {
                     RenderDeltaKind::EntitySpawn,
                 ],
             );
-            let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
+            let groups = app.world.instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
 
@@ -525,24 +503,16 @@ mod integration_tests {
 
             let frame = app
                 .world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .prepare_render_frame(&app.render_packet);
 
             assert_eq!(frame.global_transforms.len(), 5);
             assert_eq!(frame.indirection_list.len(), 5);
-            println!("{:?}", frame.indirection_list);
             for (i, ind_offset) in frame.indirection_list.iter().enumerate() {
                 assert_eq!(i, *ind_offset as usize);
             }
 
-            let instances = app
-                .world
-                .as_ref()
-                .unwrap()
-                .instance_manager
-                .get_all_instances();
+            let instances = app.world.instance_manager.get_all_instances();
 
             assert_eq!(instances.len(), 5);
         });
@@ -555,18 +525,18 @@ mod integration_tests {
             run_frame_unchecked(&mut app);
             run_frame_unchecked(&mut app);
 
-            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            let instance_manager = &app.world.instance_manager;
 
             assert_eq!(instance_manager.get_all_instances().len(), 1);
             assert_eq!(instance_manager.get_pos_table_positions().len(), 1);
 
-            let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
+            let groups = app.world.instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
 
             assert_eq!(groups[0].views.len(), 1);
 
-            app.world.as_mut().unwrap().scene.spawn(vec![(
+            app.world.scene.spawn(vec![(
                 EntityHandle(0),
                 Box::new(APosition {
                     position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
@@ -586,7 +556,7 @@ mod integration_tests {
 
             gen_draw_calls(&mut app);
 
-            let groups = app.world.as_ref().unwrap().instance_manager.get_groups();
+            let groups = app.world.instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
             assert_eq!(groups[0].views.len(), 1);
@@ -611,7 +581,7 @@ mod integration_tests {
             assert_eq!(pnu_items[0].get_instances(), 0..2);
             assert_eq!(pnu_items[0].get_lt_idx(), 0);
 
-            let world = app.world.as_ref().unwrap();
+            let world = app.world;
             assert_eq!(world.scene.spawn_count, 2);
 
             assert_eq!(world.instance_manager.get_all_instances().len(), 2);
@@ -642,15 +612,11 @@ mod integration_tests {
                 InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
 
             app.world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .assert_animation_exists(&instance_handle);
 
             let joint_slot_map = app
                 .world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .get_joint_slot_map(&instance_handle.entity_handle);
 
@@ -659,8 +625,6 @@ mod integration_tests {
 
             let registered_entity_animations = app
                 .world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .get_entity_animation(&instance_handle.entity_handle)
                 .expect("should be registered_entity_animations");
@@ -698,18 +662,11 @@ mod integration_tests {
             }
 
             app.world
-                .as_mut()
-                .unwrap()
                 .instance_manager
                 .activate_animation(&instance_handle, 0, None);
 
             {
-                let active = app
-                    .world
-                    .as_ref()
-                    .unwrap()
-                    .instance_manager
-                    .get_active_animations();
+                let active = app.world.instance_manager.get_active_animations();
                 assert_eq!(active.len(), 1, "one animation must be active");
                 assert_eq!(
                     active[0].joint_buffer.len(),
@@ -743,8 +700,6 @@ mod integration_tests {
             );
 
             app.world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .assert_animation_exists(&InstanceHandle::mock(
                     ArchetypeId::Position,
@@ -768,7 +723,7 @@ mod integration_tests {
             assert_eq!(pnu_items[0].get_lt_idx(), 0);
             assert_eq!(pnu_items[1].get_lt_idx(), 1);
 
-            let instance_manager = &app.world.as_ref().unwrap().instance_manager;
+            let instance_manager = &app.world.instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
 
             let instance_handle =
@@ -776,18 +731,11 @@ mod integration_tests {
 
             // Activate animation 0; this registers an AnimationInstance for the entity
             app.world
-                .as_mut()
-                .unwrap()
                 .instance_manager
                 .activate_animation(&instance_handle, 0, None);
 
             // Verify one animation is now active
-            let anim_instances = app
-                .world
-                .as_ref()
-                .unwrap()
-                .instance_manager
-                .get_active_animations(); // ERROR: add this getter to InstanceManager
+            let anim_instances = app.world.instance_manager.get_active_animations(); // ERROR: add this getter to InstanceManager
             assert_eq!(
                 anim_instances.len(),
                 1,
@@ -798,8 +746,6 @@ mod integration_tests {
 
             let anim = app
                 .world
-                .as_ref()
-                .unwrap()
                 .instance_manager
                 .get_animation_ref(&instance_handle.entity_handle, 0);
 
@@ -829,7 +775,7 @@ mod integration_tests {
             // get_animation_frame and populates the per-instance local-transform buffer
             run_frame_unchecked(&mut app);
 
-            let im = &app.world.as_ref().unwrap().instance_manager;
+            let im = &app.world.instance_manager;
             let render_frame = im.prepare_render_frame(&app.render_packet);
 
             assert_eq!(
@@ -856,51 +802,19 @@ mod integration_tests {
             );
 
             // test the animation at various times
-            app.world
-                .as_mut()
-                .unwrap()
-                .instance_manager
-                .run_animations(2.49);
-            assert!(
-                app.world
-                    .as_ref()
-                    .unwrap()
-                    .instance_manager
-                    .get_active_animations()
-                    .len()
-                    > 0
-            );
-            let bsm = app
-                .world
-                .as_ref()
-                .unwrap()
-                .instance_manager
-                .get_buffer_slot_map(0);
-            let mesh1 = &app
-                .world
-                .as_ref()
-                .unwrap()
-                .instance_manager
-                .get_active_animations()[0]
-                .mesh_buffer[bsm[0]];
+            app.world.instance_manager.run_animations(2.49);
+            assert!(app.world.instance_manager.get_active_animations().len() > 0);
+            let bsm = app.world.instance_manager.get_buffer_slot_map(0);
+            let mesh1 = &app.world.instance_manager.get_active_animations()[0].mesh_buffer[bsm[0]];
             //    .buffer[0][3][1];
             assert!(
                 (mesh1[3][1] - 2.52).abs() < 0.1,
                 "mesh 0 should be near peak (y ≈ 2.52) at t=2.6s, got {mesh1:?}"
             );
-            app.world
-                .as_mut()
-                .unwrap()
-                .instance_manager
-                .run_animations(3.5);
+            app.world.instance_manager.run_animations(3.5);
 
-            let mesh0_y_descending = app
-                .world
-                .as_ref()
-                .unwrap()
-                .instance_manager
-                .get_active_animations()[0]
-                .mesh_buffer[0][3][1];
+            let mesh0_y_descending =
+                app.world.instance_manager.get_active_animations()[0].mesh_buffer[0][3][1];
             assert!(
                 mesh0_y_descending < 2.0,
                 "mesh 0 should be descending (y ≈ 0.43) at t=3.5s, got {mesh0_y_descending}"

@@ -1,7 +1,4 @@
-use std::{
-    cell::OnceCell, collections::HashMap, error::Error, fmt::Display, marker::PhantomData,
-    ops::Range,
-};
+use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range};
 
 use bytemuck::Pod;
 
@@ -12,11 +9,7 @@ use crate::{
     },
     asset_manager::AssetHandle,
     util::types::{GlobalTransform, ModelVertex},
-    world::{
-        RenderKey,
-        entity_manager::EntityHandle,
-        instance_manager::{InstanceGPUBindings, InstanceHandle, RenderFrame},
-    },
+    world::{RenderKey, entity_manager::EntityHandle, instance_manager::InstanceHandle},
 };
 
 mod bind_groups;
@@ -306,6 +299,7 @@ trait VertexArenaSelector<V: ModelVertex> {
         &mut self,
         mesh_job: UploadMeshJob<V>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<(), VertexArenaError>;
 }
 pub enum RenderCategory {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZero, ops::Deref};
+use std::{collections::HashMap, ops::Deref};
 
 use wgpu::RenderPass;
 
@@ -9,17 +9,17 @@ use crate::{
             DrawPacket, InstanceUploadJob, Instruction, PrototypeHandle, RenderCategory,
             RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
             VertexArenaError, VertexArenaSelector,
-            bind_groups::{BindGroupProvider, LocalTransformBindGroup, SkinningBindGroup},
-            gpu_allocator::{
-                GPUAllocator, UploadIndexJob,
-                vertex_arena::{GPUArena, StaticGPUBuffer},
+            bind_groups::{
+                BindGroupProvider, instance_data::InstanceDataBindGroup,
+                local_transforms::LocalTransformBindGroup, skinning::SkinningBindGroup,
             },
+            gpu_allocator::{GPUAllocator, UploadIndexJob, vertex_arena::GPUArena},
             pipeline::PipelineCollection,
         },
     },
     util::types::{
-        GlobalTransform, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
-        PNUJWVertex, PNUVertex, VIndex,
+        InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex,
+        PNUVertex, VIndex,
     },
     world::{camera::Camera, instance_manager::RenderFrame, world::DrawSet},
 };
@@ -69,11 +69,11 @@ struct VertexArenaCollection {
 }
 
 impl VertexArenaCollection {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new() -> Self {
         Self {
-            index_arena: GPUArena::<VIndex>::new(device),
-            static_arena: GPUArena::<PNUVertex>::new(device),
-            skinned_arena: GPUArena::<PNUJWVertex>::new(device),
+            index_arena: GPUArena::<VIndex>::new(),
+            static_arena: GPUArena::<PNUVertex>::new(),
+            skinned_arena: GPUArena::<PNUJWVertex>::new(),
         }
     }
 }
@@ -93,6 +93,7 @@ pub(super) struct BindGroupCollection {
     prototypes: HashMap<PrototypeHandle, GPUInstanceHandle>,
     pub(super) local_transforms: LocalTransformBindGroup,
     pub(super) skinning: SkinningBindGroup,
+    pub(super) instance_data: InstanceDataBindGroup,
 }
 
 impl BindGroupCollection {
@@ -114,12 +115,13 @@ impl BindGroupCollection {
 }
 
 impl BindGroupCollection {
-    fn new(device: &wgpu::Device) -> Self {
+    fn new() -> Self {
         Self {
             next_handle: 0,
             prototypes: HashMap::new(),
-            local_transforms: LocalTransformBindGroup::new(device),
-            skinning: SkinningBindGroup::new(device),
+            local_transforms: LocalTransformBindGroup::new(),
+            skinning: SkinningBindGroup::new(),
+            instance_data: InstanceDataBindGroup::new(),
         }
     }
 }
@@ -128,20 +130,26 @@ pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
     pub(super) instance_arenas: BindGroupCollection,
-    pub pipelines: PipelineCollection,
+    pub pipelines: Option<PipelineCollection>,
     passes: Vec<EngineRenderPass>,
 }
 
 impl Renderer {
-    pub fn new(config: &AppConfig) -> Self {
+    pub fn new() -> Self {
         Self {
             allocations: Vec::new(),
-            vertex_arenas: VertexArenaCollection::new(&config.device),
-            instance_arenas: BindGroupCollection::new(&config.device),
-            pipelines: PipelineCollection::new(config),
+            vertex_arenas: VertexArenaCollection::new(),
+            instance_arenas: BindGroupCollection::new(),
+            pipelines: None,
             passes: Vec::new(),
         }
     }
+
+    pub fn init(&mut self, config: &AppConfig) {
+        let pipeline_collection = PipelineCollection::new(config);
+        self.pipelines = Some(pipeline_collection);
+    }
+
     pub fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
         self.passes.push(EngineRenderPass { label, categories });
     }
@@ -170,16 +178,18 @@ impl Renderer {
 
     pub fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {
         // offsets
-        self.instance_arenas
-            .local_transforms
-            .upload_instance_offsets(render_frame.indirection_list, queue);
+        if !render_frame.indirection_list.is_empty() {
+            self.instance_arenas
+                .instance_data
+                .upload_instance_offsets(render_frame.indirection_list, queue);
+        }
 
         'global_transforms: {
             if render_frame.global_transforms.is_empty() {
                 break 'global_transforms;
             }
             self.instance_arenas
-                .local_transforms
+                .instance_data
                 .write_gt_data(bytemuck::cast_slice(render_frame.global_transforms), queue);
         }
         'rigid_animations: {
@@ -214,8 +224,9 @@ impl Renderer {
         &mut self,
         job: UploadIndexJob,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<(), VertexArenaError> {
-        self.vertex_arenas.index_arena.upload(job, queue)?;
+        self.vertex_arenas.index_arena.upload(job, queue, device)?;
         Ok(())
     }
 
@@ -223,20 +234,22 @@ impl Renderer {
         &mut self,
         job: InstanceUploadJob<'frame, InstanceRecordData>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
         self.instance_arenas
-            .local_transforms
-            .upload_instance_record(job, queue)
+            .instance_data
+            .upload_instance_record(job, queue, device)
     }
 
     pub(super) fn upload_local_transforms<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
         self.instance_arenas
             .local_transforms
-            .upload_local_transforms(job, queue)
+            .upload_local_transforms(job, queue, device)
     }
 
     pub(super) fn upload_skin_data<'frame>(
@@ -244,10 +257,11 @@ impl Renderer {
         joint_job: InstanceUploadJob<'frame, JointTransform>,
         ibm_job: InstanceUploadJob<'frame, InverseBindMatrix>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
         self.instance_arenas
             .skinning
-            .upload(joint_job, ibm_job, queue)
+            .upload(joint_job, ibm_job, queue, device)
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -292,6 +306,7 @@ impl Renderer {
         camera: &Camera,
         draw_packet: &DrawPacket,
     ) -> Result<(), RenderError> {
+        let pipeline_collection = self.pipelines.as_ref().unwrap();
         for pass in &self.passes {
             let output = config.surface.as_ref().unwrap().get_current_texture()?;
             let view = output
@@ -315,10 +330,15 @@ impl Renderer {
                     self.instance_arenas.local_transforms.get_first_bg(),
                     &[],
                 );
+                render_pass.set_bind_group(
+                    2,
+                    self.instance_arenas.instance_data.get_first_bg(),
+                    &[],
+                );
                 for render_category in pass.categories.iter() {
                     match render_category {
                         RenderCategory::OpaqueStatic => {
-                            let pipeline = &self.pipelines.opaque_static;
+                            let pipeline = &pipeline_collection.opaque_static;
                             render_pass.set_pipeline(&pipeline.pipeline);
                             for draw_entry in draw_packet.pnu.iter() {
                                 let (vertex_alloc_range, v_buffer) =
@@ -353,10 +373,13 @@ impl Renderer {
                             }
                         }
                         RenderCategory::OpaqueSkinned => {
-                            let pipeline = &self.pipelines.opaque_skinned;
+                            if draw_packet.pnujw.is_empty() {
+                                continue;
+                            }
+                            let pipeline = &pipeline_collection.opaque_skinned;
                             render_pass.set_pipeline(&pipeline.pipeline);
                             render_pass.set_bind_group(
-                                2,
+                                3,
                                 self.instance_arenas.skinning.get_first_bg(),
                                 &[],
                             );
@@ -411,8 +434,12 @@ impl VertexArenaSelector<PNUJWVertex> for Renderer {
         &mut self,
         mesh_job: UploadMeshJob<PNUJWVertex>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<(), VertexArenaError> {
-        let _handle = self.vertex_arenas.skinned_arena.upload(mesh_job, queue)?;
+        let _handle = self
+            .vertex_arenas
+            .skinned_arena
+            .upload(mesh_job, queue, device)?;
         Ok(())
     }
 }
@@ -422,8 +449,12 @@ impl VertexArenaSelector<PNUVertex> for Renderer {
         &mut self,
         mesh_job: UploadMeshJob<PNUVertex>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<(), VertexArenaError> {
-        let _handle = self.vertex_arenas.static_arena.upload(mesh_job, queue)?;
+        let _handle = self
+            .vertex_arenas
+            .static_arena
+            .upload(mesh_job, queue, device)?;
         // TODO handle?
         Ok(())
     }

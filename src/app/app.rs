@@ -5,12 +5,9 @@ use crate::{
         FrameError,
         app_config::AppConfig,
         app_state::AppState,
-        renderer::{
-            DrawPacket, Instruction, RenderCategory, RenderConstant, RenderPacket,
-            renderer::Renderer,
-        },
+        renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
     },
-    world::{entity_manager::entity_manager::EntityManager, scene::Scene, world::World},
+    world::{scene::Scene, world::World},
 };
 use winit::{
     application::ApplicationHandler,
@@ -25,8 +22,8 @@ pub struct App<'a> {
     last_frame_time: Instant,
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
-    pub world: Option<World>,
-    pub renderer: Option<Renderer>,
+    pub world: World,
+    pub renderer: Renderer,
     pub app_state: AppState,
     pub surface_ready: bool,
     pub render_packet: RenderPacket,
@@ -47,33 +44,14 @@ impl App<'_> {
             app_config: None,
             app_state: AppState::new(),
             surface_ready: false,
-            renderer: None,
-            world: None,
+            renderer: Renderer::new(),
+            world: World::new(),
             render_packet: RenderPacket::new(),
             app_commands: Vec::with_capacity(100),
         }
     }
 
     pub fn run_frame(&mut self) -> Result<(), FrameError> {
-        use std::sync::atomic::AtomicU64;
-        use std::sync::atomic::Ordering;
-
-        static FRAME: AtomicU64 = AtomicU64::new(0);
-        let frame = FRAME.fetch_add(1, Ordering::Relaxed);
-        if frame % 60 == 0 {
-            let im = &self.world.as_ref().unwrap().instance_manager;
-
-            //  eprintln!(
-            //      "frame={} active_anims={} app_cmds={} pnu_keys={} pnujw_keys={} indirection={} gt={}",
-            //      frame,
-            //      im.animation_controller.active_animations.len(),
-            //      self.app_commands.len(),
-            //      self.render_packet.draw_packet.pnu.len(),
-            //      self.render_packet.draw_packet.pnujw.len(),
-            //      self.render_packet.draw_packet.indirection_list.len(),
-            //      self.render_packet.global_transforms.len(),
-            //  );
-        }
         if self.app_state.input_controller.key_1_down {
             self.app_commands.push(AppCommand::One);
             self.app_state.input_controller.key_1_down = false;
@@ -86,65 +64,45 @@ impl App<'_> {
             self.app_commands.push(AppCommand::Three);
             self.app_state.input_controller.key_3_down = false;
         }
-        let deltas = self
-            .world
-            .as_mut()
-            .unwrap()
-            .update(&mut self.app_commands)?;
+        let deltas = self.world.update(&mut self.app_commands)?;
 
         let mut constants = Vec::<RenderConstant>::new();
         let mut instructions = Vec::<Instruction>::new();
 
         World::gen_bytecode(deltas, &mut instructions, &mut constants);
 
-        let render_deltas = self.renderer.as_mut().unwrap().update(
+        let render_deltas = self.renderer.update(
             constants,
             instructions,
             &self.app_config.as_ref().unwrap().queue,
             &self.app_config.as_ref().unwrap().device,
         )?;
-        self.world
-            .as_mut()
-            .unwrap()
-            .post_frame_update(render_deltas);
+        self.world.post_frame_update(render_deltas);
 
         self.world
-            .as_ref()
-            .unwrap()
             .instance_manager
-            .gen_draw_calls(
-                &mut self.render_packet,
-                &self.world.as_ref().unwrap().entity_manager.asset_manager,
-            );
+            .gen_draw_calls(&mut self.render_packet);
 
         let render_frame = self
             .world
-            .as_ref()
-            .unwrap()
             .instance_manager
             .prepare_render_frame(&self.render_packet);
 
         self.renderer
-            .as_mut()
-            .unwrap()
             .prepare_frame(render_frame, &self.app_config.as_ref().unwrap().queue);
 
         if !self.render_packet.draw_packet.is_empty() {
             let _ = self
                 .renderer
-                .as_ref()
-                .unwrap()
                 .render(
                     self.app_config.as_ref().unwrap(),
-                    &self.world.as_ref().unwrap().camera,
+                    &self.world.camera,
                     &self.render_packet.draw_packet,
                 )
                 .map_err(|e| FrameError::RenderError(e));
         } else {
             let _ = self
                 .renderer
-                .as_ref()
-                .unwrap()
                 .render_blank(self.app_config.as_ref().unwrap())
                 .map_err(|e| FrameError::RenderError(e));
         }
@@ -169,33 +127,17 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             );
             let aspect_ratio: f32 = self.app_config.as_ref().unwrap().get_aspect_ratio();
 
-            if self.world.is_none() {
-                let entity_manager = EntityManager::new();
-
-                self.world = Some(
-                    World::new(
-                        aspect_ratio,
-                        entity_manager,
-                        &self.app_config.as_ref().unwrap().device,
-                    )
-                    .unwrap(),
+            if !self.world.is_initialized() {
+                self.world
+                    .init(aspect_ratio, &self.app_config.as_ref().unwrap().device);
+                let scene = Scene::buggy(&mut self.world).unwrap();
+                self.world.add_scene(scene);
+                self.renderer.init(self.app_config.as_ref().unwrap());
+                self.renderer.add_pass(
+                    "Opaque Pass".to_string(),
+                    vec![RenderCategory::OpaqueStatic, RenderCategory::OpaqueSkinned],
                 );
-                let scene = Scene::shared_foxes(self.world.as_mut().unwrap()).unwrap();
-                self.world.as_mut().unwrap().add_scene(scene);
-                //  #[cfg(test)]
-                //  {
-                //      let mut scene = Scene::fox_box(&mut self.world.as_mut().unwrap()).unwrap();
-                //      scene.set_load_level(crate::world::scene::SceneLoadLevel::GPU);
-                //      self.world.as_mut().unwrap().add_scene(scene);
-                //  }
             }
-            let mut renderer = Renderer::new(&self.app_config.as_ref().unwrap());
-            renderer.add_pass(
-                "Opaque Pass".to_string(),
-                vec![RenderCategory::OpaqueStatic, RenderCategory::OpaqueSkinned],
-            );
-
-            self.renderer = Some(renderer)
         }
     }
 

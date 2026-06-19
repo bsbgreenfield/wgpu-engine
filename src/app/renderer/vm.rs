@@ -11,10 +11,7 @@ use crate::{
     },
     asset_manager::AssetHandle,
     util::types::{InstanceRecordData, PNUJWVertex, PNUVertex},
-    world::{
-        RenderKey,
-        instance_manager::{InstanceGPUBindings, InstanceHandle},
-    },
+    world::{RenderKey, instance_manager::InstanceHandle},
 };
 
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
@@ -69,6 +66,7 @@ impl<'frame> Renderer {
                         self.upload_mesh(
                             UploadMeshJob::<PNUVertex>::new(pnu, global_alloc_id.clone()),
                             queue,
+                            device,
                         )?;
                         stack.push(global_alloc_key);
                     }
@@ -81,6 +79,7 @@ impl<'frame> Renderer {
                         self.upload_mesh(
                             UploadMeshJob::<PNUJWVertex>::new(pnujw, global_alloc_id.clone()),
                             queue,
+                            device,
                         )?;
                         stack.push(global_alloc_key);
                     }
@@ -95,6 +94,7 @@ impl<'frame> Renderer {
                                 global_alloc_id,
                             },
                             queue,
+                            device,
                         )?;
                         stack.push(global_alloc_key);
                     }
@@ -146,7 +146,8 @@ impl<'frame> Renderer {
                         ]);
                         let record_job: InstanceUploadJob<InstanceRecordData> =
                             InstanceUploadJob::new(&record_data, gpu_instance_handle);
-                        let record_offset = self.upload_instance_record(record_job, queue)?;
+                        let record_offset =
+                            self.upload_instance_record(record_job, queue, device)?;
 
                         let instance_handle_key = stack.pop().expect("should be key").unwrap_key();
                         res.push(RenderUpdateDelta::EntitySpawned {
@@ -162,7 +163,8 @@ impl<'frame> Renderer {
                         let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_owned();
                         let lt_upload_job = InstanceUploadJob::new(lt, gpu_instance_handle.clone());
-                        let lt_offset = self.upload_local_transforms(lt_upload_job, queue)?;
+                        let lt_offset =
+                            self.upload_local_transforms(lt_upload_job, queue, device)?;
 
                         stack.push(RenderConstant::Offset(lt_offset as u64));
                         stack.push(gpu_handle_key);
@@ -207,7 +209,7 @@ impl<'frame> Renderer {
                         let ibm_upload_job =
                             InstanceUploadJob::new(ibms, gpu_instance_handle.clone());
                         let jt_offset =
-                            self.upload_skin_data(jt_upload_job, ibm_upload_job, queue)?;
+                            self.upload_skin_data(jt_upload_job, ibm_upload_job, queue, device)?;
 
                         // NOTE: ibm offset should always be the same as joint offset
                         stack.push(RenderConstant::Offset(jt_offset as u64));

@@ -37,17 +37,19 @@ var<uniform> camera_uniform: CameraUniform;
 
 @group(1) @binding(0)
 var<storage, read> local_mesh_transforms: array<mat4x4<f32>>;
-@group(1) @binding(1)
-var<storage, read> instance_records: array<InstanceRecord>;
-@group(1) @binding(2)
-var<storage, read> instance_offsets: array<u32>;
-@group(1) @binding(3)
-var<storage, read> global_transforms: array<mat4x4<f32>>;
 
 
 @group(2) @binding(0)
-var<storage, read> joint_transforms: array<mat4x4<f32>>;
+var<storage, read> instance_records: array<InstanceRecord>;
 @group(2) @binding(1)
+var<storage, read> instance_offsets: array<u32>;
+@group(2) @binding(2)
+var<storage, read> global_transforms: array<mat4x4<f32>>;
+
+
+@group(3) @binding(0)
+var<storage, read> joint_transforms: array<mat4x4<f32>>;
+@group(3) @binding(1)
 var<storage, read> ibm_transforms: array<mat4x4<f32>>;
 
 fn apply_bone_transform(joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>)  -> vec4<f32> {

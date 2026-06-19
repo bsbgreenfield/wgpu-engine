@@ -3,10 +3,13 @@ use crate::{
         app_config::AppConfig,
         renderer::{
             RenderCategory,
-            bind_groups::{BindGroupProvider, LocalTransformBindGroup, SkinningBindGroup},
+            bind_groups::{
+                BindGroupProvider, instance_data::InstanceDataBindGroup,
+                local_transforms::LocalTransformBindGroup, skinning::SkinningBindGroup,
+            },
         },
     },
-    util::types::{GlobalTransform, InstanceData, ModelVertex, PNUJWVertex, PNUVertex},
+    util::types::{ModelVertex, PNUJWVertex, PNUVertex},
     world::camera::Camera,
 };
 
@@ -36,6 +39,7 @@ impl PipelineCollection {
             bind_group_layouts: &[
                 &Camera::get_bind_group_layout(device),
                 &LocalTransformBindGroup::get_bind_group_layout(device),
+                &InstanceDataBindGroup::get_bind_group_layout(device),
             ],
             immediate_size: 4,
         })
@@ -46,6 +50,7 @@ impl PipelineCollection {
             bind_group_layouts: &[
                 &Camera::get_bind_group_layout(device),
                 &LocalTransformBindGroup::get_bind_group_layout(device),
+                &InstanceDataBindGroup::get_bind_group_layout(device),
                 &SkinningBindGroup::get_bind_group_layout(device),
             ],
             immediate_size: 8,

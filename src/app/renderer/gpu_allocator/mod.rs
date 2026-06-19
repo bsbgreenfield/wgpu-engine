@@ -74,11 +74,12 @@ pub(super) trait GPUAllocator<T: Pod> {
         &mut self,
         job: Self::UploadJob<'a>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<(), Self::AllocationError>;
 
     fn resolve(&self, handle: &GPUAllocationHandle) -> (Range<u32>, &wgpu::Buffer);
 
-    fn new(device: &wgpu::Device) -> Self;
+    fn new() -> Self;
 }
 
 pub(super) trait GPUInstanceAllocator<T: Pod> {
@@ -88,11 +89,12 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
         &mut self,
         job: InstanceUploadJob<'a, T>,
         queue: &wgpu::Queue,
+        device: &wgpu::Device,
     ) -> Result<u32, Self::AllocationError>;
 
     fn resolve(&self, handle: &GPUInstanceHandle) -> u32;
 
-    fn new(device: &wgpu::Device) -> Self;
+    fn new() -> Self;
 
     #[allow(unused)]
     fn resolve_buffer(&self, instance_handle: &InstanceHandle) -> &wgpu::Buffer;
@@ -283,19 +285,4 @@ impl StorageData for InstanceOffset {
             _t: PhantomData,
         }
     }
-}
-pub(super) trait SharedInstanceData {
-    fn register_shared_binding(
-        &mut self,
-        donor_handle: &GPUInstanceHandle,
-        new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError>;
-
-    fn register_copy_binding(
-        &mut self,
-        donor_handle: &GPUInstanceHandle,
-        new_handle: &GPUInstanceHandle,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError>;
 }
