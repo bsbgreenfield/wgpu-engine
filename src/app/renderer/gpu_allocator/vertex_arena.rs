@@ -84,8 +84,14 @@ impl GPUAllocator<VIndex> for GPUArena<VIndex> {
         'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.indices, queue, self.label.as_ref().unwrap()) {
                 Ok((node_idx, _)) => {
-                    self.alloc_table
-                        .insert(job.global_alloc_id, AllocMetaData::new(chunk_idx, node_idx));
+                    self.alloc_table.insert(
+                        job.global_alloc_id,
+                        AllocMetaData {
+                            chunk_id: chunk_idx,
+                            node_id: node_idx,
+                            ref_count: 1,
+                        },
+                    );
                     return Ok(());
                 }
 
@@ -141,8 +147,14 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
         'outer: for (chunk_idx, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.verts, queue, self.label.as_ref().unwrap()) {
                 Ok((node_idx, _)) => {
-                    self.alloc_table
-                        .insert(job.global_alloc_id, AllocMetaData::new(chunk_idx, node_idx));
+                    self.alloc_table.insert(
+                        job.global_alloc_id,
+                        AllocMetaData {
+                            chunk_id: chunk_idx,
+                            node_id: node_idx,
+                            ref_count: 1,
+                        },
+                    );
                     return Ok(());
                 }
 

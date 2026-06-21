@@ -5,6 +5,7 @@ use std::{fmt::Display, ops::Range};
 use bytemuck::Pod;
 use std::error::Error;
 
+use crate::app::renderer::bind_groups::BindGroupUploadResult;
 use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::app::renderer::renderer::GPUInstanceHandle;
 use crate::app::renderer::{InstanceUploadJob, StorageData};
@@ -17,6 +18,7 @@ use crate::{
     world::instance_manager::InstanceHandle,
 };
 
+mod allocation_table;
 mod free_list;
 pub(super) mod instance_arena;
 pub(super) mod vertex_arena;
@@ -30,11 +32,7 @@ static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
 struct AllocMetaData {
     chunk_id: usize,
     node_id: usize,
-}
-impl AllocMetaData {
-    fn new(chunk_id: usize, node_id: usize) -> Self {
-        Self { chunk_id, node_id }
-    }
+    ref_count: usize,
 }
 pub(super) struct GPUChunk<T: bytemuck::Pod + Debug> {
     remaining_space: u32,
@@ -90,7 +88,7 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
         job: InstanceUploadJob<'a, T>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, Self::AllocationError>;
+    ) -> Result<BindGroupUploadResult, Self::AllocationError>;
 
     fn resolve(&self, handle: &GPUInstanceHandle) -> u32;
 
@@ -127,6 +125,7 @@ pub enum VertexArenaError {
         shared: GPUInstanceHandle,
         donor: GPUInstanceHandle,
     },
+    AllocationSlotNotFound,
     MaxAllocationReached,
 }
 
@@ -157,6 +156,7 @@ impl Display for VertexArenaError {
                     donor, shared
                 )
             }
+            Self::AllocationSlotNotFound => f.write_str("alloc slot not found"),
         }
     }
 }

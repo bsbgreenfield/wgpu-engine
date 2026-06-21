@@ -1,6 +1,6 @@
 use crate::{
     app::renderer::renderer::GPUInstanceHandle,
-    util::types::{GlobalTransform, InstanceOffset},
+    util::types::GlobalTransform,
     world::{
         RenderKey, entity_manager::EntityHandle,
         instance_manager::instance_manager::InstanceManager,

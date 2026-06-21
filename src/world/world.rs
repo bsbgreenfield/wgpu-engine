@@ -113,6 +113,21 @@ pub enum InstanceUploadData {
     Copied(CopiedInstanceData),
 }
 
+impl InstanceUploadData {
+    pub(super) fn handles(&self) -> Vec<InstanceHandle> {
+        let mut handles: Vec<InstanceHandle> = Vec::new();
+        match self {
+            InstanceUploadData::New(new) => {
+                handles.push(new.handle.clone());
+            }
+            InstanceUploadData::Copied(copied) => {
+                handles.extend(copied.handles.iter().cloned());
+            }
+        }
+        handles
+    }
+}
+
 pub enum WorldUpdateDelta<'frame> {
     NewEntitySpawn(NewInstanceData),
     EntityInstanceSpawn(CopiedInstanceData),
@@ -146,8 +161,23 @@ impl World {
         self.camera.build_camera_uniform(aspect_ratio, device);
         self.init = true;
     }
-    fn const_last(constants: &Vec<RenderConstant<'_>>) -> Instruction {
-        Instruction::ConstIdx((constants.len() - 1) as u8)
+    fn emit_const_last(constants: &Vec<RenderConstant<'_>>, instructions: &mut Vec<Instruction>) {
+        let idx: usize = constants.len() - 1;
+        if constants.len() > 255 {
+            instructions.push(Instruction::WideIdx((idx >> 8) as u8));
+        }
+        instructions.push(Instruction::ConstIdx(idx as u8));
+    }
+
+    fn emit_const<'frame>(
+        constants: &Vec<RenderConstant<'frame>>,
+        instructions: &mut Vec<Instruction>,
+        idx: usize,
+    ) {
+        if constants.len() > 255 {
+            instructions.push(Instruction::WideIdx((idx >> 8) as u8));
+        }
+        instructions.push(Instruction::ConstIdx(idx as u8));
     }
     pub fn gen_bytecode<'frame>(
         deltas: Vec<WorldUpdateDelta<'frame>>,
@@ -159,36 +189,37 @@ impl World {
                 WorldUpdateDelta::AssetDidLoad(asset_upload_job) => {
                     instructions.push(Instruction::Op(Operations::AddAsset));
                     constants.push(RenderConstant::Key(asset_upload_job.asset_handle.as_key()));
-                    instructions.push(Self::const_last(constants));
+                    Self::emit_const_last(constants, instructions);
                     if let Some(pnu) = asset_upload_job.pnu_vertices {
                         instructions.push(Instruction::Op(Operations::PNUUpload));
                         let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(pnu);
                         constants.push(RenderConstant::DataRef(pnu_data));
-                        instructions.push(Self::const_last(constants));
+                        Self::emit_const_last(constants, instructions);
                     }
                     if let Some(pnujw) = asset_upload_job.pnujw_vertices {
                         instructions.push(Instruction::Op(Operations::PNUJWUpload));
                         let pnujw_data = bytemuck::cast_slice::<PNUJWVertex, u8>(pnujw);
                         constants.push(RenderConstant::DataRef(pnujw_data));
-                        instructions.push(Self::const_last(constants));
+                        Self::emit_const_last(constants, instructions);
                     }
                     if let Some(indices) = asset_upload_job.indices {
                         instructions.push(Instruction::Op(Operations::IndexUpload));
                         let index_data = bytemuck::cast_slice::<VIndex, u8>(indices);
                         constants.push(RenderConstant::DataRef(index_data));
-                        instructions.push(Self::const_last(constants));
+                        Self::emit_const_last(constants, instructions);
                     }
                     instructions.push(Instruction::Op(Operations::EmitAssetUpload));
                 }
                 WorldUpdateDelta::NewEntitySpawn(new_instance) => {
                     let mut bind_mask = GPUBindings::empty();
-                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
-                    constants.push(RenderConstant::Key(new_instance.handle.as_key()));
-                    instructions.push(Self::const_last(constants));
-
+                    // prototype gen
                     instructions.push(Instruction::Op(Operations::CreatePrototype));
                     constants.push(RenderConstant::Key(new_instance.prototype.as_key()));
-                    instructions.push(Self::const_last(constants));
+                    Self::emit_const_last(constants, instructions);
+                    constants.push(RenderConstant::Key(new_instance.handle.as_key()));
+                    Self::emit_const_last(constants, instructions);
+
+                    instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
 
                     // local transforms
                     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
@@ -202,7 +233,7 @@ impl World {
                         unsafe { Vec::from_raw_parts(ptr, len, cap) }
                     };
                     constants.push(RenderConstant::DataOwned(lt_bytes));
-                    instructions.push(Self::const_last(constants));
+                    Self::emit_const_last(constants, instructions);
 
                     // joints and ibms
                     if let Some(mut data) = new_instance.joint_transforms {
@@ -228,9 +259,9 @@ impl World {
                             panic!("joint transforms must be accompanied by ibms");
                         };
                         constants.push(RenderConstant::DataOwned(jt_bytes));
-                        instructions.push(Self::const_last(constants));
+                        Self::emit_const_last(constants, instructions);
                         constants.push(RenderConstant::DataOwned(ibm_bytes));
-                        instructions.push(Self::const_last(constants));
+                        Self::emit_const_last(constants, instructions);
                     }
 
                     instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
@@ -241,8 +272,8 @@ impl World {
                     constants.push(RenderConstant::Key(
                         copied_instance.prototype_handle.as_key(),
                     ));
-                    let prototype_const_idx = Self::const_last(constants);
 
+                    let prototype_idx = constants.len() - 1;
                     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
                     let lt_instr = match copied_instance.local_transforms {
                         LocalTransforms::NeedsCopy => Instruction::Op(Operations::CopyData),
@@ -264,17 +295,16 @@ impl World {
 
                     for handle in copied_instance.handles {
                         instructions.push(Instruction::Op(Operations::Push));
-                        instructions.push(prototype_const_idx);
+                        Self::emit_const(constants, instructions, prototype_idx);
                         instructions.push(Instruction::Op(Operations::SpawnFromPrototype));
                         constants.push(RenderConstant::Key(handle.as_key()));
-                        instructions.push(Self::const_last(constants));
+                        Self::emit_const_last(constants, instructions);
                         instructions.push(lt_instr);
                         instructions.push(Instruction::Buffer(BufferType::LocalTransform));
                         if let Some(joint_instr) = joint_instr {
                             instructions.push(joint_instr);
                             instructions.push(Instruction::Buffer(BufferType::JointTransform));
                         }
-                        instructions.push(Instruction::Op(Operations::Pop));
                         instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
                         instructions.push(Instruction::Byte(bind_mask.bits()));
                     }
@@ -313,9 +343,15 @@ impl World {
         &mut self,
         instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
     ) -> Vec<InstanceUploadData> {
-        self.instance_manager
+        let instance_upload_data = self
+            .instance_manager
             .spawn_instances(&self.entity_manager, instance_data)
-            .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e))
+            .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e));
+
+        for upload_data in instance_upload_data.iter() {
+            self.scene.add_instances(&upload_data);
+        }
+        instance_upload_data
     }
 
     pub fn update<'frame>(

@@ -1,5 +1,6 @@
 use crate::app::renderer::{
     InstanceUploadJob,
+    bind_groups::BindGroupUploadResult,
     gpu_allocator::{GPUInstanceAllocator, VertexArenaError},
 };
 use std::num::NonZero;
@@ -128,12 +129,12 @@ impl InstanceDataBindGroup {
         job: InstanceUploadJob<'frame, InstanceRecordData>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
-        let offset = self.record_arena.upload(job, queue, device);
+    ) -> Result<BindGroupUploadResult, VertexArenaError> {
+        let upload_result = self.record_arena.upload(job, queue, device);
         if self.bind_groups.is_empty() {
             self.add_bind_group(device);
         }
-        offset
+        upload_result
     }
     pub fn upload_instance_offsets<'frame>(
         &mut self,

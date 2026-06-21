@@ -582,7 +582,6 @@ mod integration_tests {
             assert_eq!(pnu_items[0].get_lt_idx(), 0);
 
             let world = app.world;
-            assert_eq!(world.scene.spawn_count, 2);
 
             assert_eq!(world.instance_manager.get_all_instances().len(), 2);
             assert_eq!(world.instance_manager.get_pos_table_positions().len(), 2);

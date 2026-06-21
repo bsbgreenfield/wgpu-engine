@@ -130,7 +130,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             if !self.world.is_initialized() {
                 self.world
                     .init(aspect_ratio, &self.app_config.as_ref().unwrap().device);
-                let scene = Scene::buggy(&mut self.world).unwrap();
+                let scene = Scene::multi_box_scene(&mut self.world).unwrap();
                 self.world.add_scene(scene);
                 self.renderer.init(self.app_config.as_ref().unwrap());
                 self.renderer.add_pass(

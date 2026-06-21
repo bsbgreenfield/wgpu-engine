@@ -3,7 +3,7 @@ use std::num::NonZero;
 use crate::{
     app::renderer::{
         InstanceUploadJob,
-        bind_groups::{BindGroupProvider, SharedInstanceData},
+        bind_groups::{BindGroupProvider, BindGroupUploadResult, SharedInstanceData},
         gpu_allocator::{GPUInstanceAllocator, VertexArenaError, instance_arena::InstanceArena},
         renderer::GPUInstanceHandle,
     },
@@ -36,32 +36,32 @@ impl LocalTransformBindGroup {
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
-        let offset = self.lt_arena.upload(job, queue, device);
+    ) -> Result<BindGroupUploadResult, VertexArenaError> {
+        let upload_result = self.lt_arena.upload(job, queue, device);
         if self.bind_groups.is_empty() {
             self.add_bind_group(device);
         }
-        offset
+        upload_result
     }
 
     pub fn register_shared_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
         self.lt_arena
-            .register_shared_binding(donor_handle, new_handle)
+            .register_shared_binding(slot_index, new_handle)
     }
 
     pub fn register_copy_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
         self.lt_arena
-            .register_copy_binding(donor_handle, new_handle, queue, device)
+            .register_copy_binding(slot_index, new_handle, queue, device)
     }
 }
 

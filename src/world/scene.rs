@@ -14,7 +14,8 @@ use crate::{
                 MeshCollectionDescriptor,
             },
         },
-        instance_manager::{Archetype, archetype_table::APosition},
+        instance_manager::{Archetype, InstanceHandle, archetype_table::APosition},
+        world::InstanceUploadData,
     },
 };
 
@@ -87,8 +88,8 @@ pub struct SceneId(usize);
 pub struct Scene {
     pub scene_id: SceneId,
     pub entitites: Vec<EntityHandle>,
+    pub instances: Vec<InstanceHandle>,
     dirty: bool,
-    pub spawn_count: usize,
     pub load_level: SceneLoadLevel,
     pub event_queue: Vec<SceneEvent>,
 }
@@ -99,19 +100,23 @@ impl Scene {
         Self {
             scene_id: SceneId(id),
             entitites: vec![],
+            instances: vec![],
             dirty: false,
-            spawn_count: 0,
             load_level: SceneLoadLevel::NotLoaded,
             event_queue: Vec::new(),
         }
+    }
+
+    pub(super) fn add_instances(&mut self, instance_upload_data: &InstanceUploadData) {
+        self.instances.extend(instance_upload_data.handles());
     }
 
     pub fn new() -> Self {
         Self {
             scene_id: SceneId(0), // TODO: scene ids to keep track of loads, querys, etc??
             entitites: vec![],
+            instances: vec![],
             dirty: false,
-            spawn_count: 0,
             load_level: SceneLoadLevel::NotLoaded,
             event_queue: Vec::new(),
         }
@@ -130,7 +135,6 @@ impl Scene {
             self.set_load_level(SceneLoadLevel::GPU);
         }
         self.event_queue.sort();
-        self.spawn_count += 1;
     }
 
     pub fn add_entity(&mut self, entity: EntityHandle) {
@@ -448,42 +452,27 @@ impl Scene {
 
         let mut scene = Scene::new();
         scene.add_entity(box_entity);
-        scene.spawn(vec![
-            (
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::identity().into(),
-                }),
-            ),
-            (
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(0., 2., 0.))
-                        .into(),
-                }),
-            ),
-            (
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(2., 0., 0.))
-                        .into(),
-                }),
-            ),
-            (
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(2., 2., 0.))
-                        .into(),
-                }),
-            ),
-            (
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(Vector3::new(-2., 2., 0.))
-                        .into(),
-                }),
-            ),
-        ]);
+        let mut res = Vec::<(EntityHandle, Box<dyn Archetype>)>::new();
+        for i in -4..4 {
+            for j in -4..4 {
+                for k in 0..100 {
+                    let x = 2. * i as f32;
+                    let y = 2. * j as f32;
+                    let z = -2. * k as f32;
+                    res.push((
+                        EntityHandle(0),
+                        Box::new(APosition {
+                            position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(
+                                x, y, z,
+                            )) * cgmath::Matrix4::<f32>::from_scale(0.5))
+                            .into(),
+                        }),
+                    ));
+                }
+            }
+        }
+        scene.spawn(res);
+
         Ok(scene)
     }
     pub fn multi_fox_scene(

@@ -10,8 +10,9 @@ use crate::{
             RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
             VertexArenaError, VertexArenaSelector,
             bind_groups::{
-                BindGroupProvider, instance_data::InstanceDataBindGroup,
-                local_transforms::LocalTransformBindGroup, skinning::SkinningBindGroup,
+                BindGroupCollection, BindGroupProvider, BindGroupUploadResult,
+                instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
+                skinning::SkinningBindGroup,
             },
             gpu_allocator::{GPUAllocator, UploadIndexJob, vertex_arena::GPUArena},
             pipeline::PipelineCollection,
@@ -21,7 +22,7 @@ use crate::{
         InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex,
         PNUVertex, VIndex,
     },
-    world::{camera::Camera, instance_manager::RenderFrame, world::DrawSet},
+    world::{RenderKey, camera::Camera, instance_manager::RenderFrame, world::DrawSet},
 };
 
 pub(super) struct EngineRenderPass {
@@ -79,57 +80,41 @@ impl VertexArenaCollection {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct GPUInstanceHandle(pub(super) u32);
+pub struct GPUInstanceHandle {
+    pub prototype: PrototypeHandle,
+    pub instance_id: u32,
+}
+impl RenderKey for GPUInstanceHandle {
+    fn as_key(&self) -> u64 {
+        let i = self.instance_id as u64;
+        let p = (self.prototype.0 as u64) << 32;
+        i | p
+    }
+
+    fn from_key(key: u64) -> Self {
+        let instance = (key & 0xFFFF) as u32;
+        let p = ((key >> 32) & 0xFFFF) as u32;
+
+        let prototype = PrototypeHandle(p);
+
+        Self {
+            prototype,
+            instance_id: instance,
+        }
+    }
+}
 impl Deref for GPUInstanceHandle {
     type Target = u32;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-pub(super) struct BindGroupCollection {
-    next_handle: u32,
-    prototypes: HashMap<PrototypeHandle, GPUInstanceHandle>,
-    pub(super) local_transforms: LocalTransformBindGroup,
-    pub(super) skinning: SkinningBindGroup,
-    pub(super) instance_data: InstanceDataBindGroup,
-}
-
-impl BindGroupCollection {
-    pub(super) fn gen_gpu_instance_handle(&mut self) -> GPUInstanceHandle {
-        self.next_handle += 1;
-        GPUInstanceHandle(self.next_handle - 1)
-    }
-
-    fn add_prototype(&mut self, handle: GPUInstanceHandle, prototype: PrototypeHandle) {
-        self.prototypes.insert(prototype, handle);
-    }
-
-    pub(super) fn get_prototype_gpu_handle(
-        &self,
-        prototype: &PrototypeHandle,
-    ) -> GPUInstanceHandle {
-        *self.prototypes.get(prototype).expect("should exist")
-    }
-}
-
-impl BindGroupCollection {
-    fn new() -> Self {
-        Self {
-            next_handle: 0,
-            prototypes: HashMap::new(),
-            local_transforms: LocalTransformBindGroup::new(),
-            skinning: SkinningBindGroup::new(),
-            instance_data: InstanceDataBindGroup::new(),
-        }
+        &self.instance_id
     }
 }
 
 pub struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
-    pub(super) instance_arenas: BindGroupCollection,
+    pub(super) bind_groups: BindGroupCollection,
     pub pipelines: Option<PipelineCollection>,
     passes: Vec<EngineRenderPass>,
 }
@@ -139,7 +124,7 @@ impl Renderer {
         Self {
             allocations: Vec::new(),
             vertex_arenas: VertexArenaCollection::new(),
-            instance_arenas: BindGroupCollection::new(),
+            bind_groups: BindGroupCollection::new(),
             pipelines: None,
             passes: Vec::new(),
         }
@@ -159,12 +144,15 @@ impl Renderer {
         (self.allocations.len() - 1) as u32
     }
 
-    pub(super) fn get_gpu_instance_handle(&mut self) -> GPUInstanceHandle {
-        self.instance_arenas.gen_gpu_instance_handle()
+    pub(super) fn get_gpu_instance_handle(
+        &mut self,
+        prototype: &PrototypeHandle,
+    ) -> GPUInstanceHandle {
+        self.bind_groups.gen_gpu_instance_handle(prototype)
     }
 
-    pub(super) fn add_prototype(&mut self, handle: GPUInstanceHandle, prototype: PrototypeHandle) {
-        self.instance_arenas.add_prototype(handle, prototype);
+    pub(super) fn add_prototype(&mut self, prototype: PrototypeHandle) {
+        self.bind_groups.add_prototype(prototype);
     }
     pub fn update(
         &mut self,
@@ -179,7 +167,7 @@ impl Renderer {
     pub fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {
         // offsets
         if !render_frame.indirection_list.is_empty() {
-            self.instance_arenas
+            self.bind_groups
                 .instance_data
                 .upload_instance_offsets(render_frame.indirection_list, queue);
         }
@@ -188,7 +176,7 @@ impl Renderer {
             if render_frame.global_transforms.is_empty() {
                 break 'global_transforms;
             }
-            self.instance_arenas
+            self.bind_groups
                 .instance_data
                 .write_gt_data(bytemuck::cast_slice(render_frame.global_transforms), queue);
         }
@@ -198,7 +186,7 @@ impl Renderer {
                 break 'rigid_animations;
             }
             for animation in animations {
-                self.instance_arenas.local_transforms.write_lt_anim_data(
+                self.bind_groups.local_transforms.write_lt_anim_data(
                     &animation.gpu_handle,
                     animation.transforms,
                     queue,
@@ -211,7 +199,7 @@ impl Renderer {
                 break 'skinned_animations;
             }
             for animation in animations {
-                self.instance_arenas.skinning.write_joint_anim_data(
+                self.bind_groups.skinning.write_joint_anim_data(
                     &animation.gpu_handle,
                     animation.transforms,
                     queue,
@@ -236,9 +224,11 @@ impl Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas
+        let result = self
+            .bind_groups
             .instance_data
-            .upload_instance_record(job, queue, device)
+            .upload_instance_record(job, queue, device)?;
+        Ok(result.buffer_offset)
     }
 
     pub(super) fn upload_local_transforms<'frame>(
@@ -247,9 +237,16 @@ impl Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas
+        let prototype = job.gpu_instance_handle.prototype.clone();
+        let upload_result = self
+            .bind_groups
             .local_transforms
-            .upload_local_transforms(job, queue, device)
+            .upload_local_transforms(job, queue, device)?;
+        self.bind_groups
+            .prototypes
+            .entry(prototype)
+            .and_modify(|entry| entry.local_transforms_slot = upload_result.alloc_meta_idx);
+        Ok(upload_result.buffer_offset)
     }
 
     pub(super) fn upload_skin_data<'frame>(
@@ -259,9 +256,16 @@ impl Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        self.instance_arenas
+        let prototype = joint_job.gpu_instance_handle.prototype.clone();
+        let upload_result = self
+            .bind_groups
             .skinning
-            .upload(joint_job, ibm_job, queue, device)
+            .upload(joint_job, ibm_job, queue, device)?;
+        self.bind_groups
+            .prototypes
+            .entry(prototype)
+            .and_modify(|entry| entry.joint_transforms_slot = Some(upload_result.alloc_meta_idx));
+        Ok(upload_result.buffer_offset)
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
@@ -327,14 +331,10 @@ impl Renderer {
                 // local transform bind group
                 render_pass.set_bind_group(
                     1,
-                    self.instance_arenas.local_transforms.get_first_bg(),
+                    self.bind_groups.local_transforms.get_first_bg(),
                     &[],
                 );
-                render_pass.set_bind_group(
-                    2,
-                    self.instance_arenas.instance_data.get_first_bg(),
-                    &[],
-                );
+                render_pass.set_bind_group(2, self.bind_groups.instance_data.get_first_bg(), &[]);
                 for render_category in pass.categories.iter() {
                     match render_category {
                         RenderCategory::OpaqueStatic => {
@@ -380,7 +380,7 @@ impl Renderer {
                             render_pass.set_pipeline(&pipeline.pipeline);
                             render_pass.set_bind_group(
                                 3,
-                                self.instance_arenas.skinning.get_first_bg(),
+                                self.bind_groups.skinning.get_first_bg(),
                                 &[],
                             );
                             for draw_entry in draw_packet.pnujw.iter() {

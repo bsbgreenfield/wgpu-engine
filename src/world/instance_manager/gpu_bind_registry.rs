@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use crate::{
     app::renderer::{PrototypeHandle, renderer::GPUInstanceHandle},
-    world::{entity_manager::EntityHandle, instance_manager::InstanceHandle},
+    world::{WorldUpdateError, entity_manager::EntityHandle, instance_manager::InstanceHandle},
 };
 
 #[derive(Default)]
 pub(super) struct GPUBindRegistry {
-    pub(super) next_prototype: u16,
+    pub(super) next_prototype: u32,
     pub(super) registered_prototypes: HashMap<EntityHandle, PrototypeHandle>,
     pub(super) registered_instances: HashMap<GPUInstanceHandle, InstanceHandle>,
 }
@@ -20,5 +20,20 @@ impl GPUBindRegistry {
             .insert(entity_handle, prototype.clone());
 
         prototype
+    }
+
+    pub(super) fn unregister(
+        &mut self,
+        instance_handle: &InstanceHandle,
+    ) -> Result<(), WorldUpdateError> {
+        let key = self
+            .registered_instances
+            .iter()
+            .find(|(_key, val)| val == &instance_handle)
+            .ok_or(WorldUpdateError::InstancceNotFound(instance_handle.clone()))?
+            .0
+            .clone();
+        self.registered_instances.remove(&key);
+        Ok(())
     }
 }

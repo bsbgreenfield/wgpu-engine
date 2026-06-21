@@ -3,8 +3,11 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::{
     app::renderer::{
         InstanceUploadJob, StorageData,
-        bind_groups::SharedInstanceData,
-        gpu_allocator::{AllocMetaData, GPUChunk, GPUInstanceAllocator, VertexArenaError},
+        bind_groups::{BindGroupUploadResult, SharedInstanceData},
+        gpu_allocator::{
+            AllocMetaData, GPUChunk, GPUInstanceAllocator, VertexArenaError,
+            allocation_table::AllocationTable,
+        },
         renderer::GPUInstanceHandle,
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
@@ -15,7 +18,7 @@ use crate::{
 pub struct InstanceArena<T: bytemuck::Pod + Debug> {
     max_chunks: usize,
     chunks: Vec<GPUChunk<T>>,
-    alloc_table: HashMap<GPUInstanceHandle, AllocMetaData>,
+    alloc_table: AllocationTable,
     label: Option<String>,
 }
 
@@ -27,24 +30,22 @@ impl<T: StorageData> InstanceArena<T> {
     pub fn add_buffer(&mut self, device: &wgpu::Device) {
         self.chunks.push(T::get_chunk(device));
     }
+    #[allow(unused)]
     pub fn buffer_len(&self) -> usize {
         self.chunks.len()
     }
 
     fn copy_binding_impl(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_idx: usize,
         new_handle: &GPUInstanceHandle,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
         let meta = self
             .alloc_table
-            .get(donor_handle)
-            .ok_or(VertexArenaError::HandleNotFound {
-                shared: *new_handle,
-                donor: *donor_handle,
-            })?;
+            .get_meta(slot_idx)
+            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
 
         let src_range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         let size = (src_range.end - src_range.start) as u64;
@@ -79,13 +80,8 @@ impl<T: StorageData> InstanceArena<T> {
 
         queue.submit(Some(encoder.finish()));
 
-        self.alloc_table.insert(
-            *new_handle,
-            AllocMetaData {
-                chunk_id: dst_chunk_id,
-                node_id: dst_node_id,
-            },
-        );
+        meta.ref_count += 1;
+        self.alloc_table.register_instance(*new_handle, slot_idx);
 
         Ok(self.chunks[dst_chunk_id]
             .allocator
@@ -98,32 +94,24 @@ impl<T: StorageData> InstanceArena<T> {
 impl SharedInstanceData for InstanceArena<LocalTransform> {
     fn register_copy_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        self.copy_binding_impl(donor_handle, new_handle, device, queue)
+        self.copy_binding_impl(slot_index, new_handle, device, queue)
     }
     fn register_shared_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
         let meta = self
             .alloc_table
-            .get(donor_handle)
-            .ok_or(VertexArenaError::HandleNotFound {
-                shared: new_handle.clone(),
-                donor: donor_handle.clone(),
-            })?;
-        self.alloc_table.insert(
-            new_handle.clone(),
-            AllocMetaData {
-                chunk_id: meta.chunk_id,
-                node_id: meta.node_id,
-            },
-        );
+            .get_meta(slot_index)
+            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
+        meta.ref_count += 1;
+        self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
     }
 }
@@ -131,32 +119,24 @@ impl SharedInstanceData for InstanceArena<LocalTransform> {
 impl SharedInstanceData for InstanceArena<JointTransform> {
     fn register_copy_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        self.copy_binding_impl(donor_handle, new_handle, device, queue)
+        self.copy_binding_impl(slot_index, new_handle, device, queue)
     }
     fn register_shared_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
         let meta = self
             .alloc_table
-            .get(donor_handle)
-            .ok_or(VertexArenaError::HandleNotFound {
-                shared: new_handle.clone(),
-                donor: donor_handle.clone(),
-            })?;
-        self.alloc_table.insert(
-            new_handle.clone(),
-            AllocMetaData {
-                chunk_id: meta.chunk_id,
-                node_id: meta.node_id,
-            },
-        );
+            .get_meta(slot_index)
+            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
+        meta.ref_count += 1;
+        self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
     }
 }
@@ -164,7 +144,7 @@ impl SharedInstanceData for InstanceArena<JointTransform> {
 impl SharedInstanceData for InstanceArena<InverseBindMatrix> {
     fn register_copy_binding(
         &mut self,
-        _donor_handle: &GPUInstanceHandle,
+        _slot_index: usize,
         _new_handle: &GPUInstanceHandle,
         _queue: &wgpu::Queue,
         _device: &wgpu::Device,
@@ -174,26 +154,19 @@ impl SharedInstanceData for InstanceArena<InverseBindMatrix> {
 
     fn register_shared_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
         let meta = self
             .alloc_table
-            .get(donor_handle)
-            .ok_or(VertexArenaError::HandleNotFound {
-                shared: new_handle.clone(),
-                donor: donor_handle.clone(),
-            })?;
-        self.alloc_table.insert(
-            new_handle.clone(),
-            AllocMetaData {
-                chunk_id: meta.chunk_id,
-                node_id: meta.node_id,
-            },
-        );
+            .get_meta(slot_index)
+            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
+        meta.ref_count += 1;
+        self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
     }
 }
+
 impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
     type AllocationError = VertexArenaError;
     fn upload<'a>(
@@ -201,19 +174,22 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
         job: InstanceUploadJob<'a, T>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, Self::AllocationError> {
+    ) -> Result<BindGroupUploadResult, Self::AllocationError> {
         if self.chunks.is_empty() {
             self.add_buffer(device);
         }
         'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.data, queue, self.label.as_ref().unwrap()) {
                 Ok((node_id, _)) => {
-                    self.alloc_table.insert(
-                        job.gpu_instance_handle.clone(),
-                        AllocMetaData::new(chunk_id, node_id),
-                    );
-                    return Ok(self.chunks[chunk_id].allocator.resolve(node_id).start
-                        / size_of::<T>() as u32);
+                    let slot_idx =
+                        self.alloc_table
+                            .allocate(job.gpu_instance_handle, chunk_id, node_id);
+                    let buffer_offset = self.chunks[chunk_id].allocator.resolve(node_id).start
+                        / size_of::<T>() as u32;
+                    return Ok(BindGroupUploadResult {
+                        buffer_offset,
+                        alloc_meta_idx: slot_idx,
+                    });
                 }
 
                 Err(e) => match e {
@@ -228,7 +204,7 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
     }
 
     fn resolve(&self, handle: &GPUInstanceHandle) -> u32 {
-        let meta = self.alloc_table.get(&handle).unwrap();
+        let meta = self.alloc_table.resolve(handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         range.start / size_of::<T>() as u32
     }
@@ -242,7 +218,7 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
         Self {
             max_chunks: 1,
             chunks: vec![],
-            alloc_table: HashMap::new(),
+            alloc_table: AllocationTable::new(),
             label: Some("Local Transform arena".to_string()),
         }
     }

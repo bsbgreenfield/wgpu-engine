@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError},
-    world::entity_manager::{EntityHandle, EntityManagerError},
+    world::{
+        entity_manager::{EntityHandle, EntityManagerError},
+        instance_manager::InstanceHandle,
+    },
 };
 
 pub mod camera;
@@ -26,6 +29,7 @@ pub enum WorldUpdateError {
     EntityLoadFailed(EntityHandle),
     EntityLoadAlreadyEnqeued(EntityHandle),
     InstanceSpawnFailure,
+    InstancceNotFound(InstanceHandle),
     RenderablesNotAvailable(EntityHandle),
 }
 
@@ -57,6 +61,7 @@ impl Display for WorldUpdateError {
                 handle
             ),
             Self::InstanceSpawnFailure => f.write_str("failed to upload instance"),
+            Self::InstancceNotFound(handle) => write!(f, "instance not found: {:?}", handle),
             Self::RenderablesNotAvailable(handle) => write!(
                 f,
                 "In update render state, the entity with handle {:?} could not generate renderable data",

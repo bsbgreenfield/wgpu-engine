@@ -18,8 +18,8 @@ mod pipeline;
 pub mod renderer;
 mod vm;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct PrototypeHandle(pub u16);
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct PrototypeHandle(pub u32);
 
 impl RenderKey for PrototypeHandle {
     fn as_key(&self) -> u64 {
@@ -27,7 +27,7 @@ impl RenderKey for PrototypeHandle {
     }
 
     fn from_key(key: u64) -> Self {
-        Self(key as u16)
+        Self(key as u32)
     }
 }
 
@@ -173,6 +173,7 @@ pub enum Instruction {
     Op(Operations),
     Byte(u8),
     ConstIdx(u8),
+    WideIdx(u8),
     Buffer(BufferType),
 }
 

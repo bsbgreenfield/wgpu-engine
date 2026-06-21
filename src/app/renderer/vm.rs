@@ -17,12 +17,19 @@ use crate::{
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
 
 impl<'frame> Renderer {
-    fn get_constant_idx(instructions: &mut InstructionSet) -> u8 {
-        let instr = instructions.next().expect("should define a constant idx");
-        match instr {
-            Instruction::ConstIdx(idx) => *idx,
-            _ => panic!("expected a constant idx"),
-        }
+    fn get_constant_idx(instructions: &mut InstructionSet) -> usize {
+        let res = match instructions.next().unwrap() {
+            Instruction::WideIdx(high) => {
+                if let Some(Instruction::ConstIdx(low)) = instructions.next() {
+                    ((*high as usize) << 8) | (*low as usize)
+                } else {
+                    panic!("should be wide");
+                }
+            }
+            Instruction::ConstIdx(idx) => *idx as usize,
+            _ => panic!("expected a const idx"),
+        };
+        res
     }
     fn get_byte(instructions: &mut InstructionSet) -> u8 {
         let instr = instructions.next().expect("should define a byte");
@@ -45,6 +52,7 @@ impl<'frame> Renderer {
         while instr_peek.peek().is_some() {
             let instr = instr_peek.next().unwrap();
             match instr {
+                Instruction::WideIdx(_) => {}
                 Instruction::Buffer(_bt) => {
                     //
                 }
@@ -128,7 +136,8 @@ impl<'frame> Renderer {
 
                         let gpu_instance_handle_key =
                             stack.pop().expect("should be key").unwrap_key();
-                        let gpu_instance_handle = GPUInstanceHandle(gpu_instance_handle_key as u32);
+                        let gpu_instance_handle =
+                            GPUInstanceHandle::from_key(gpu_instance_handle_key);
                         let joint_offset: Option<u32> =
                             if bind_mask.contains(GPUBindings::JOINT_TRANSFORM) {
                                 Some(stack.pop().expect("should be offset").unwrap_offset() as u32)
@@ -153,13 +162,13 @@ impl<'frame> Renderer {
                         res.push(RenderUpdateDelta::EntitySpawned {
                             instance_handle: InstanceHandle::from_key(instance_handle_key),
                             gpu_instance_handle,
-                            record_offset,
+                            record_offset: record_offset,
                         });
                     }
                     Operations::LocalTransformUpload => {
                         let gpu_handle_key = stack.pop().expect("should be key");
                         let gpu_instance_handle =
-                            GPUInstanceHandle(gpu_handle_key.unwrap_key() as u32);
+                            GPUInstanceHandle::from_key(gpu_handle_key.unwrap_key());
                         let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_owned();
                         let lt_upload_job = InstanceUploadJob::new(lt, gpu_instance_handle.clone());
@@ -170,37 +179,35 @@ impl<'frame> Renderer {
                         stack.push(gpu_handle_key);
                     }
                     Operations::CreatePrototype => {
-                        let gpu_handle_key = stack.pop().expect("should be key");
-                        let gpu_instance_handle =
-                            GPUInstanceHandle(gpu_handle_key.unwrap_key() as u32);
                         let prototype_idx = Self::get_constant_idx(&mut instr_peek);
                         let prototype_handle = PrototypeHandle::from_key(
                             constants[prototype_idx as usize].unwrap_key(),
                         );
-                        self.add_prototype(gpu_instance_handle, prototype_handle.clone());
-                        let instance_handle_key =
-                            stack.pop().expect("should be instance handle key");
+
+                        self.add_prototype(prototype_handle.clone());
+                        let handle_idx = Self::get_constant_idx(&mut instr_peek);
+                        let instance_handle_key = constants[handle_idx as usize].clone();
+
                         let instance_handle =
                             InstanceHandle::from_key(instance_handle_key.unwrap_key());
                         res.push(RenderUpdateDelta::ProtypeCreated {
                             instance_handle: instance_handle.clone(),
                             prototype: prototype_handle,
                         });
+                        stack.push(RenderConstant::Key(prototype_handle.as_key()));
                         stack.push(instance_handle_key);
-                        stack.push(gpu_handle_key);
                     }
                     Operations::SpawnEntityInstance => {
-                        // push instance handle
-                        let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        stack.push(constants[const_idx as usize].clone());
-
-                        let gpu_instance_handle = self.get_gpu_instance_handle();
-                        stack.push(RenderConstant::Key(gpu_instance_handle.0 as u64));
+                        let prototype_key = stack.pop().expect("should be prototype key");
+                        let prototype_handle =
+                            PrototypeHandle::from_key(prototype_key.unwrap_key());
+                        let gpu_instance_handle = self.get_gpu_instance_handle(&prototype_handle);
+                        stack.push(RenderConstant::Key(gpu_instance_handle.as_key()));
                     }
                     Operations::JointTransformUpload => {
                         let gpu_handle_key = stack.pop().expect("should be key");
                         let gpu_instance_handle =
-                            GPUInstanceHandle(gpu_handle_key.unwrap_key() as u32);
+                            GPUInstanceHandle::from_key(gpu_handle_key.unwrap_key());
                         let jt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_owned();
                         let ibms = constants[Self::get_constant_idx(&mut instr_peek) as usize]
@@ -219,83 +226,72 @@ impl<'frame> Renderer {
                         let prototype_key = stack.pop().expect("should be prototype key");
                         let prototype_handle =
                             PrototypeHandle::from_key(prototype_key.unwrap_key());
-                        let donor_gpu_handle = self
-                            .instance_arenas
-                            .get_prototype_gpu_handle(&prototype_handle);
-                        let new_gpu_handle = self.get_gpu_instance_handle();
+                        let new_gpu_handle = self.get_gpu_instance_handle(&prototype_handle);
 
                         // instance handle
                         let const_idx = Self::get_constant_idx(&mut instr_peek);
                         stack.push(constants[const_idx as usize].clone());
 
                         // new -> donor
-                        stack.push(RenderConstant::Key(new_gpu_handle.0 as u64));
-                        stack.push(RenderConstant::Key(donor_gpu_handle.0 as u64));
+                        stack.push(RenderConstant::Key(new_gpu_handle.as_key()));
                     }
                     Operations::ShareData => {
-                        let donor_handle_key = stack.pop().expect("should be donor handle");
                         let new_handle_key = stack.pop().expect("should be gpu handle");
-                        let donor_handle = GPUInstanceHandle(donor_handle_key.unwrap_key() as u32);
-                        let new_handle = GPUInstanceHandle(new_handle_key.unwrap_key() as u32);
+                        let new_handle = GPUInstanceHandle::from_key(new_handle_key.unwrap_key());
 
                         if let Some(Instruction::Buffer(bt)) = instr_peek.next() {
                             match bt {
                                 BufferType::LocalTransform => {
+                                    let slot =
+                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
                                     let lt_offset = self
-                                        .instance_arenas
+                                        .bind_groups
                                         .local_transforms
-                                        .register_shared_binding(&donor_handle, &new_handle)
+                                        .register_shared_binding(slot, &new_handle)
                                         .expect("register shared lt fail");
                                     stack.push(RenderConstant::Offset(lt_offset as u64));
                                 }
                                 BufferType::JointTransform => {
+                                    let slot =
+                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
                                     let (jt_offset, _ibm_offset) = self
-                                        .instance_arenas
+                                        .bind_groups
                                         .skinning
-                                        .register_shared_binding(&donor_handle, &new_handle)
+                                        .register_shared_binding(slot, &new_handle)
                                         .expect("register shared skin fail");
                                     stack.push(RenderConstant::Offset(jt_offset as u64));
                                 }
                             }
                             stack.push(new_handle_key);
-                            stack.push(donor_handle_key);
                         } else {
                             panic!("expected buffer type instr for share")
                         }
                     }
                     Operations::CopyData => {
-                        let donor_handle_key = stack.pop().expect("should be donor handle");
                         let new_handle_key = stack.pop().expect("should be gpu handle");
-                        let donor_handle = GPUInstanceHandle(donor_handle_key.unwrap_key() as u32);
-                        let new_handle = GPUInstanceHandle(new_handle_key.unwrap_key() as u32);
+                        let new_handle = GPUInstanceHandle::from_key(new_handle_key.unwrap_key());
                         if let Some(Instruction::Buffer(bt)) = instr_peek.next() {
                             match bt {
                                 BufferType::LocalTransform => {
+                                    let slot =
+                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
                                     let lt_offset = self
-                                        .instance_arenas
+                                        .bind_groups
                                         .local_transforms
-                                        .register_copy_binding(
-                                            &donor_handle,
-                                            &new_handle,
-                                            queue,
-                                            device,
-                                        )
+                                        .register_copy_binding(slot, &new_handle, queue, device)
                                         .expect("register shared lt fail");
                                     stack.push(RenderConstant::Offset(lt_offset as u64));
                                     stack.push(new_handle_key);
-                                    stack.push(donor_handle_key);
                                 }
                                 BufferType::JointTransform => {
-                                    let (jt_offset, _ibm_offset) =
-                                        self.instance_arenas.skinning.register_copy_binding(
-                                            &donor_handle,
-                                            &new_handle,
-                                            queue,
-                                            device,
-                                        )?;
+                                    let slot =
+                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
+                                    let (jt_offset, _ibm_offset) = self
+                                        .bind_groups
+                                        .skinning
+                                        .register_copy_binding(slot, &new_handle, queue, device)?;
                                     stack.push(RenderConstant::Offset(jt_offset as u64));
                                     stack.push(new_handle_key);
-                                    stack.push(donor_handle_key);
                                 }
                             }
                         } else {

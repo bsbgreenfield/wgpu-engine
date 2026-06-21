@@ -5,7 +5,7 @@ use wgpu::ShaderStages;
 use crate::{
     app::renderer::{
         InstanceUploadJob,
-        bind_groups::{BindGroupProvider, SharedInstanceData},
+        bind_groups::{BindGroupProvider, BindGroupUploadResult, SharedInstanceData},
         gpu_allocator::{GPUInstanceAllocator, VertexArenaError, instance_arena::InstanceArena},
         renderer::GPUInstanceHandle,
     },
@@ -41,26 +41,26 @@ impl SkinningBindGroup {
         ibm_job: InstanceUploadJob<'frame, InverseBindMatrix>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
-        let jt_offset = self.joint_arena.upload(joint_job, queue, device)?;
+    ) -> Result<BindGroupUploadResult, VertexArenaError> {
+        let jt_result = self.joint_arena.upload(joint_job, queue, device)?;
         let _ibm_offset = self.ibm_arena.upload(ibm_job, queue, device)?;
         if self.bind_groups.is_empty() {
             self.add_bind_group(device);
         }
-        Ok(jt_offset)
+        Ok(jt_result)
     }
 
     pub fn register_shared_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<(u32, u32), VertexArenaError> {
         let jt = self
             .joint_arena
-            .register_shared_binding(donor_handle, new_handle);
+            .register_shared_binding(slot_index, new_handle);
         let ibm = self
             .ibm_arena
-            .register_shared_binding(donor_handle, new_handle);
+            .register_shared_binding(slot_index, new_handle);
 
         if let Ok(jt) = jt {
             if let Ok(ibm) = ibm {
@@ -75,17 +75,17 @@ impl SkinningBindGroup {
 
     pub fn register_copy_binding(
         &mut self,
-        donor_handle: &GPUInstanceHandle,
+        slot_index: usize,
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<(u32, u32), VertexArenaError> {
         let jt = self
             .joint_arena
-            .register_copy_binding(donor_handle, new_handle, queue, device);
+            .register_copy_binding(slot_index, new_handle, queue, device);
         let ibm = self
             .ibm_arena
-            .register_shared_binding(donor_handle, new_handle);
+            .register_shared_binding(slot_index, new_handle);
         if let Ok(jt) = jt {
             if let Ok(ibm) = ibm {
                 return Ok((jt, ibm));

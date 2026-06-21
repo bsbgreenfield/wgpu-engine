@@ -81,8 +81,8 @@ impl ArchetypeTable for APositionTable {
             let last = self.positions.len() - 1;
             self.positions.swap(idx_of_goner, last);
             self.record_indices.swap(idx_of_goner, last);
-        } else {
-            self.positions.pop();
         }
+        self.positions.pop();
+        self.record_indices.pop();
     }
 }

@@ -18,6 +18,13 @@ pub struct AnimationController {
 }
 
 impl AnimationController {
+    pub(super) fn clear_animation_for(&mut self, instance_handle: &InstanceHandle) {
+        for anim in self.active_animations.iter_mut() {
+            if &anim.instance_handle == instance_handle {
+                anim.complete = true;
+            }
+        }
+    }
     /// time offset is unsafe: only use if you are sure the offset is a valid value for the animation, or if
     /// the animation is repeating
     pub(super) fn activate_animations(
