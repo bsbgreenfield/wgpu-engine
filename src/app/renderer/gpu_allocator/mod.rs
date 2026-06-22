@@ -91,6 +91,7 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
     ) -> Result<BindGroupUploadResult, Self::AllocationError>;
 
     fn resolve(&self, handle: &GPUInstanceHandle) -> u32;
+    fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), Self::AllocationError>;
 
     fn new() -> Self;
 

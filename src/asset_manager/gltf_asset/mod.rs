@@ -42,12 +42,12 @@ impl Asset for GltfAsset {
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,
-    ) -> Result<GPUAssetUploadJob<'_>, AssetLoadError> {
+    ) -> Result<GPUAssetUploadJob, AssetLoadError> {
         GPUAssetUploadJob::new(
             asset_handle,
-            Some(&self.pnu_vertices[..]),
-            Some(&self.pnujw_vertices[..]),
-            self.indices.as_deref(),
+            Some(self.pnu_vertices.clone()),
+            Some(self.pnujw_vertices.clone()),
+            self.indices.as_ref().map(|i| i.clone()),
         )
     }
 
@@ -143,9 +143,9 @@ impl Hash for GltfNode {
 pub struct GltfAsset {
     node_tree: Vec<Arc<GltfNode>>,
     meshes: Vec<Mesh>,
-    pnujw_vertices: Vec<PNUJWVertex>,
-    pnu_vertices: Vec<PNUVertex>,
-    indices: Option<Vec<VIndex>>,
+    pnujw_vertices: Arc<[PNUJWVertex]>,
+    pnu_vertices: Arc<[PNUVertex]>,
+    indices: Option<Arc<[VIndex]>>,
     animations: Vec<Arc<GltfAnimation>>,
     skins: Vec<Vec<usize>>,
     ibms: Vec<Vec<Mat4F32>>,

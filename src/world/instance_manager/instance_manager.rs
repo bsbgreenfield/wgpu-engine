@@ -359,14 +359,17 @@ impl InstanceManager {
         InstanceUploadData::New(new_instance_data)
     }
 
-    pub fn despawn(&mut self, handle: InstanceHandle) -> Result<(), WorldUpdateError> {
-        self.gpu_bind_registry.unregister(&handle)?;
+    pub fn despawn(
+        &mut self,
+        handle: InstanceHandle,
+    ) -> Result<GPUInstanceHandle, WorldUpdateError> {
+        let gpu_handle = self.gpu_bind_registry.unregister(&handle)?;
         self.animation_controller.clear_animation_for(&handle);
 
         match handle.archetype {
             ArchetypeId::Position => self.pos.remove(handle),
         }
-        Ok(())
+        Ok(gpu_handle)
         // TODO: other tables
     }
 

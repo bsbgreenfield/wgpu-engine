@@ -1,12 +1,11 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 use crate::{
     app::renderer::{
         InstanceUploadJob, StorageData,
         bind_groups::{BindGroupUploadResult, SharedInstanceData},
         gpu_allocator::{
-            AllocMetaData, GPUChunk, GPUInstanceAllocator, VertexArenaError,
-            allocation_table::AllocationTable,
+            GPUChunk, GPUInstanceAllocator, VertexArenaError, allocation_table::AllocationTable,
         },
         renderer::GPUInstanceHandle,
     },
@@ -80,7 +79,6 @@ impl<T: StorageData> InstanceArena<T> {
 
         queue.submit(Some(encoder.finish()));
 
-        meta.ref_count += 1;
         self.alloc_table.register_instance(*new_handle, slot_idx);
 
         Ok(self.chunks[dst_chunk_id]
@@ -106,11 +104,6 @@ impl SharedInstanceData for InstanceArena<LocalTransform> {
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
-        let meta = self
-            .alloc_table
-            .get_meta(slot_index)
-            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
-        meta.ref_count += 1;
         self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
     }
@@ -131,11 +124,6 @@ impl SharedInstanceData for InstanceArena<JointTransform> {
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
-        let meta = self
-            .alloc_table
-            .get_meta(slot_index)
-            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
-        meta.ref_count += 1;
         self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
     }
@@ -157,11 +145,6 @@ impl SharedInstanceData for InstanceArena<InverseBindMatrix> {
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
     ) -> Result<u32, VertexArenaError> {
-        let meta = self
-            .alloc_table
-            .get_meta(slot_index)
-            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
-        meta.ref_count += 1;
         self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
     }
@@ -201,6 +184,16 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
             }
         }
         Err(VertexArenaError::MaxAllocationReached)
+    }
+
+    fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), Self::AllocationError> {
+        match self.alloc_table.dealloc(handle) {
+            Some(_) => {}
+            None => {
+                // TODO: verify that this is correct
+            }
+        }
+        Ok(())
     }
 
     fn resolve(&self, handle: &GPUInstanceHandle) -> u32 {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref};
+use std::ops::Deref;
 
 use wgpu::RenderPass;
 
@@ -9,11 +9,7 @@ use crate::{
             DrawPacket, InstanceUploadJob, Instruction, PrototypeHandle, RenderCategory,
             RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
             VertexArenaError, VertexArenaSelector,
-            bind_groups::{
-                BindGroupCollection, BindGroupProvider, BindGroupUploadResult,
-                instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
-                skinning::SkinningBindGroup,
-            },
+            bind_groups::BindGroupCollection,
             gpu_allocator::{GPUAllocator, UploadIndexJob, vertex_arena::GPUArena},
             pipeline::PipelineCollection,
         },
@@ -154,6 +150,9 @@ impl Renderer {
     pub(super) fn add_prototype(&mut self, prototype: PrototypeHandle) {
         self.bind_groups.add_prototype(prototype);
     }
+    pub(super) fn add_prototype_instance(&mut self, prototype: &PrototypeHandle) {
+        self.bind_groups.add_prototype_instance(prototype);
+    }
     pub fn update(
         &mut self,
         constants: Vec<RenderConstant>,
@@ -206,6 +205,10 @@ impl Renderer {
                 );
             }
         }
+    }
+
+    pub(super) fn despawn(&mut self, handle: &GPUInstanceHandle) {
+        self.bind_groups.despawn(handle);
     }
 
     pub(super) fn upload_indices<'frame>(

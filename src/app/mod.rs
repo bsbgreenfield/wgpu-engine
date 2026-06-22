@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use crate::{
     app::renderer::{RenderError, RenderUpdateError},
@@ -13,19 +13,19 @@ pub mod app_state;
 pub mod renderer;
 
 #[derive(Debug, Clone)]
-pub struct GPUAssetUploadJob<'a> {
+pub struct GPUAssetUploadJob {
     pub asset_handle: AssetHandle,
-    pub pnu_vertices: Option<&'a [PNUVertex]>,
-    pub pnujw_vertices: Option<&'a [PNUJWVertex]>,
-    pub indices: Option<&'a [VIndex]>,
+    pub pnu_vertices: Option<Arc<[PNUVertex]>>,
+    pub pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
+    pub indices: Option<Arc<[VIndex]>>,
 }
 
-impl<'a> GPUAssetUploadJob<'a> {
+impl GPUAssetUploadJob {
     pub fn new(
         asset_handle: AssetHandle,
-        pnu_vertices: Option<&'a [PNUVertex]>,
-        pnujw_vertices: Option<&'a [PNUJWVertex]>,
-        indices: Option<&'a [VIndex]>,
+        pnu_vertices: Option<Arc<[PNUVertex]>>,
+        pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
+        indices: Option<Arc<[VIndex]>>,
     ) -> Result<Self, AssetLoadError> {
         if pnu_vertices.is_none() && pnujw_vertices.is_none() {
             return Err(AssetLoadError::NoVertexData);

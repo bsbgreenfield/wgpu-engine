@@ -43,7 +43,7 @@ mod integration_tests {
     }
 
     fn get_bytecode<'a>(
-        deltas: Vec<WorldUpdateDelta<'a>>,
+        deltas: &'a mut Vec<WorldUpdateDelta>,
     ) -> (Vec<RenderConstant<'a>>, Vec<Instruction>) {
         let mut constants = Vec::<RenderConstant<'a>>::new();
         let mut instructions = Vec::<Instruction>::new();
@@ -132,13 +132,12 @@ mod integration_tests {
         expected_world_deltas: &[WorldDeltaKind],
         expected_render_deltas: &[RenderDeltaKind],
     ) {
-        let deltas = app
-            .world
+        app.world
             .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
-        assert_world_deltas(&deltas, expected_world_deltas);
+        assert_world_deltas(&app.world.deltas, expected_world_deltas);
 
-        let (constants, instructions) = get_bytecode(deltas);
+        let (constants, instructions) = get_bytecode(&mut app.world.deltas);
 
         let render_deltas = app
             .renderer
@@ -152,14 +151,14 @@ mod integration_tests {
 
         assert_render_deltas(&render_deltas, expected_render_deltas);
         app.world.post_frame_update(render_deltas);
+        app.world.deltas.clear();
     }
 
     fn run_frame_unchecked(app: &mut App<'_>) {
-        let deltas = app
-            .world
+        app.world
             .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
-        let (constants, instructions) = get_bytecode(deltas);
+        let (constants, instructions) = get_bytecode(&mut app.world.deltas);
 
         let render_deltas = app
             .renderer
@@ -171,6 +170,7 @@ mod integration_tests {
             )
             .unwrap_or_else(|e| panic!("{}", e));
         app.world.post_frame_update(render_deltas);
+        app.world.deltas.clear();
     }
 
     fn gen_draw_calls(app: &mut App) {
@@ -468,21 +468,7 @@ mod integration_tests {
                 &[RenderDeltaKind::AssetGPULoaded],
             );
 
-            run_frame(
-                &mut app,
-                &[
-                    WorldDeltaKind::NewEntitySpawn,
-                    WorldDeltaKind::EntityInstanceSpawn,
-                ],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                    RenderDeltaKind::EntitySpawn,
-                    RenderDeltaKind::EntitySpawn,
-                    RenderDeltaKind::EntitySpawn,
-                    RenderDeltaKind::EntitySpawn,
-                ],
-            );
+            run_frame_unchecked(&mut app);
             let groups = app.world.instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
@@ -499,22 +485,22 @@ mod integration_tests {
                 .flatten()
                 .collect();
 
-            assert_eq!(pnu_draws[0].instances, 0..5);
+            assert_eq!(pnu_draws[0].instances, 0..6400);
 
             let frame = app
                 .world
                 .instance_manager
                 .prepare_render_frame(&app.render_packet);
 
-            assert_eq!(frame.global_transforms.len(), 5);
-            assert_eq!(frame.indirection_list.len(), 5);
+            assert_eq!(frame.global_transforms.len(), 6400);
+            assert_eq!(frame.indirection_list.len(), 6400);
             for (i, ind_offset) in frame.indirection_list.iter().enumerate() {
                 assert_eq!(i, *ind_offset as usize);
             }
 
             let instances = app.world.instance_manager.get_all_instances();
 
-            assert_eq!(instances.len(), 5);
+            assert_eq!(instances.len(), 6400);
         });
     }
 
@@ -674,6 +660,29 @@ mod integration_tests {
                 );
             }
         })
+    }
+    #[test]
+    fn despawn_box() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::Box).await;
+
+            // Frame 1: asset loads to GPU
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+
+            // Frame 2: entity spawns
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::NewEntitySpawn],
+                &[
+                    RenderDeltaKind::PrototypeCreated,
+                    RenderDeltaKind::EntitySpawn,
+                ],
+            );
+        });
     }
 
     #[test]

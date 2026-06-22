@@ -7,7 +7,10 @@ use crate::{
         app_state::AppState,
         renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
     },
-    world::{scene::Scene, world::World},
+    world::{
+        scene::Scene,
+        world::{World, WorldUpdateDelta},
+    },
 };
 use winit::{
     application::ApplicationHandler,
@@ -64,12 +67,12 @@ impl App<'_> {
             self.app_commands.push(AppCommand::Three);
             self.app_state.input_controller.key_3_down = false;
         }
-        let deltas = self.world.update(&mut self.app_commands)?;
+        self.world.update(&mut self.app_commands)?;
 
         let mut constants = Vec::<RenderConstant>::new();
         let mut instructions = Vec::<Instruction>::new();
 
-        World::gen_bytecode(deltas, &mut instructions, &mut constants);
+        World::gen_bytecode(&mut self.world.deltas, &mut instructions, &mut constants);
 
         let render_deltas = self.renderer.update(
             constants,
@@ -106,6 +109,8 @@ impl App<'_> {
                 .render_blank(self.app_config.as_ref().unwrap())
                 .map_err(|e| FrameError::RenderError(e));
         }
+
+        self.world.deltas.clear();
 
         Ok(())
     }

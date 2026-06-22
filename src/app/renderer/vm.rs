@@ -170,7 +170,7 @@ impl<'frame> Renderer {
                         let gpu_instance_handle =
                             GPUInstanceHandle::from_key(gpu_handle_key.unwrap_key());
                         let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_owned();
+                            .unwrap_data_ref();
                         let lt_upload_job = InstanceUploadJob::new(lt, gpu_instance_handle.clone());
                         let lt_offset =
                             self.upload_local_transforms(lt_upload_job, queue, device)?;
@@ -194,13 +194,14 @@ impl<'frame> Renderer {
                             instance_handle: instance_handle.clone(),
                             prototype: prototype_handle,
                         });
-                        stack.push(RenderConstant::Key(prototype_handle.as_key()));
                         stack.push(instance_handle_key);
+                        stack.push(RenderConstant::Key(prototype_handle.as_key()));
                     }
                     Operations::SpawnEntityInstance => {
                         let prototype_key = stack.pop().expect("should be prototype key");
                         let prototype_handle =
                             PrototypeHandle::from_key(prototype_key.unwrap_key());
+                        self.add_prototype_instance(&prototype_handle);
                         let gpu_instance_handle = self.get_gpu_instance_handle(&prototype_handle);
                         stack.push(RenderConstant::Key(gpu_instance_handle.as_key()));
                     }
@@ -209,9 +210,9 @@ impl<'frame> Renderer {
                         let gpu_instance_handle =
                             GPUInstanceHandle::from_key(gpu_handle_key.unwrap_key());
                         let jt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_owned();
+                            .unwrap_data_ref();
                         let ibms = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_owned();
+                            .unwrap_data_ref();
                         let jt_upload_job = InstanceUploadJob::new(jt, gpu_instance_handle.clone());
                         let ibm_upload_job =
                             InstanceUploadJob::new(ibms, gpu_instance_handle.clone());
@@ -298,7 +299,17 @@ impl<'frame> Renderer {
                             panic!("expected buffer type instr for share")
                         }
                     }
-                    Operations::LoadPrototype => todo!(),
+                    Operations::DespawnInstance => {
+                        let gpu_instance_handle_idx = Self::get_constant_idx(&mut instr_peek);
+                        let gpu_instance_handle_key = &constants[gpu_instance_handle_idx];
+                        let gpu_instance_handle =
+                            GPUInstanceHandle::from_key(gpu_instance_handle_key.unwrap_key());
+                        self.despawn(&gpu_instance_handle);
+                        // remove from instance record buffer
+                    }
+                    Operations::DespawnAsset => {
+                        todo!()
+                    }
                 },
                 Instruction::Byte(_byte) => {}
                 Instruction::ConstIdx(_idx) => {}

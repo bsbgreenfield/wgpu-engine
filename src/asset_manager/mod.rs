@@ -107,7 +107,7 @@ pub trait Asset {
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,
-    ) -> Result<GPUAssetUploadJob<'_>, AssetLoadError>;
+    ) -> Result<GPUAssetUploadJob, AssetLoadError>;
 
     fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;

@@ -363,11 +363,11 @@ impl GltfAsset {
         let animations: Vec<Arc<GltfAnimation>> =
             get_animations(&gltf, &buffer_offsets, &binary_data, &node_tree)?;
         Ok(Box::new(GltfAsset {
-            pnujw_vertices: pnujw,
-            pnu_vertices: pnu,
+            pnujw_vertices: Arc::from_iter(pnujw),
+            pnu_vertices: Arc::from_iter(pnu),
             node_tree,
             meshes,
-            indices,
+            indices: indices.map(|i| Arc::from_iter(i)),
             animations,
             skins,
             ibms,

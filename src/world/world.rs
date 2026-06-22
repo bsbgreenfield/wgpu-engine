@@ -7,7 +7,7 @@ use crate::{
         app::AppCommand,
         renderer::{
             BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
-            RenderConstant, RenderUpdateDelta,
+            RenderConstant, RenderUpdateDelta, renderer::GPUInstanceHandle,
         },
     },
     asset_manager::{Asset, AssetLoadError},
@@ -128,18 +128,20 @@ impl InstanceUploadData {
     }
 }
 
-pub enum WorldUpdateDelta<'frame> {
+pub enum WorldUpdateDelta {
     NewEntitySpawn(NewInstanceData),
     EntityInstanceSpawn(CopiedInstanceData),
-    AssetDidLoad(GPUAssetUploadJob<'frame>),
+    AssetDidLoad(GPUAssetUploadJob),
+    InstanceDespawn(GPUInstanceHandle),
 }
 
-impl<'frame> Debug for WorldUpdateDelta<'frame> {
+impl<'frame> Debug for WorldUpdateDelta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             WorldUpdateDelta::NewEntitySpawn(_) => f.write_str("NewEntitySpawn"),
             WorldUpdateDelta::EntityInstanceSpawn(_) => f.write_str("EntityInstanceSpawn"),
             WorldUpdateDelta::AssetDidLoad(_) => f.write_str("AssetDidLoad"),
+            WorldUpdateDelta::InstanceDespawn(handle) => write!(f, "despawn {:?}", handle),
         }
     }
 }
@@ -151,6 +153,7 @@ pub struct World {
     pub entity_manager: EntityManager,
     load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
+    pub deltas: Vec<WorldUpdateDelta>,
 }
 
 impl World {
@@ -180,31 +183,31 @@ impl World {
         instructions.push(Instruction::ConstIdx(idx as u8));
     }
     pub fn gen_bytecode<'frame>(
-        deltas: Vec<WorldUpdateDelta<'frame>>,
+        deltas: &'frame mut Vec<WorldUpdateDelta>,
         instructions: &mut Vec<Instruction>,
         constants: &mut Vec<RenderConstant<'frame>>,
     ) {
-        for delta in deltas {
+        for delta in deltas.iter_mut() {
             match delta {
                 WorldUpdateDelta::AssetDidLoad(asset_upload_job) => {
                     instructions.push(Instruction::Op(Operations::AddAsset));
                     constants.push(RenderConstant::Key(asset_upload_job.asset_handle.as_key()));
                     Self::emit_const_last(constants, instructions);
-                    if let Some(pnu) = asset_upload_job.pnu_vertices {
+                    if let Some(pnu) = &asset_upload_job.pnu_vertices {
                         instructions.push(Instruction::Op(Operations::PNUUpload));
-                        let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(pnu);
+                        let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(&pnu);
                         constants.push(RenderConstant::DataRef(pnu_data));
                         Self::emit_const_last(constants, instructions);
                     }
-                    if let Some(pnujw) = asset_upload_job.pnujw_vertices {
+                    if let Some(pnujw) = &asset_upload_job.pnujw_vertices {
                         instructions.push(Instruction::Op(Operations::PNUJWUpload));
-                        let pnujw_data = bytemuck::cast_slice::<PNUJWVertex, u8>(pnujw);
+                        let pnujw_data = bytemuck::cast_slice::<PNUJWVertex, u8>(&pnujw);
                         constants.push(RenderConstant::DataRef(pnujw_data));
                         Self::emit_const_last(constants, instructions);
                     }
-                    if let Some(indices) = asset_upload_job.indices {
+                    if let Some(indices) = &asset_upload_job.indices {
                         instructions.push(Instruction::Op(Operations::IndexUpload));
-                        let index_data = bytemuck::cast_slice::<VIndex, u8>(indices);
+                        let index_data = bytemuck::cast_slice::<VIndex, u8>(&indices);
                         constants.push(RenderConstant::DataRef(index_data));
                         Self::emit_const_last(constants, instructions);
                     }
@@ -224,43 +227,23 @@ impl World {
                     // local transforms
                     bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
                     instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-                    let lt_bytes: Vec<u8> = {
-                        let mut data = new_instance.local_transforms;
-                        let ptr = data.as_mut_ptr() as *mut u8;
-                        let len = data.len() * std::mem::size_of::<LocalTransform>();
-                        let cap = data.capacity() * std::mem::size_of::<LocalTransform>();
-                        std::mem::forget(data);
-                        unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                    };
-                    constants.push(RenderConstant::DataOwned(lt_bytes));
+                    let data_bytes: &[u8] = bytemuck::cast_slice(&new_instance.local_transforms);
+                    constants.push(RenderConstant::DataRef(data_bytes));
                     Self::emit_const_last(constants, instructions);
 
                     // joints and ibms
-                    if let Some(mut data) = new_instance.joint_transforms {
+                    if let Some(jt_bytes) = &new_instance.joint_transforms {
                         bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
                         instructions.push(Instruction::Op(Operations::JointTransformUpload));
-                        let jt_bytes: Vec<u8> = {
-                            let ptr = data.as_mut_ptr() as *mut u8;
-                            let len = data.len() * std::mem::size_of::<Mat4F32>();
-                            let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
-                            std::mem::forget(data);
-                            unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                        };
-                        let ibm_bytes = if let Some(mut data) = new_instance.ibms {
-                            let ibm_bytes: Vec<u8> = {
-                                let ptr = data.as_mut_ptr() as *mut u8;
-                                let len = data.len() * std::mem::size_of::<Mat4F32>();
-                                let cap = data.capacity() * std::mem::size_of::<Mat4F32>();
-                                std::mem::forget(data);
-                                unsafe { Vec::from_raw_parts(ptr, len, cap) }
-                            };
-                            ibm_bytes
+                        let jt_bytes: &[u8] = bytemuck::cast_slice(jt_bytes);
+                        let ibm_bytes: &[u8] = if let Some(data) = &new_instance.ibms {
+                            bytemuck::cast_slice(data)
                         } else {
                             panic!("joint transforms must be accompanied by ibms");
                         };
-                        constants.push(RenderConstant::DataOwned(jt_bytes));
+                        constants.push(RenderConstant::DataRef(jt_bytes));
                         Self::emit_const_last(constants, instructions);
-                        constants.push(RenderConstant::DataOwned(ibm_bytes));
+                        constants.push(RenderConstant::DataRef(ibm_bytes));
                         Self::emit_const_last(constants, instructions);
                     }
 
@@ -293,7 +276,7 @@ impl World {
                         _ => panic!(),
                     };
 
-                    for handle in copied_instance.handles {
+                    for handle in copied_instance.handles.iter().cloned() {
                         instructions.push(Instruction::Op(Operations::Push));
                         Self::emit_const(constants, instructions, prototype_idx);
                         instructions.push(Instruction::Op(Operations::SpawnFromPrototype));
@@ -308,6 +291,11 @@ impl World {
                         instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
                         instructions.push(Instruction::Byte(bind_mask.bits()));
                     }
+                }
+                WorldUpdateDelta::InstanceDespawn(gpu_instance_handle) => {
+                    instructions.push(Instruction::Op(Operations::DespawnInstance));
+                    constants.push(RenderConstant::Key(gpu_instance_handle.as_key()));
+                    Self::emit_const_last(constants, instructions);
                 }
             }
         }
@@ -330,6 +318,7 @@ impl World {
         //camera.build_camera_uniform(aspect_ratio, device);
 
         Self {
+            deltas: Vec::<WorldUpdateDelta>::new(),
             init: false,
             camera,
             scene: Scene::new(),
@@ -354,14 +343,23 @@ impl World {
         instance_upload_data
     }
 
+    pub fn despawn(
+        &mut self,
+        instance_handle: InstanceHandle,
+        deltas: &mut Vec<WorldUpdateDelta>,
+    ) -> Result<(), WorldUpdateError> {
+        let gpu_instance_handle = self.instance_manager.despawn(instance_handle)?;
+        deltas.push(WorldUpdateDelta::InstanceDespawn(gpu_instance_handle));
+        Ok(())
+    }
+
     pub fn update<'frame>(
         &'frame mut self,
         commands: &mut Vec<AppCommand>,
-    ) -> Result<Vec<WorldUpdateDelta<'frame>>, WorldUpdateError> {
-        let mut deltas = Vec::<WorldUpdateDelta>::new();
+    ) -> Result<(), WorldUpdateError> {
         // check scenes
         if self.scene.is_dirty() {
-            self.handle_scene_event(&mut deltas)?; // TODO: allow for multiple scenes
+            self.handle_scene_event()?; // TODO: allow for multiple scenes
         }
         let pending_assets = self.load_queue.pending_asset_uploads.drain(..);
         for handle in pending_assets {
@@ -369,12 +367,12 @@ impl World {
                 .entity_manager
                 .asset_manager
                 .get_upload_job_for(handle)?;
-            deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+            self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
         }
 
         self.instance_manager.update(commands);
 
-        Ok(deltas)
+        Ok(())
     }
 
     fn try_handle_scene_load(&mut self) -> Result<bool, WorldUpdateError> {
@@ -394,10 +392,7 @@ impl World {
         Ok(false)
     }
 
-    fn handle_scene_event(
-        &mut self,
-        deltas: &mut Vec<WorldUpdateDelta>,
-    ) -> Result<(), WorldUpdateError> {
+    fn handle_scene_event(&mut self) -> Result<(), WorldUpdateError> {
         'outer: loop {
             let scene_event = self.scene.current_event();
             if scene_event.is_some() {
@@ -423,10 +418,11 @@ impl World {
                             for datum in upload_data {
                                 match datum {
                                     InstanceUploadData::New(new_instance) => {
-                                        deltas.push(WorldUpdateDelta::NewEntitySpawn(new_instance));
+                                        self.deltas
+                                            .push(WorldUpdateDelta::NewEntitySpawn(new_instance));
                                     }
                                     InstanceUploadData::Copied(copied_instance) => {
-                                        deltas.push(WorldUpdateDelta::EntityInstanceSpawn(
+                                        self.deltas.push(WorldUpdateDelta::EntityInstanceSpawn(
                                             copied_instance,
                                         ));
                                     }

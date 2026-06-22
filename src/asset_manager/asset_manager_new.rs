@@ -96,7 +96,7 @@ impl AssetManager {
     pub fn get_upload_job_for<'a>(
         &'a self,
         asset_handle: AssetHandle,
-    ) -> Result<GPUAssetUploadJob<'a>, AssetLoadError> {
+    ) -> Result<GPUAssetUploadJob, AssetLoadError> {
         match self.registered_assets.get(&asset_handle).unwrap() {
             RegisteredAsset::Unloaded { data: _data, _t } => Err(AssetLoadError::AssetNotLoaded(
                 String::from("this asset is not yet loaded!"),

@@ -172,4 +172,9 @@ impl BindGroupProvider for SkinningBindGroup {
         // self.get_bind_group(joint_chunk, ibm_chunk)
         &self.bind_groups[0]
     }
+
+    fn despawn(&mut self, handle: &GPUInstanceHandle) {
+        let _ = self.joint_arena.remove(handle);
+        let _ = self.ibm_arena.remove(handle);
+    }
 }

@@ -191,7 +191,6 @@ pub enum Operations {
     SpawnEntityInstance,
     LocalTransformUpload,
     JointTransformUpload,
-    LoadPrototype,
     SpawnFromPrototype,
     ShareData,
     CopyData,
@@ -200,6 +199,8 @@ pub enum Operations {
     IndexUpload,
     EmitAssetUpload,
     EmitEntitySpawn,
+    DespawnInstance,
+    DespawnAsset,
     Pop,
     Push,
 }

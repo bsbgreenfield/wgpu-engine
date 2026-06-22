@@ -22,6 +22,7 @@ pub(super) trait BindGroupProvider {
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
     fn add_bind_group(&mut self, device: &wgpu::Device);
     fn new() -> Self;
+    fn despawn(&mut self, handle: &GPUInstanceHandle);
 }
 pub(super) trait SharedInstanceData {
     fn register_shared_binding(
@@ -38,6 +39,8 @@ pub(super) trait SharedInstanceData {
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError>;
 }
+
+#[derive(Debug)]
 pub struct PrototypeEntry {
     ref_count: usize,
     pub local_transforms_slot: usize,
@@ -94,6 +97,12 @@ impl BindGroupCollection {
             },
         );
     }
+    pub(super) fn add_prototype_instance(&mut self, prototype: &PrototypeHandle) {
+        self.prototypes
+            .get_mut(prototype)
+            .expect("should be prototype")
+            .ref_count += 1;
+    }
 
     pub(super) fn new() -> Self {
         Self {
@@ -103,5 +112,21 @@ impl BindGroupCollection {
             skinning: SkinningBindGroup::new(),
             instance_data: InstanceDataBindGroup::new(),
         }
+    }
+    pub(super) fn despawn(&mut self, handle: &GPUInstanceHandle) {
+        let entry = self
+            .prototypes
+            .get_mut(&handle.prototype)
+            .expect("invalid instance");
+
+        entry.ref_count -= 1;
+
+        if entry.ref_count == 0 {
+            self.prototypes.remove(&handle.prototype);
+        }
+
+        self.instance_data.despawn(handle);
+        self.local_transforms.despawn(handle);
+        self.skinning.despawn(handle);
     }
 }

@@ -110,4 +110,8 @@ impl BindGroupProvider for LocalTransformBindGroup {
         // TODO: resolve based on alloc handle
         &self.bind_groups[0]
     }
+
+    fn despawn(&mut self, handle: &GPUInstanceHandle) {
+        let _ = self.lt_arena.remove(handle);
+    }
 }

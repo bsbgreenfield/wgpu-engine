@@ -2,6 +2,7 @@ use crate::app::renderer::{
     InstanceUploadJob,
     bind_groups::BindGroupUploadResult,
     gpu_allocator::{GPUInstanceAllocator, VertexArenaError},
+    renderer::GPUInstanceHandle,
 };
 use std::num::NonZero;
 
@@ -109,6 +110,13 @@ impl BindGroupProvider for InstanceDataBindGroup {
             offsets: instance_offsets,
             global_transforms,
         }
+    }
+
+    fn despawn(&mut self, handle: &GPUInstanceHandle) {
+        let _ = self.record_arena.remove(handle);
+
+        let _ = self.global_transforms.remove(handle);
+        let _ = self.offsets.remove(handle);
     }
 }
 

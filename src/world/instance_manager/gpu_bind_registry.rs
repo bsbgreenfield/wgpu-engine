@@ -14,10 +14,15 @@ pub(super) struct GPUBindRegistry {
 
 impl GPUBindRegistry {
     pub(super) fn gen_prototype(&mut self, entity_handle: EntityHandle) -> PrototypeHandle {
-        let prototype = PrototypeHandle(self.next_prototype);
-        self.next_prototype += 1;
-        self.registered_prototypes
-            .insert(entity_handle, prototype.clone());
+        let prototype =
+            if let Some(prototype_handle) = self.registered_prototypes.get(&entity_handle) {
+                *prototype_handle
+            } else {
+                let p = PrototypeHandle(self.next_prototype);
+                self.next_prototype += 1;
+                p
+            };
+        self.registered_prototypes.insert(entity_handle, prototype);
 
         prototype
     }
@@ -25,7 +30,7 @@ impl GPUBindRegistry {
     pub(super) fn unregister(
         &mut self,
         instance_handle: &InstanceHandle,
-    ) -> Result<(), WorldUpdateError> {
+    ) -> Result<GPUInstanceHandle, WorldUpdateError> {
         let key = self
             .registered_instances
             .iter()
@@ -33,7 +38,9 @@ impl GPUBindRegistry {
             .ok_or(WorldUpdateError::InstancceNotFound(instance_handle.clone()))?
             .0
             .clone();
-        self.registered_instances.remove(&key);
-        Ok(())
+        self.registered_instances
+            .remove(&key)
+            .ok_or(WorldUpdateError::InstancceNotFound(instance_handle.clone()))?;
+        Ok(key)
     }
 }
