@@ -106,6 +106,10 @@ impl InstanceManager {
     pub fn get_pos_table_positions(&self) -> Vec<GlobalTransform> {
         self.pos.get_positions()
     }
+    #[cfg(test)]
+    pub fn get_pos_table_handles(&self) -> Vec<InstanceHandle> {
+        self.pos.arena.handles.clone()
+    }
 
     #[cfg(test)]
     pub fn get_groups(&self) -> &Vec<RenderGroup> {

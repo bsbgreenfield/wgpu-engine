@@ -9,7 +9,6 @@ use crate::{
 
 mod animation_controller;
 pub mod archetype_table;
-mod draw_palette;
 mod gpu_bind_registry;
 mod instance_arena;
 pub(super) mod instance_manager;

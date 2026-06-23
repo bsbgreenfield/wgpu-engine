@@ -305,7 +305,7 @@ const ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
 ];
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
 pub struct GlobalTransform {
     pub transform: Mat4F32,
 }

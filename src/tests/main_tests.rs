@@ -847,7 +847,34 @@ mod integration_tests {
                 &[WorldDeltaKind::EntityInstanceSpawn],
                 &[RenderDeltaKind::EntitySpawn],
             );
+            // assert that the new instance has spawned into the open slot on the pos table
+            let handles = app.world.instance_manager.get_pos_table_handles();
+            assert_eq!(handles.len(), 2);
+            assert_eq!(handles[0].instance_id, 1);
+            assert_eq!(handles[1].instance_id, 0);
 
+            // assert that the position in the first slot is equal to that of the second instance spawned
+            let positions = app.world.instance_manager.get_pos_table_positions();
+            assert_eq!(
+                positions[0],
+                cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
+                    x: 10.0,
+                    y: 0.0,
+                    z: 0.0,
+                })
+                .into(),
+            );
+
+            // assert that the position in the second slot is equal to the new instance
+            assert_eq!(
+                positions[1],
+                cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
+                    x: 20.0,
+                    y: 0.0,
+                    z: 0.0,
+                })
+                .into(),
+            );
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
             assert_eq!(app.renderer.get_prototype_count(), 1);
             assert_eq!(

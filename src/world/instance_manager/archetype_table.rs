@@ -70,7 +70,7 @@ impl ArchetypeTable for APositionTable {
 
     fn insert(&mut self, data: APosition, entity_handle: EntityHandle) -> InstanceHandle {
         self.positions.push(data.position);
-        self.record_indices.push(0);
+        self.record_indices.push(0); // allocate a dummy value (dangerous to be 0?)
         self.arena.insert(entity_handle)
     }
 
