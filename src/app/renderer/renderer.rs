@@ -116,6 +116,14 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    #[cfg(test)]
+    pub fn get_prototype_count(&self) -> usize {
+        self.bind_groups.prototypes.len()
+    }
+    #[cfg(test)]
+    pub fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
+        self.bind_groups.prototypes.get(handle).map(|p| p.ref_count)
+    }
     pub fn new() -> Self {
         Self {
             allocations: Vec::new(),

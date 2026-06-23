@@ -227,6 +227,7 @@ impl<'frame> Renderer {
                         let prototype_key = stack.pop().expect("should be prototype key");
                         let prototype_handle =
                             PrototypeHandle::from_key(prototype_key.unwrap_key());
+                        self.add_prototype_instance(&prototype_handle);
                         let new_gpu_handle = self.get_gpu_instance_handle(&prototype_handle);
 
                         // instance handle

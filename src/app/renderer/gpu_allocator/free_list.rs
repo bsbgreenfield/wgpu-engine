@@ -3,9 +3,9 @@ use std::ops::Range;
 use crate::app::renderer::gpu_allocator::{CHUNK_SIZE, FreeListAllocError};
 
 pub(super) struct FreeListAllocator {
+    free_nodes: Vec<usize>,
     nodes: Vec<FreeListNode>,
     chunk_size: u32,
-    used: u32,
     head: usize,
     minimum_node_size: usize,
 }
@@ -29,6 +29,21 @@ impl<'chunk> FreeListNode {
 }
 
 impl FreeListAllocator {
+    pub(super) fn dealloc(&mut self, node_id: usize) -> Result<(), FreeListAllocError> {
+        let merge_prev = self.nodes[node_id - 1].occupied == false;
+        let merge_next = self.nodes[node_id + 1].occupied == false;
+
+        let node = self
+            .nodes
+            .get_mut(node_id)
+            .ok_or(FreeListAllocError::NodeNotFount(node_id))?;
+        node.occupied = false;
+
+        let mut block_size = node.block_size.clone();
+        if merge_prev {}
+        Ok(())
+    }
+
     #[inline]
     pub(super) fn resolve(&self, node_id: usize) -> Range<u32> {
         let node = &self.nodes[node_id];
@@ -41,23 +56,30 @@ impl FreeListAllocator {
     }
     pub(super) fn new(minimum_node_size: usize) -> Self {
         Self {
+            free_nodes: vec![],
             nodes: vec![FreeListNode::new(CHUNK_SIZE, None, 0)],
             chunk_size: CHUNK_SIZE,
-            used: 0,
             head: 0,
             minimum_node_size,
         }
     }
 
     fn find_first(&self, size: u32) -> Result<(usize, usize), FreeListAllocError> {
+        if size > self.chunk_size {
+            return Err(FreeListAllocError::NoRoomLeft(size, CHUNK_SIZE));
+        }
         let mut offset = 0;
         let mut node_idx = self.head;
+        let mut debug_max_avail_node_size = 0;
 
         loop {
             let node = &self.nodes[node_idx];
 
             // if the node is available and large enough, use this node
             if !node.occupied && node.block_size >= size {
+                if node.block_size > debug_max_avail_node_size {
+                    debug_max_avail_node_size = node.block_size;
+                }
                 return Ok((offset, node_idx));
             }
             // otherwise, increment offset and move to the next node
@@ -74,7 +96,7 @@ impl FreeListAllocator {
 
         Err(FreeListAllocError::NoRoomLeft(
             size,
-            self.chunk_size - self.used,
+            debug_max_avail_node_size,
         ))
     }
 
@@ -99,12 +121,25 @@ impl FreeListAllocator {
                 self.nodes[node_idx].next,
                 offset as u32 + size,
             );
-            self.nodes.push(new_node);
-            self.nodes[node_idx].next = Some(self.nodes.len() - 1);
+            let slot = self.add_node(new_node);
+            self.nodes[node_idx].next = Some(slot);
         }
         // if there is not enough space for a new node, do nothing
 
         Ok(node_idx)
+    }
+
+    fn add_node(&mut self, node: FreeListNode) -> usize {
+        if let Some(free) = self.free_nodes.pop() {
+            self.nodes[free] = node;
+            free
+        } else {
+            self.nodes.push(node);
+            self.nodes.len() - 1
+        }
+    }
+    fn remove_node(&mut self, node_id: usize) {
+        self.free_nodes.push(node_id);
     }
 }
 

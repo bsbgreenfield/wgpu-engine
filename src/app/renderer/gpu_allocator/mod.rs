@@ -101,6 +101,7 @@ pub(super) trait GPUInstanceAllocator<T: Pod> {
 #[derive(Debug)]
 pub enum FreeListAllocError {
     NoRoomLeft(u32, u32),
+    NodeNotFount(usize),
 }
 
 impl Error for FreeListAllocError {}
@@ -109,11 +110,12 @@ impl Display for FreeListAllocError {
         match self {
             Self::NoRoomLeft(size, used) => f.write_str(
                 format!(
-                    "Not enough room to fit data of size {}. Available: {}",
+                    "Not enough room to fit data of size {}. Largest Node Available: {}",
                     size, used,
                 )
                 .as_str(),
             ),
+            Self::NodeNotFount(id) => write!(f, "node {} not found", id),
         }
     }
 }
@@ -127,6 +129,7 @@ pub enum VertexArenaError {
         donor: GPUInstanceHandle,
     },
     AllocationSlotNotFound,
+    MetadataNotFound,
     MaxAllocationReached,
 }
 
@@ -158,6 +161,7 @@ impl Display for VertexArenaError {
                 )
             }
             Self::AllocationSlotNotFound => f.write_str("alloc slot not found"),
+            Self::MetadataNotFound => f.write_str("No metadaat found at the slot"),
         }
     }
 }

@@ -1,13 +1,15 @@
 #[cfg(test)]
 mod integration_tests {
 
+    use std::fmt::Debug;
+
     use crate::{
         animation::animation::AnimationTransformType,
         app::{
             app::App,
             app_config::AppConfig,
             app_state::AppState,
-            renderer::{DrawItem, Instruction, RenderConstant, RenderUpdateDelta},
+            renderer::{DrawItem, Instruction, PrototypeHandle, RenderConstant, RenderUpdateDelta},
         },
         world::{
             entity_manager::EntityHandle,
@@ -32,6 +34,7 @@ mod integration_tests {
         AssetDidLoad,
         EntityInstanceSpawn,
         NewEntitySpawn,
+        InstanceDespawn,
     }
 
     /// Variant-only mirrors of RenderUpdateDelta — use these to declare what the renderer should emit.
@@ -73,6 +76,9 @@ mod integration_tests {
                 ) | (
                     WorldUpdateDelta::EntityInstanceSpawn(..),
                     WorldDeltaKind::EntityInstanceSpawn
+                ) | (
+                    WorldUpdateDelta::InstanceDespawn(..),
+                    WorldDeltaKind::InstanceDespawn
                 )
             );
             assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
@@ -681,6 +687,188 @@ mod integration_tests {
                     RenderDeltaKind::PrototypeCreated,
                     RenderDeltaKind::EntitySpawn,
                 ],
+            );
+            run_frame_unchecked(&mut app); //random frames
+            run_frame_unchecked(&mut app);
+
+            assert_eq!(
+                app.world.instance_manager.get_registered_instances().len(),
+                1
+            );
+            assert_eq!(
+                app.world.instance_manager.get_registered_prototypes().len(),
+                1
+            );
+
+            // Renderer side: the only prototype is registered with ref_count 1.
+            assert_eq!(app.renderer.get_prototype_count(), 1);
+            assert_eq!(
+                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                Some(1)
+            );
+
+            let mock = InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
+            app.world
+                .despawn(mock.clone())
+                .map_err(|e| println!("{}", e))
+                .unwrap();
+
+            assert_world_deltas(&app.world.deltas, &[WorldDeltaKind::InstanceDespawn]);
+            if let WorldUpdateDelta::InstanceDespawn(handle) = &app.world.deltas[0] {
+                assert!(handle.instance_id == 0 && handle.prototype.0 == 0);
+            }
+
+            run_frame_unchecked(&mut app);
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 0);
+            assert_eq!(
+                app.world.instance_manager.get_registered_instances().len(),
+                0
+            );
+            assert_eq!(
+                app.world.instance_manager.get_registered_prototypes().len(),
+                1
+            );
+
+            // Renderer side: the despawn op must have removed the prototype entry
+            // (ref_count 1 -> 0) and dropped any GPU-instance allocations.
+            assert_eq!(
+                app.renderer.get_prototype_count(),
+                0,
+                "renderer prototype map must be empty after the last instance despawns"
+            );
+            assert_eq!(
+                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                None
+            );
+
+            // After the despawn the draw packet must be empty too.
+            gen_draw_calls(&mut app);
+            assert!(
+                app.render_packet.draw_packet.is_empty(),
+                "no draw items should remain after despawning the only instance"
+            );
+        });
+    }
+
+    /// Spawn two boxes (same entity, two instances), despawn one, then spawn a
+    /// third. Verifies that the renderer's despawn path leaves the prototype
+    /// intact (ref_count 2 -> 1) and that a subsequent spawn correctly bumps
+    /// the ref_count back up.
+    #[test]
+    fn despawn_one_then_respawn() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::Box).await;
+
+            // Frame 1: asset load. Frame 2: first instance spawns.
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+
+            // Spawn the second instance against the existing entity/prototype.
+            app.world.scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
+                        x: 10.0,
+                        y: 0.0,
+                        z: 0.0,
+                    })
+                    .into(),
+                }),
+            )]);
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityInstanceSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
+            gen_draw_calls(&mut app);
+
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
+            assert_eq!(app.renderer.get_prototype_count(), 1);
+            assert_eq!(
+                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                Some(2),
+                "two live instances must yield prototype ref_count 2"
+            );
+
+            // Despawn the first instance.
+            let first = InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
+            app.world
+                .despawn(first)
+                .map_err(|e| println!("{}", e))
+                .unwrap();
+            assert_world_deltas(&app.world.deltas, &[WorldDeltaKind::InstanceDespawn]);
+
+            run_frame_unchecked(&mut app);
+
+            assert_eq!(
+                app.world.instance_manager.get_all_instances().len(),
+                1,
+                "one instance must remain after despawning one of two"
+            );
+            assert_eq!(
+                app.renderer.get_prototype_count(),
+                1,
+                "prototype must remain while one instance still references it"
+            );
+            assert_eq!(
+                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                Some(1),
+                "ref_count must drop from 2 to 1 after despawning one instance"
+            );
+
+            // Draw packet should show a single remaining instance for the prototype.
+            gen_draw_calls(&mut app);
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+            assert_eq!(pnu_items.len(), 1);
+            assert_eq!(pnu_items[0].get_instances().count(), 1);
+
+            // Spawn a third instance on the same entity/prototype.
+            app.world.scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
+                        x: 20.0,
+                        y: 0.0,
+                        z: 0.0,
+                    })
+                    .into(),
+                }),
+            )]);
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::EntityInstanceSpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
+
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
+            assert_eq!(app.renderer.get_prototype_count(), 1);
+            assert_eq!(
+                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                Some(2),
+                "ref_count must climb back to 2 after respawning"
+            );
+
+            gen_draw_calls(&mut app);
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+            assert_eq!(pnu_items.len(), 1, "still one draw entry for the prototype");
+            assert_eq!(
+                pnu_items[0].get_instances().count(),
+                2,
+                "draw item must cover both live instances"
             );
         });
     }

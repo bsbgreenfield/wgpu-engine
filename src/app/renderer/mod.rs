@@ -46,8 +46,10 @@ impl RenderPacket {
 
     pub fn reset(&mut self, group_len: usize, record_len: usize) {
         use cgmath::SquareMatrix;
-        self.global_transforms
-            .resize(record_len, cgmath::Matrix4::<f32>::identity().into());
+        if self.global_transforms.len() < record_len {
+            self.global_transforms
+                .resize(record_len, cgmath::Matrix4::<f32>::identity().into());
+        }
         self.draw_packet.reset(group_len, record_len);
     }
 }

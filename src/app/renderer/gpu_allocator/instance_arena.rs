@@ -187,8 +187,10 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
     }
 
     fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), Self::AllocationError> {
-        match self.alloc_table.dealloc(handle) {
-            Some(_) => {}
+        match self.alloc_table.dealloc(handle)? {
+            Some(meta) => {
+                self.chunks[meta.chunk_id].allocator.dealloc(meta.node_id)?;
+            }
             None => {
                 // TODO: verify that this is correct
             }

@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::app::renderer::{gpu_allocator::AllocMetaData, renderer::GPUInstanceHandle};
+use crate::app::renderer::{
+    gpu_allocator::{AllocMetaData, VertexArenaError},
+    renderer::GPUInstanceHandle,
+};
 
 pub(super) struct AllocationTable {
     free_list: Vec<usize>,
@@ -43,16 +46,27 @@ impl AllocationTable {
         }
     }
 
-    pub(super) fn dealloc(&mut self, handle: &GPUInstanceHandle) -> Option<()> {
-        let idx = *self.table.get(handle)?;
+    pub(super) fn dealloc(
+        &mut self,
+        handle: &GPUInstanceHandle,
+    ) -> Result<Option<AllocMetaData>, VertexArenaError> {
+        let mut res = None;
+        let idx = *self
+            .table
+            .get(handle)
+            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
         self.table.remove(handle);
-        let meta = self.alloc_meta.get_mut(idx)?;
+        let meta = self
+            .alloc_meta
+            .get_mut(idx)
+            .ok_or(VertexArenaError::MetadataNotFound)?;
         meta.ref_count -= 1;
         if meta.ref_count == 0 {
-            self.alloc_meta.remove(idx);
+            let meta = self.alloc_meta.remove(idx);
+            res = Some(meta);
         }
         self.free_list.push(idx);
-        Some(())
+        Ok(res)
     }
 
     pub(super) fn resolve(&self, handle: &GPUInstanceHandle) -> Option<&AllocMetaData> {

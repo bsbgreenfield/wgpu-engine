@@ -343,13 +343,10 @@ impl World {
         instance_upload_data
     }
 
-    pub fn despawn(
-        &mut self,
-        instance_handle: InstanceHandle,
-        deltas: &mut Vec<WorldUpdateDelta>,
-    ) -> Result<(), WorldUpdateError> {
+    pub fn despawn(&mut self, instance_handle: InstanceHandle) -> Result<(), WorldUpdateError> {
         let gpu_instance_handle = self.instance_manager.despawn(instance_handle)?;
-        deltas.push(WorldUpdateDelta::InstanceDespawn(gpu_instance_handle));
+        self.deltas
+            .push(WorldUpdateDelta::InstanceDespawn(gpu_instance_handle));
         Ok(())
     }
 

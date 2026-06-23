@@ -42,7 +42,7 @@ pub(super) trait SharedInstanceData {
 
 #[derive(Debug)]
 pub struct PrototypeEntry {
-    ref_count: usize,
+    pub(super) ref_count: usize,
     pub local_transforms_slot: usize,
     pub joint_transforms_slot: Option<usize>,
 }
@@ -91,7 +91,7 @@ impl BindGroupCollection {
         self.prototypes.insert(
             prototype,
             PrototypeEntry {
-                ref_count: 1,
+                ref_count: 0,
                 local_transforms_slot: 0,
                 joint_transforms_slot: None,
             },

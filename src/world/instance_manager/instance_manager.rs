@@ -40,6 +40,15 @@ pub struct InstanceManager {
 
 impl InstanceManager {
     #[cfg(test)]
+    pub fn get_registered_prototypes(&self) -> &HashMap<EntityHandle, PrototypeHandle> {
+        &self.gpu_bind_registry.registered_prototypes
+    }
+    #[cfg(test)]
+    pub fn get_registered_instances(&self) -> &HashMap<GPUInstanceHandle, InstanceHandle> {
+        &self.gpu_bind_registry.registered_instances
+    }
+
+    #[cfg(test)]
     pub fn assert_animation_exists(&self, instance_handle: &InstanceHandle) {
         assert!(
             self.animation_controller
@@ -392,11 +401,16 @@ impl InstanceManager {
             &self.sparse_entity_group,
         );
 
+        println!("HANDLES: {:?}", self.pos.arena.handles);
+        println!("RECORD INDICES: {:?}", self.pos.record_indices);
         for (i, record_slot) in self.pos.record_indices.iter().enumerate() {
             packet.global_transforms[*record_slot as usize] = self.pos.positions[i].into();
         }
 
         for (group_idx, group) in self.render_groups.iter().enumerate() {
+            if packet.draw_packet.instance_ranges[group_idx].len() == 0 {
+                continue;
+            }
             for view in group.views.iter() {
                 if let Some(pnu) = &view.pnu_draws {
                     for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {
