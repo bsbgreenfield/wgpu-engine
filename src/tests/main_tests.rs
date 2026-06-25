@@ -900,6 +900,164 @@ mod integration_tests {
         });
     }
 
+    /// Spawn two distinct prototypes (Box + Fox), despawn every instance of
+    /// the box, then spawn a fresh box. The surviving fox prototype must keep
+    /// the exact same draw item (lt_idx + instance/primitive/index ranges)
+    /// across the despawn AND the subsequent re-allocation — this is the
+    /// integration-level check that the free-list dealloc + merge path does
+    /// not corrupt the GPU offsets of a live, unrelated prototype.
+    #[test]
+    fn despawn_one_prototype_preserves_others_and_reuses_space() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::BoxFox).await;
+
+            // Frame 1: both assets load. Frame 2: both entities spawn.
+            run_frame_unchecked(&mut app);
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+
+            assert_eq!(
+                app.world.instance_manager.get_all_instances().len(),
+                2,
+                "BoxFox should yield one box instance and one fox instance"
+            );
+            assert_eq!(
+                app.world.instance_manager.get_registered_prototypes().len(),
+                2,
+                "BoxFox should register one prototype per entity"
+            );
+
+            // Snapshot the fox's draw items (pnujw bucket) before any churn.
+            // DrawItem isn't Clone, so capture the fields as a comparable tuple.
+            let fox_before: Vec<_> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .map(|item| {
+                    (
+                        item.get_lt_idx(),
+                        item.get_instances(),
+                        item.get_primitives(),
+                        item.get_indices(),
+                    )
+                })
+                .collect();
+            assert!(
+                !fox_before.is_empty(),
+                "fox must produce at least one pnujw draw item"
+            );
+
+            let box_handle = app
+                .world
+                .instance_manager
+                .get_all_instances()
+                .iter()
+                .find(|i| i.entity_handle.0 == 0)
+                .expect("this should be the box instance")
+                .clone();
+
+            app.world.despawn(box_handle).unwrap();
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+
+            assert_eq!(
+                app.world.instance_manager.get_all_instances().len(),
+                1,
+                "only the fox instance should remain"
+            );
+            assert_eq!(
+                app.world.instance_manager.get_registered_prototypes().len(),
+                2,
+                "registered_prototypes must persist past the last-instance despawn"
+            );
+
+            // Fox's draw items must be byte-identical to the pre-despawn snapshot.
+            let fox_after_despawn: Vec<_> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .map(|item| {
+                    (
+                        item.get_lt_idx(),
+                        item.get_instances(),
+                        item.get_primitives(),
+                        item.get_indices(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                fox_before, fox_after_despawn,
+                "fox draw items must be unchanged by the box despawn"
+            );
+
+            // Spawn a new box at a known translation. This forces a fresh
+            // free-list alloc that may land in space freed by the despawn.
+            app.world.scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
+                        15.0, 0.0, 0.0,
+                    ))
+                    .into(),
+                }),
+            )]);
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+
+            assert_eq!(
+                app.world.instance_manager.get_all_instances().len(),
+                2,
+                "respawning the box should bring the live instance count back to 2"
+            );
+
+            // Fox draw items must still match the original snapshot — the
+            // despawn-then-realloc churn must not perturb live data.
+            let fox_after_respawn: Vec<_> = app
+                .render_packet
+                .draw_packet
+                .get_pnujw()
+                .values()
+                .flatten()
+                .map(|item| {
+                    (
+                        item.get_lt_idx(),
+                        item.get_instances(),
+                        item.get_primitives(),
+                        item.get_indices(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                fox_before, fox_after_respawn,
+                "fox draw items must remain unchanged across despawn + respawn"
+            );
+
+            // The new box must produce a pnu draw item with one instance —
+            // i.e. the allocator handed back a usable slot.
+            let pnu_items: Vec<&DrawItem> = app
+                .render_packet
+                .draw_packet
+                .get_pnu()
+                .values()
+                .flatten()
+                .collect();
+            assert_eq!(
+                pnu_items.len(),
+                1,
+                "respawned box should produce exactly one pnu draw item"
+            );
+            assert_eq!(
+                pnu_items[0].get_instances().count(),
+                1,
+                "respawned box draw item must cover its single instance"
+            );
+        });
+    }
+
     #[test]
     fn box_animated() {
         pollster::block_on(async {

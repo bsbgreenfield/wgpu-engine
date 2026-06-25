@@ -83,6 +83,7 @@ pub(super) trait GPUAllocator<T: Pod> {
 pub(super) trait GPUInstanceAllocator<T: Pod> {
     type AllocationError: Error;
 
+    fn purge_prototype_data(&mut self, slot_id: usize);
     fn upload<'a>(
         &mut self,
         job: InstanceUploadJob<'a, T>,

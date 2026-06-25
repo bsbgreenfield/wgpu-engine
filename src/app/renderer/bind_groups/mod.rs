@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     app::renderer::{
-        BufferType, PrototypeHandle,
+        BufferType, PrototypeHandle, StorageData,
         bind_groups::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
             skinning::SkinningBindGroup,
@@ -24,6 +24,7 @@ pub(super) trait BindGroupProvider {
     fn new() -> Self;
     fn despawn(&mut self, handle: &GPUInstanceHandle);
 }
+
 pub(super) trait SharedInstanceData {
     fn register_shared_binding(
         &mut self,
@@ -38,6 +39,8 @@ pub(super) trait SharedInstanceData {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError>;
+
+    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle);
 }
 
 #[derive(Debug)]
@@ -121,9 +124,9 @@ impl BindGroupCollection {
 
         entry.ref_count -= 1;
 
-        if entry.ref_count == 0 {
-            self.prototypes.remove(&handle.prototype);
-        }
+        //if entry.ref_count == 0 {
+        //    self.prototypes.remove(&handle.prototype);
+        //}
 
         self.instance_data.despawn(handle);
         self.local_transforms.despawn(handle);

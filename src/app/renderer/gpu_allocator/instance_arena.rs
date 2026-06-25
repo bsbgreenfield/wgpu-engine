@@ -107,6 +107,10 @@ impl SharedInstanceData for InstanceArena<LocalTransform> {
         self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
     }
+
+    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle) {
+        todo!()
+    }
 }
 
 impl SharedInstanceData for InstanceArena<JointTransform> {
@@ -126,6 +130,10 @@ impl SharedInstanceData for InstanceArena<JointTransform> {
     ) -> Result<u32, VertexArenaError> {
         self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
+    }
+
+    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle) {
+        todo!()
     }
 }
 
@@ -147,6 +155,10 @@ impl SharedInstanceData for InstanceArena<InverseBindMatrix> {
     ) -> Result<u32, VertexArenaError> {
         self.alloc_table.register_instance(*new_handle, slot_index);
         Ok(self.resolve(new_handle))
+    }
+
+    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle) {
+        todo!()
     }
 }
 
@@ -185,17 +197,12 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
         }
         Err(VertexArenaError::MaxAllocationReached)
     }
-
     fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), Self::AllocationError> {
-        match self.alloc_table.dealloc(handle)? {
-            Some(meta) => {
-                self.chunks[meta.chunk_id].allocator.dealloc(meta.node_id)?;
-            }
-            None => {
-                // TODO: verify that this is correct
-            }
-        }
-        Ok(())
+        todo!()
+    }
+
+    fn purge_prototype_data(&mut self, slot_id: usize) {
+        todo!("remove meta data from AllocationTable. deallocate data in chunk")
     }
 
     fn resolve(&self, handle: &GPUInstanceHandle) -> u32 {
