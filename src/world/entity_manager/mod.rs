@@ -1,5 +1,10 @@
 use std::{error::Error, fmt::Display};
 
+use crate::{
+    animation::animation::EntityAnimationData, asset_manager::MeshRenderables,
+    renderer::GPUAllocationHandle, world::instance_manager::InstanceHandle,
+};
+
 pub mod components;
 pub mod entity_manager;
 mod tests;
@@ -18,5 +23,10 @@ impl Display for EntityManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return f.write_str(&self.to_string());
     }
+}
+pub struct Renderables {
+    pub instance_handle: InstanceHandle,
+    pub mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
+    pub animations: Option<EntityAnimationData>,
 }
 impl Error for EntityManagerError {}

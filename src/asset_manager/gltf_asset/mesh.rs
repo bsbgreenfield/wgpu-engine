@@ -1,4 +1,5 @@
-use std::{any::TypeId, ops::Range};
+use std::any::TypeId;
+use std::range::Range;
 
 use gltf::accessor::{DataType, Dimensions};
 

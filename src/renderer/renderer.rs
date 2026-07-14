@@ -366,16 +366,17 @@ impl Renderer {
                                             wgpu::IndexFormat::Uint16,
                                         );
                                         render_pass.draw_indexed(
-                                            DrawSet::within(indices, &index_alloc_range),
+                                            DrawSet::within(indices, &index_alloc_range).into(),
                                             DrawSet::within(&draw.primitives, &vertex_alloc_range)
                                                 .start
                                                 as i32,
-                                            draw.instances.clone(),
+                                            draw.instances.clone().into(),
                                         );
                                     } else {
                                         render_pass.draw(
-                                            DrawSet::within(&draw.primitives, &vertex_alloc_range),
-                                            draw.instances.clone(),
+                                            DrawSet::within(&draw.primitives, &vertex_alloc_range)
+                                                .into(),
+                                            draw.instances.clone().into(),
                                         );
                                     }
                                 }
@@ -414,16 +415,17 @@ impl Renderer {
                                             wgpu::IndexFormat::Uint16,
                                         );
                                         render_pass.draw_indexed(
-                                            DrawSet::within(indices, &index_alloc_range),
+                                            DrawSet::within(indices, &index_alloc_range).into(),
                                             DrawSet::within(&draw.primitives, &vertex_alloc_range)
                                                 .start
                                                 as i32,
-                                            draw.instances.clone(),
+                                            draw.instances.clone().into(),
                                         );
                                     } else {
                                         render_pass.draw(
-                                            DrawSet::within(&draw.primitives, &vertex_alloc_range),
-                                            draw.instances.clone(),
+                                            DrawSet::within(&draw.primitives, &vertex_alloc_range)
+                                                .into(),
+                                            draw.instances.clone().into(),
                                         );
                                     }
                                 }

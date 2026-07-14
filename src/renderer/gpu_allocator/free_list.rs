@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::range::Range;
 
 use crate::renderer::gpu_allocator::{CHUNK_SIZE, FreeListAllocError};
 
@@ -84,7 +84,7 @@ impl FreeListAllocator {
     #[inline]
     pub(super) fn resolve(&self, node_id: usize) -> Range<u32> {
         let node = &self.nodes[node_id];
-        node.offset..node.offset + node.block_size
+        Range::from(node.offset..node.offset + node.block_size)
     }
 
     #[inline]
@@ -481,7 +481,7 @@ mod free_list_tests {
         );
         let new = alloc.alloc_first(CHUNK_SIZE).unwrap();
         assert_eq!(alloc.offset_of(new), 0);
-        assert_eq!(alloc.resolve(new), 0..CHUNK_SIZE);
+        assert_eq!(alloc.resolve(new), Range::from(0..CHUNK_SIZE));
     }
 
     /// Re-allocating two ALLOC-sized blocks back into a merged region should

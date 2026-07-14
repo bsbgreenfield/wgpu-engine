@@ -1,15 +1,13 @@
-use std::{collections::HashSet, mem::MaybeUninit, ops::Range, sync::Arc};
+use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
 
 use crate::{
-    animation::animation::{Animation, EntityAnimationData},
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
     },
-    renderer::{GPUAllocationHandle, PrototypeHandle},
-    util::types::{LocalTransform, Mat4F32},
+    renderer::PrototypeHandle,
     world::{
         entity_manager::{
-            EntityHandle, EntityManagerError,
+            EntityHandle, EntityManagerError, Renderables,
             components::{
                 AnimationComponent, AnimationMode, Component, MeshCollectionComponent,
                 MeshCollectionDescriptor,
@@ -21,43 +19,9 @@ use crate::{
 };
 
 pub struct EntityManager {
-    available_ids: Vec<std::ops::Range<u32>>,
+    available_ids: Vec<std::range::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent<dyn ProvidesMeshData>, 100>,
     animations: SparseSet<AnimationComponent<dyn ProvidesAnimationData>, 100>,
-    pub asset_manager: AssetManager,
-}
-
-#[derive(Debug)]
-pub enum RenderData {
-    MeshRenderable {
-        gpu_alloc_handle: GPUAllocationHandle,
-        pnu_vertex_ranges: Option<Vec<Range<u32>>>,
-        pnu_mesh_map: Vec<u32>,
-        pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
-        pnujw_mesh_map: Vec<u32>,
-        index_ranges: Option<Vec<Range<u32>>>,
-    },
-    AnimationData {
-        animations: Vec<Arc<dyn Animation>>,
-    },
-}
-
-pub struct MeshRenderables {
-    pub pnu_vertex_ranges: Option<Vec<Range<u32>>>,
-    pub pnu_mesh_map: Vec<u32>,
-    pub pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
-    pub pnujw_mesh_map: Vec<u32>,
-    pub joint_transforms: Option<Vec<Mat4F32>>,
-    pub joint_map: Vec<u32>,
-    pub ibms: Option<Vec<Mat4F32>>,
-    pub index_ranges: Option<Vec<Range<u32>>>,
-    pub local_transforms: Vec<LocalTransform>,
-}
-
-pub struct Renderables {
-    pub instance_handle: InstanceHandle,
-    pub mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
-    pub animations: Option<EntityAnimationData>,
 }
 
 impl EntityManager {
@@ -102,6 +66,7 @@ impl EntityManager {
     pub fn get_entity_render_data<'frame>(
         &'frame self,
         instance_handle: &InstanceHandle,
+        asset_manager: &AssetManager,
     ) -> Result<Renderables, EntityManagerError> {
         let mut renderables = Renderables {
             instance_handle: instance_handle.clone(),
@@ -113,9 +78,8 @@ impl EntityManager {
             .mesh_collections
             .get(instance_handle.entity_handle.0 as usize)
         {
-            let loaded_asset = self
-                .asset_manager
-                .get_loaded_asset(&mesh_collection.resource_backing.asset_handle);
+            let loaded_asset =
+                asset_manager.get_loaded_asset(&mesh_collection.resource_backing.asset_handle);
 
             let mesh_renderables =
                 mesh_collection.get_output_data(loaded_asset.as_mesh_provider().unwrap());
@@ -128,9 +92,8 @@ impl EntityManager {
             .animations
             .get(instance_handle.entity_handle.0 as usize)
         {
-            let asset = self
-                .asset_manager
-                .get_loaded_asset(&animation_component.resource_backing.asset_handle);
+            let asset =
+                asset_manager.get_loaded_asset(&animation_component.resource_backing.asset_handle);
 
             let entity_animations =
                 animation_component.get_output_data(asset.as_animation_provider().unwrap());
@@ -156,7 +119,7 @@ impl EntityManager {
             .first_mut()
             .ok_or(EntityManagerError::MaxEntitiesExceeded)?;
         let res = EntityHandle(first_range.start as u16);
-        if first_range.len() > 1 {
+        if first_range.end - first_range.start > 1 {
             first_range.start = first_range.start + 1;
         } else {
             self.available_ids.remove(0);
@@ -166,8 +129,7 @@ impl EntityManager {
 
     pub fn new() -> Self {
         Self {
-            asset_manager: AssetManager::new(),
-            available_ids: vec![0..10000],
+            available_ids: vec![Range::from(0..10000).into()],
             mesh_collections: SparseSet::new(),
             animations: SparseSet::new(),
         }

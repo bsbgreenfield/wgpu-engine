@@ -1,4 +1,5 @@
-use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData, ops::Range};
+use std::range::Range;
+use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData};
 
 use bytemuck::Pod;
 
@@ -77,7 +78,7 @@ impl DrawPacket {
         }
         let mut sum = 0;
         for (group_id, count) in self.entity_count.iter_mut().enumerate() {
-            self.instance_ranges[group_id] = sum..(sum + *count as u32);
+            self.instance_ranges[group_id] = Range::from(sum..(sum + *count as u32));
             self.cursors[group_id] = sum;
             sum += *count as u32;
             *count = 0;
@@ -240,6 +241,8 @@ impl<'frame> RenderConstant<'frame> {
             _ => panic!("invalid bytecode, expected data, found {:?}", self),
         }
     }
+
+    #[allow(unused)]
     fn unwrap_data_owned(&self) -> &[u8] {
         match self {
             Self::DataOwned(data) => data,

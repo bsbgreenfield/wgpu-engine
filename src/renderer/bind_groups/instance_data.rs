@@ -1,7 +1,5 @@
 use crate::renderer::{
-    InstanceUploadJob,
-    bind_groups::BindGroupUploadResult,
-    gpu_allocator::{GPUInstanceAllocator, VertexArenaError},
+    InstanceUploadJob, bind_groups::BindGroupUploadResult, gpu_allocator::VertexArenaError,
     renderer::GPUInstanceHandle,
 };
 use std::num::NonZero;

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ops::Range;
+use std::range::Range;
 use std::sync::Arc;
 
 use crate::animation::animation::{
@@ -212,14 +212,15 @@ fn get_relative_indices(
     let mut offset = 0;
     for range in index_ranges.iter() {
         if !range.contains(&primitive_index_range.start) {
-            offset += range.len();
+            offset += range.end - range.start;
             continue;
         }
         let relative_primitive_index_offset = offset + primitive_index_range.start - range.start;
 
         return Ok(Range {
             start: relative_primitive_index_offset,
-            end: relative_primitive_index_offset + primitive_index_range.len(),
+            end: relative_primitive_index_offset
+                + (primitive_index_range.end - primitive_index_range.start),
         });
     }
 

@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::range::Range;
 
 #[derive(PartialEq, PartialOrd, Debug)]
 enum IndexResult {
@@ -57,12 +57,12 @@ fn splice_range(
 ) {
     let left = std::cmp::min(primitive_indices_range.start, range_vec[start_idx].start);
     let right = std::cmp::max(primitive_indices_range.end, range_vec[end_idx - 1].end);
-    range_vec.splice(start_idx..end_idx, vec![left..right]);
+    range_vec.splice(start_idx..end_idx, vec![Range::from(left..right)]);
 }
 
 pub(super) fn define_index_ranges(
     range_vec: &mut Vec<Range<usize>>,
-    primitive_indices_range: &std::ops::Range<usize>,
+    primitive_indices_range: &std::range::Range<usize>,
 ) {
     if range_vec.is_empty() {
         range_vec.push(primitive_indices_range.clone());
@@ -83,7 +83,7 @@ pub(super) fn define_index_ranges(
                 // new range
                 StrictlyGreater => {
                     if range_iter.peek().is_none() {
-                        range_vec.push(std::ops::Range {
+                        range_vec.push(std::range::Range {
                             start: primitive_indices_range.start,
                             end: primitive_indices_range.end,
                         });
@@ -174,8 +174,8 @@ mod tests {
     #[test]
     fn test_new_strictly_greater() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(0..4);
-        indices_ranges.push(7..10);
+        indices_ranges.push(Range::from(0..4));
+        indices_ranges.push(Range::from(7..10));
         let primitive_indices_range = Range { start: 12, end: 15 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
 
@@ -189,8 +189,8 @@ mod tests {
     #[test]
     fn test_new_right_overlap_1() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(0..4);
-        indices_ranges.push(7..10);
+        indices_ranges.push(Range::from(0..4));
+        indices_ranges.push(Range::from(7..10));
         let primitive_indices_range = Range { start: 8, end: 15 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
         assert_eq!(indices_ranges.len(), 2);
@@ -201,8 +201,8 @@ mod tests {
     #[test]
     fn test_new_right_overlap_2() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(0..4);
-        indices_ranges.push(7..10);
+        indices_ranges.push(Range::from(0..4));
+        indices_ranges.push(Range::from(7..10));
         let primitive_indices_range = Range { start: 10, end: 15 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
         assert_eq!(indices_ranges.len(), 2);
@@ -212,9 +212,9 @@ mod tests {
     #[test]
     fn test_right_overlap_3() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(2..4);
-        indices_ranges.push(8..10);
-        indices_ranges.push(12..15);
+        indices_ranges.push(Range::from(2..4));
+        indices_ranges.push(Range::from(8..10));
+        indices_ranges.push(Range::from(12..15));
         let primitive_indices_range = Range { start: 3, end: 13 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
         assert_eq!(indices_ranges.len(), 1);
@@ -224,8 +224,8 @@ mod tests {
     #[test]
     fn test_full_emcompass() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(2..4);
-        indices_ranges.push(7..10);
+        indices_ranges.push(Range::from(2..4));
+        indices_ranges.push(Range::from(7..10));
         let primitive_indices_range = Range { start: 0, end: 15 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
         assert_eq!(indices_ranges.len(), 1);
@@ -234,9 +234,9 @@ mod tests {
     #[test]
     fn test_part_emcompass() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(2..4);
-        indices_ranges.push(10..18);
-        indices_ranges.push(22..25);
+        indices_ranges.push(Range::from(2..4));
+        indices_ranges.push(Range::from(10..18));
+        indices_ranges.push(Range::from(22..25));
         let primitive_indices_range = Range { start: 6, end: 20 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
         assert_eq!(indices_ranges.len(), 3);
@@ -248,9 +248,9 @@ mod tests {
     #[test]
     fn test_new_left_overlap_1() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(2..4);
-        indices_ranges.push(8..10);
-        indices_ranges.push(12..15);
+        indices_ranges.push(Range::from(2..4));
+        indices_ranges.push(Range::from(8..10));
+        indices_ranges.push(Range::from(12..15));
         let primitive_indices_range = Range { start: 6, end: 9 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
         assert_eq!(indices_ranges.len(), 3);
@@ -261,8 +261,8 @@ mod tests {
     #[test]
     fn test_new_in_betweener() {
         let mut indices_ranges = Vec::<Range<usize>>::new();
-        indices_ranges.push(2..4);
-        indices_ranges.push(12..20);
+        indices_ranges.push(Range::from(2..4));
+        indices_ranges.push(Range::from(12..20));
         let primitive_indices_range = Range { start: 6, end: 10 };
         define_index_ranges(&mut indices_ranges, &primitive_indices_range);
         assert_eq!(indices_ranges.len(), 3);

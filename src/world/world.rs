@@ -1,9 +1,10 @@
-use std::{fmt::Debug, ops::Range};
+use std::fmt::Debug;
+use std::range::Range;
 
 use super::scene::Scene;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
-    asset_manager::{Asset, AssetLoadError},
+    asset_manager::{Asset, AssetLoadError, asset_manager_new::AssetManager},
     renderer::{
         BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
         RenderConstant, RenderUpdateDelta, renderer::GPUInstanceHandle,
@@ -34,7 +35,10 @@ impl DrawSet {
     #[inline]
     pub const fn within(prim_range: &Range<u32>, range: &Range<u32>) -> Range<u32> {
         let start = range.start + prim_range.start;
-        start..(start + (prim_range.end - prim_range.start) as u32)
+        Range {
+            start: start,
+            end: start + (prim_range.end - prim_range.start) as u32,
+        }
     }
 }
 
@@ -148,6 +152,7 @@ pub struct World {
     pub camera: Camera,
     pub scene: Scene,
     pub entity_manager: EntityManager,
+    pub asset_manager: AssetManager,
     load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
     pub deltas: Vec<WorldUpdateDelta>,
@@ -305,9 +310,7 @@ impl World {
     where
         A: Asset + 'static,
     {
-        self.entity_manager
-            .asset_manager
-            .register_asset::<A>(str_dir)
+        self.asset_manager.register_asset::<A>(str_dir)
     }
 
     pub fn new() -> Self {
@@ -320,6 +323,7 @@ impl World {
             camera,
             scene: Scene::new(),
             entity_manager: EntityManager::new(),
+            asset_manager: AssetManager::new(),
             load_queue: EntityLoadQueue::new(),
             instance_manager: InstanceManager::new(),
         }
@@ -331,7 +335,7 @@ impl World {
     ) -> Vec<InstanceUploadData> {
         let instance_upload_data = self
             .instance_manager
-            .spawn_instances(&self.entity_manager, instance_data)
+            .spawn_instances(&self.entity_manager, &self.asset_manager, instance_data)
             .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e));
 
         for upload_data in instance_upload_data.iter() {
@@ -357,10 +361,7 @@ impl World {
         }
         let pending_assets = self.load_queue.pending_asset_uploads.drain(..);
         for handle in pending_assets {
-            let job: GPUAssetUploadJob = self
-                .entity_manager
-                .asset_manager
-                .get_upload_job_for(handle)?;
+            let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
             self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
         }
 
@@ -371,7 +372,7 @@ impl World {
 
     fn try_handle_scene_load(&mut self) -> Result<bool, WorldUpdateError> {
         self.load_queue
-            .poll_scene_job(self.scene.scene_id, &mut self.entity_manager.asset_manager)?;
+            .poll_scene_job(self.scene.scene_id, &mut self.asset_manager)?;
         if self
             .load_queue
             .completed_queue
@@ -438,8 +439,7 @@ impl World {
         for delta in render_deltas {
             match delta {
                 RenderUpdateDelta::AssetGPULoaded(asset_handle, allocation_handle) => {
-                    self.entity_manager
-                        .asset_manager
+                    self.asset_manager
                         .register_asset_gpu_residency(&asset_handle, allocation_handle.clone())
                         .expect("Asset not found");
                 }

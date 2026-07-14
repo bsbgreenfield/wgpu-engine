@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod integration_tests {
 
-    use std::fmt::Debug;
+    use std::{collections::btree_map::Range, fmt::Debug};
 
     use crate::{
         animation::animation::AnimationTransformType,
@@ -227,7 +227,7 @@ mod integration_tests {
                 pnujw_items.is_empty(),
                 "box should produce no pnujw draw items"
             );
-            assert_eq!(pnu_items[0].get_instances().count(), 1);
+            assert_eq!(pnu_items[0].get_instances().into_iter().count(), 1);
         });
     }
 
@@ -278,7 +278,7 @@ mod integration_tests {
                 "fox should produce pnujw draw items"
             );
             for item in &pnujw_items {
-                assert_eq!(item.get_instances().count(), 1);
+                assert_eq!(item.get_instances().into_iter().count(), 1);
             }
         });
     }
@@ -378,9 +378,9 @@ mod integration_tests {
                 !pnujw_items.is_empty(),
                 "fox should produce pnujw draw items"
             );
-            assert_eq!(pnu_items[0].get_instances().count(), 1);
+            assert_eq!(pnu_items[0].get_instances().into_iter().count(), 1);
             for item in &pnujw_items {
-                assert_eq!(item.get_instances().count(), 1);
+                assert_eq!(item.get_instances().into_iter().count(), 1);
             }
         });
     }
@@ -487,7 +487,7 @@ mod integration_tests {
                 .flatten()
                 .collect();
 
-            assert_eq!(pnu_draws[0].instances, 0..6400);
+            assert_eq!(pnu_draws[0].instances, (0..6400).into());
 
             let frame = app
                 .world
@@ -566,7 +566,7 @@ mod integration_tests {
             assert!(pnujw_items.is_empty());
 
             assert_eq!(pnu_items.len(), 1);
-            assert_eq!(pnu_items[0].get_instances(), 0..2);
+            assert_eq!(pnu_items[0].get_instances(), (0..2).into());
             assert_eq!(pnu_items[0].get_lt_idx(), 0);
 
             let world = app.world;
@@ -822,7 +822,7 @@ mod integration_tests {
                 .flatten()
                 .collect();
             assert_eq!(pnu_items.len(), 1);
-            assert_eq!(pnu_items[0].get_instances().count(), 1);
+            assert_eq!(pnu_items[0].get_instances().into_iter().count(), 1);
 
             // Spawn a third instance on the same entity/prototype.
             app.world.scene.spawn(vec![(
@@ -887,7 +887,7 @@ mod integration_tests {
                 .collect();
             assert_eq!(pnu_items.len(), 1, "still one draw entry for the prototype");
             assert_eq!(
-                pnu_items[0].get_instances().count(),
+                pnu_items[0].get_instances().into_iter().count(),
                 2,
                 "draw item must cover both live instances"
             );
@@ -1024,7 +1024,7 @@ mod integration_tests {
                 "respawned box should produce exactly one pnu draw item"
             );
             assert_eq!(
-                pnu_items[0].get_instances().count(),
+                pnu_items[0].get_instances().into_iter().count(),
                 1,
                 "respawned box draw item must cover its single instance"
             );

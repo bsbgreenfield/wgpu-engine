@@ -3,7 +3,6 @@ use std::{fmt::Debug, marker::PhantomData};
 use crate::{
     animation::animation::EntityAnimationData,
     asset_manager::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
-    world::entity_manager::entity_manager::MeshRenderables,
 };
 
 #[derive(Debug, Clone)]
@@ -109,7 +108,7 @@ pub trait Component {
 
 impl<A: ProvidesMeshData + ?Sized> Component for MeshCollectionComponent<A> {
     type AssetType = A;
-    type Output = MeshRenderables;
+    type Output = crate::asset_manager::MeshRenderables;
     type Erased = MeshCollectionComponent<dyn ProvidesMeshData>;
 
     fn get_output_data(&self, meshed_asset: &A) -> Self::Output {

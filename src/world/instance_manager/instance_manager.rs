@@ -5,13 +5,11 @@ use std::sync::Arc;
 use crate::{
     animation::animation::EntityAnimations,
     app::app::AppCommand,
+    asset_manager::asset_manager_new::AssetManager,
     renderer::{DrawItem, PrototypeHandle, RenderPacket, renderer::GPUInstanceHandle},
     world::{
         WorldUpdateError,
-        entity_manager::{
-            EntityHandle,
-            entity_manager::{EntityManager, Renderables},
-        },
+        entity_manager::{EntityHandle, Renderables, entity_manager::EntityManager},
         instance_manager::{
             Archetype, ArchetypeId, InstanceHandle, RenderFrame,
             animation_controller::AnimationController,
@@ -216,6 +214,7 @@ impl InstanceManager {
     pub fn spawn_instances(
         &mut self,
         entity_manager: &EntityManager,
+        asset_manager: &AssetManager,
         instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
     ) -> Result<Vec<InstanceUploadData>, WorldUpdateError> {
         let mut res: Vec<InstanceUploadData> = Vec::new();
@@ -238,7 +237,7 @@ impl InstanceManager {
                 let first_arch = arch_list.swap_remove(0);
                 let first_instance_handle = first_arch.insert_self(self, &entity_handle);
                 let renderables = entity_manager
-                    .get_entity_render_data(&first_instance_handle)
+                    .get_entity_render_data(&first_instance_handle, asset_manager)
                     .expect("renderables fetch fail");
                 let first_instance_upload_data = self.add_render_group(renderables);
 
@@ -408,7 +407,9 @@ impl InstanceManager {
         }
 
         for (group_idx, group) in self.render_groups.iter().enumerate() {
-            if packet.draw_packet.instance_ranges[group_idx].len() == 0 {
+            if packet.draw_packet.instance_ranges[group_idx].start
+                == packet.draw_packet.instance_ranges[group_idx].end
+            {
                 continue;
             }
             for view in group.views.iter() {

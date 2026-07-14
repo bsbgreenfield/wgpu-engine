@@ -1,22 +1,19 @@
 use std::fmt::Debug;
+use std::fmt::Display;
 use std::marker::PhantomData;
-use std::{fmt::Display, ops::Range};
+use std::range::Range;
 
 use bytemuck::Pod;
 use std::error::Error;
 
-use crate::renderer::bind_groups::BindGroupUploadResult;
+use crate::renderer::StorageData;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::renderer::renderer::GPUInstanceHandle;
-use crate::renderer::{InstanceUploadJob, StorageData};
 use crate::util::types::{
     GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
     LocalTransform,
 };
-use crate::{
-    renderer::GPUAllocationHandle, util::types::ModelVertex,
-    world::instance_manager::InstanceHandle,
-};
+use crate::{renderer::GPUAllocationHandle, util::types::ModelVertex};
 
 mod allocation_table;
 mod free_list;
@@ -60,7 +57,7 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
         // }
         let offset = self.allocator.offset_of(node_idx) as u32;
         queue.write_buffer(&self.buffer, offset.into(), data);
-        Ok((node_idx, offset..offset + (data.len() as u32)))
+        Ok((node_idx, Range::from(offset..offset + (data.len() as u32))))
     }
 }
 
@@ -80,25 +77,6 @@ pub(super) trait GPUAllocator<T: Pod> {
     fn new() -> Self;
 }
 
-pub(super) trait GPUInstanceAllocator<T: Pod> {
-    type AllocationError: Error;
-
-    fn purge_prototype_data(&mut self, slot_id: usize);
-    fn upload<'a>(
-        &mut self,
-        job: InstanceUploadJob<'a, T>,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> Result<BindGroupUploadResult, Self::AllocationError>;
-
-    fn resolve(&self, handle: &GPUInstanceHandle) -> u32;
-    fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), Self::AllocationError>;
-
-    fn new() -> Self;
-
-    #[allow(unused)]
-    fn resolve_buffer(&self, instance_handle: &InstanceHandle) -> &wgpu::Buffer;
-}
 #[derive(Debug)]
 pub enum FreeListAllocError {
     NoRoomLeft(u32, u32),

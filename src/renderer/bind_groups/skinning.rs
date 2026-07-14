@@ -6,7 +6,7 @@ use crate::{
     renderer::{
         InstanceUploadJob,
         bind_groups::{BindGroupProvider, BindGroupUploadResult},
-        gpu_allocator::{GPUInstanceAllocator, VertexArenaError, instance_arena::InstanceArena},
+        gpu_allocator::{VertexArenaError, instance_arena::InstanceArena},
         renderer::GPUInstanceHandle,
     },
     util::types::{InverseBindMatrix, JointTransform, Mat4F32},

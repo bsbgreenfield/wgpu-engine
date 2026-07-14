@@ -1,9 +1,5 @@
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    marker::PhantomData,
-    ops::{Deref, Range},
-};
+use std::range::Range;
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 
 use crate::{
     renderer::{
@@ -14,7 +10,7 @@ use crate::{
             free_list::FreeListAllocator,
         },
     },
-    util::types::{GlobalTransform, ModelVertex, VIndex},
+    util::types::{ModelVertex, VIndex},
 };
 //****************************************************************
 //
@@ -175,41 +171,5 @@ impl<V: ModelVertex> GPUAllocator<V> for GPUArena<V> {
         range.start = range.start / size_of::<V>() as u32;
         range.end = range.end / size_of::<V>() as u32;
         (range, &self.chunks[meta.chunk_id].buffer)
-    }
-
-    //  #[inline]
-    //  fn chunk_id(&self, handle: &GPUAllocationHandle) -> usize {
-    //      self.alloc_table[&handle.global_allocation_id].chunk_id
-    //  }
-
-    //  fn buffer_from_chunk_id(&self, chunk_id: usize) -> &wgpu::Buffer {
-    //      &self.chunks[chunk_id].buffer
-    //  }
-}
-
-pub struct StaticGPUBuffer<T: bytemuck::Pod> {
-    _t: PhantomData<T>,
-    buffer: wgpu::Buffer,
-}
-
-impl StaticGPUBuffer<GlobalTransform> {
-    pub fn new(device: &wgpu::Device) -> Self {
-        Self {
-            _t: PhantomData,
-            buffer: device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("global transform buffer"),
-                size: 1677717,
-                mapped_at_creation: false,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            }),
-        }
-    }
-}
-
-impl<T: bytemuck::Pod> Deref for StaticGPUBuffer<T> {
-    type Target = wgpu::Buffer;
-
-    fn deref(&self) -> &Self::Target {
-        &self.buffer
     }
 }

@@ -5,7 +5,7 @@ use cgmath::SquareMatrix;
 use crate::{
     animation::animation::{Animation, EntityAnimationData},
     asset_manager::{
-        AssetLoadError, ProvidesAnimationData, ProvidesMeshData,
+        AssetLoadError, MeshRenderables, ProvidesAnimationData, ProvidesMeshData,
         gltf_asset::{
             GltfAsset,
             util::{
@@ -15,10 +15,7 @@ use crate::{
         },
     },
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
-    world::entity_manager::{
-        components::{AnimationAccessor, MeshAcessor},
-        entity_manager::MeshRenderables,
-    },
+    world::entity_manager::components::{AnimationAccessor, MeshAcessor},
 };
 
 pub(super) struct MeshInstance {

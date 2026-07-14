@@ -1,6 +1,7 @@
 use std::{
     fmt::{Debug, Display},
     ops::Deref,
+    range::Range,
 };
 
 use crate::{
@@ -8,12 +9,10 @@ use crate::{
     app::GPUAssetUploadJob,
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     renderer::GPUAllocationHandle,
+    util::types::{LocalTransform, Mat4F32},
     world::{
         RenderKey,
-        entity_manager::{
-            components::{AnimationAccessor, MeshAcessor},
-            entity_manager::MeshRenderables,
-        },
+        entity_manager::components::{AnimationAccessor, MeshAcessor},
         scene::SceneLoadLevel,
     },
 };
@@ -38,6 +37,17 @@ pub enum AssetLoadResult {
     PendingCPU,
 }
 
+pub struct MeshRenderables {
+    pub pnu_vertex_ranges: Option<Vec<Range<u32>>>,
+    pub pnu_mesh_map: Vec<u32>,
+    pub pnujw_vertex_ranges: Option<Vec<Range<u32>>>,
+    pub pnujw_mesh_map: Vec<u32>,
+    pub joint_transforms: Option<Vec<Mat4F32>>,
+    pub joint_map: Vec<u32>,
+    pub ibms: Option<Vec<Mat4F32>>,
+    pub index_ranges: Option<Vec<Range<u32>>>,
+    pub local_transforms: Vec<LocalTransform>,
+}
 impl Display for AssetLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
