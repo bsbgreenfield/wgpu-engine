@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::world::{
-    entity_manager::EntityHandle,
-    instance_manager::{Archetype, ArchetypeIdent, InstanceHandle},
+use crate::{
+    common::entity::EntityHandle,
+    world::instance_manager::{Archetype, ArchetypeIdent, InstanceHandle},
 };
 
 struct Slot {

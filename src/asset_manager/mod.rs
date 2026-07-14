@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    animation::animation::EntityAnimationData,
+    animation::EntityAnimationData,
     app::GPUAssetUploadJob,
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     renderer::GPUAllocationHandle,
@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub mod asset_manager_new;
+pub mod asset_manager;
 pub mod gltf_asset;
 mod range_splicer;
 #[derive(Debug)]

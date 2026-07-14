@@ -1,9 +1,9 @@
 use cgmath::{Quaternion, SquareMatrix, Vector3};
 
 #[cfg(test)]
-use crate::animation::animation::{AnimationChannels, AnimationSampler};
+use crate::animation::{AnimationChannels, AnimationSampler};
 use crate::{
-    animation::animation::{
+    animation::{
         Animation, AnimationInstance, AnimationSample, AnimationTransformType, SampleResult,
     },
     asset_manager::gltf_asset::{GltfAnimation, GltfNode, NodeTransforms, NodeType},
@@ -193,7 +193,7 @@ impl Animation for GltfAnimation {
         complete
     }
 
-    fn init_samples(&self) -> Vec<crate::animation::animation::AnimationSample> {
+    fn init_samples(&self) -> Vec<crate::animation::AnimationSample> {
         let mut samples = Vec::with_capacity(self.samplers.len());
         for sampler in &self.samplers {
             samples.push(AnimationSample::init(&sampler.times));

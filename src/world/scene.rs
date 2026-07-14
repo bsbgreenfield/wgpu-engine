@@ -6,15 +6,13 @@ use cgmath::{SquareMatrix, Vector3};
 use crate::world::{WorldInitError, world::World};
 use crate::{
     asset_manager::{AssetLoadResult, gltf_asset::GltfAsset},
+    common::{entity::EntityHandle, instance::InstanceHandle},
     world::{
-        entity_manager::{
-            EntityHandle,
-            components::{
-                AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
-                MeshCollectionDescriptor,
-            },
+        entity_manager::components::{
+            AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
+            MeshCollectionDescriptor,
         },
-        instance_manager::{Archetype, InstanceHandle, archetype_table::APosition},
+        instance_manager::{Archetype, archetype_table::APosition},
         world::InstanceUploadData,
     },
 };

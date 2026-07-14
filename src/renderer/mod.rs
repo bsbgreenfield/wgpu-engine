@@ -3,14 +3,13 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData}
 
 use bytemuck::Pod;
 
+use crate::common::entity::{EntityHandle, PrototypeHandle};
+use crate::common::instance::{GPUInstanceHandle, InstanceHandle};
 use crate::{
     asset_manager::AssetHandle,
-    renderer::{
-        gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
-        renderer::GPUInstanceHandle,
-    },
+    renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
     util::types::{GlobalTransform, ModelVertex},
-    world::{RenderKey, entity_manager::EntityHandle, instance_manager::InstanceHandle},
+    world::RenderKey,
 };
 
 mod bind_groups;
@@ -18,9 +17,6 @@ mod gpu_allocator;
 mod pipeline;
 pub mod renderer;
 mod vm;
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct PrototypeHandle(pub u32);
 
 impl RenderKey for PrototypeHandle {
     fn as_key(&self) -> u64 {

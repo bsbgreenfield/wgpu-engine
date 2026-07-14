@@ -4,19 +4,21 @@ use std::range::Range;
 use super::scene::Scene;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
-    asset_manager::{Asset, AssetLoadError, asset_manager_new::AssetManager},
+    asset_manager::{Asset, AssetLoadError, asset_manager::AssetManager},
+    common::{
+        entity::{EntityHandle, PrototypeHandle},
+        instance::{GPUInstanceHandle, InstanceHandle},
+    },
     renderer::{
-        BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
-        RenderConstant, RenderUpdateDelta, renderer::GPUInstanceHandle,
+        BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, RenderConstant,
+        RenderUpdateDelta,
     },
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
         RenderKey, WorldUpdateError,
         camera::Camera,
-        entity_manager::{
-            EntityHandle, components::ResourceBacking, entity_manager::EntityManager,
-        },
-        instance_manager::{Archetype, InstanceHandle, instance_manager::InstanceManager},
+        entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
+        instance_manager::{Archetype, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
         scene::SceneEvent,
     },

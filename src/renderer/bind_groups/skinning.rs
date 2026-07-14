@@ -3,14 +3,13 @@ use std::num::NonZero;
 use wgpu::ShaderStages;
 
 use crate::{
+    common::instance::{GPUInstanceHandle, InstanceHandle},
     renderer::{
         InstanceUploadJob,
         bind_groups::{BindGroupProvider, BindGroupUploadResult},
         gpu_allocator::{VertexArenaError, instance_arena::InstanceArena},
-        renderer::GPUInstanceHandle,
     },
     util::types::{InverseBindMatrix, JointTransform, Mat4F32},
-    world::instance_manager::InstanceHandle,
 };
 
 pub struct SkinningBindGroup {

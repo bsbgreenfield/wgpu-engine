@@ -1,15 +1,13 @@
 use std::{error::Error, fmt::Display};
 
 use crate::{
-    animation::animation::EntityAnimationData, asset_manager::MeshRenderables,
-    renderer::GPUAllocationHandle, world::instance_manager::InstanceHandle,
+    animation::EntityAnimationData, asset_manager::MeshRenderables,
+    common::instance::InstanceHandle, renderer::GPUAllocationHandle,
 };
 
 pub mod components;
 pub mod entity_manager;
 mod tests;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct EntityHandle(pub u16);
 
 #[derive(Debug)]
 pub enum EntityManagerError {

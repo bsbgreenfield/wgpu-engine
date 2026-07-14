@@ -1,7 +1,7 @@
 use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
-    animation::animation::EntityAnimationData,
+    animation::EntityAnimationData,
     asset_manager::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
 };
 

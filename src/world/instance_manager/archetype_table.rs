@@ -1,11 +1,9 @@
 use crate::{
+    common::entity::EntityHandle,
     util::types::GlobalTransform,
-    world::{
-        entity_manager::EntityHandle,
-        instance_manager::{
-            Archetype, ArchetypeId, ArchetypeIdent, InstanceHandle, instance_arena::InstanceArena,
-            instance_manager::InstanceManager,
-        },
+    world::instance_manager::{
+        Archetype, ArchetypeId, ArchetypeIdent, InstanceHandle, instance_arena::InstanceArena,
+        instance_manager::InstanceManager,
     },
 };
 

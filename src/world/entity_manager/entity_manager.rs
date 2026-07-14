@@ -2,18 +2,20 @@ use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
 
 use crate::{
     asset_manager::{
-        AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
+        AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager::AssetManager,
     },
-    renderer::PrototypeHandle,
+    common::{
+        entity::{EntityHandle, PrototypeHandle},
+        instance::InstanceHandle,
+    },
     world::{
         entity_manager::{
-            EntityHandle, EntityManagerError, Renderables,
+            EntityManagerError, Renderables,
             components::{
                 AnimationComponent, AnimationMode, Component, MeshCollectionComponent,
                 MeshCollectionDescriptor,
             },
         },
-        instance_manager::InstanceHandle,
         world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},
     },
 };

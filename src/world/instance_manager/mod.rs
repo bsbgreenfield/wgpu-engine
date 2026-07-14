@@ -1,10 +1,10 @@
 use crate::{
-    renderer::renderer::GPUInstanceHandle,
-    util::types::GlobalTransform,
-    world::{
-        RenderKey, entity_manager::EntityHandle,
-        instance_manager::instance_manager::InstanceManager,
+    common::{
+        entity::EntityHandle,
+        instance::{GPUInstanceHandle, InstanceHandle},
     },
+    util::types::GlobalTransform,
+    world::{RenderKey, instance_manager::instance_manager::InstanceManager},
 };
 
 mod animation_controller;
@@ -12,6 +12,7 @@ pub mod archetype_table;
 mod gpu_bind_registry;
 mod instance_arena;
 pub(super) mod instance_manager;
+pub mod test;
 
 pub trait ArchetypeIdent {
     const ARCHETYPE_ID: ArchetypeId;
@@ -37,14 +38,6 @@ impl TryFrom<u16> for ArchetypeId {
             _ => Err(()),
         }
     }
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct InstanceHandle {
-    pub archetype: ArchetypeId,
-    pub entity_handle: EntityHandle,
-    pub instance_id: u16,
-    pub generation: u16,
 }
 
 impl RenderKey for InstanceHandle {

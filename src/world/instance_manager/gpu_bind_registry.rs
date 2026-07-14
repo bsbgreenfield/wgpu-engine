@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    renderer::{PrototypeHandle, renderer::GPUInstanceHandle},
-    world::{WorldUpdateError, entity_manager::EntityHandle, instance_manager::InstanceHandle},
+    common::{
+        entity::{EntityHandle, PrototypeHandle},
+        instance::GPUInstanceHandle,
+    },
+    world::{WorldUpdateError, instance_manager::InstanceHandle},
 };
 
 #[derive(Default)]

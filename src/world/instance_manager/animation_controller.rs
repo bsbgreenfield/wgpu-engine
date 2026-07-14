@@ -3,12 +3,10 @@ use std::collections::HashMap;
 use time::{Duration, ext::InstantExt};
 
 use crate::{
-    animation::animation::{AnimationInstance, EntityAnimations},
+    animation::{AnimationInstance, EntityAnimations},
+    common::entity::EntityHandle,
     util::types::Mat4F32,
-    world::{
-        entity_manager::EntityHandle,
-        instance_manager::{AnimationUpdate, InstanceHandle, RenderFrame},
-    },
+    world::instance_manager::{AnimationUpdate, InstanceHandle, RenderFrame},
 };
 
 #[derive(Default)]

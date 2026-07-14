@@ -1,14 +1,13 @@
 use std::fmt::Debug;
 
 use crate::{
+    common::instance::{GPUInstanceHandle, InstanceHandle},
     renderer::{
         InstanceUploadJob, StorageData,
         bind_groups::{BindGroupUploadResult, SharedInstanceData},
         gpu_allocator::{GPUChunk, VertexArenaError, allocation_table::AllocationTable},
-        renderer::GPUInstanceHandle,
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
-    world::instance_manager::InstanceHandle,
 };
 
 #[allow(unused)]

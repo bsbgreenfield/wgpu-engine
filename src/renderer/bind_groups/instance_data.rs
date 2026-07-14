@@ -1,13 +1,14 @@
-use crate::renderer::{
-    InstanceUploadJob, bind_groups::BindGroupUploadResult, gpu_allocator::VertexArenaError,
-    renderer::GPUInstanceHandle,
+use crate::{
+    common::instance::{GPUInstanceHandle, InstanceHandle},
+    renderer::{
+        InstanceUploadJob, bind_groups::BindGroupUploadResult, gpu_allocator::VertexArenaError,
+    },
 };
 use std::num::NonZero;
 
 use crate::{
     renderer::{bind_groups::BindGroupProvider, gpu_allocator::instance_arena::InstanceArena},
     util::types::{GlobalTransform, InstanceOffset, InstanceRecordData},
-    world::instance_manager::InstanceHandle,
 };
 
 pub struct InstanceDataBindGroup {

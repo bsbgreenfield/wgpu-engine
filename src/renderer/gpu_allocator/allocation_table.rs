@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::renderer::{
-    gpu_allocator::{AllocMetaData, VertexArenaError},
-    renderer::GPUInstanceHandle,
+use crate::{
+    common::instance::GPUInstanceHandle,
+    renderer::gpu_allocator::{AllocMetaData, VertexArenaError},
 };
 
 pub(super) struct AllocationTable {

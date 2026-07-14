@@ -1,15 +1,18 @@
 #[cfg(test)]
 mod integration_tests {
 
-    use std::{collections::btree_map::Range, fmt::Debug};
+    use std::fmt::Debug;
 
     use crate::{
-        animation::animation::AnimationTransformType,
+        animation::AnimationTransformType,
         app::{app::App, app_config::AppConfig, app_state::AppState},
-        renderer::{DrawItem, Instruction, PrototypeHandle, RenderConstant, RenderUpdateDelta},
+        common::{
+            entity::{EntityHandle, PrototypeHandle},
+            instance::InstanceHandle,
+        },
+        renderer::{DrawItem, Instruction, RenderConstant, RenderUpdateDelta},
         world::{
-            entity_manager::EntityHandle,
-            instance_manager::{ArchetypeId, InstanceHandle, archetype_table::APosition},
+            instance_manager::{ArchetypeId, archetype_table::APosition},
             scene::Scene,
             world::{World, WorldUpdateDelta},
         },

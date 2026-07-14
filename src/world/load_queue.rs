@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    asset_manager::{AssetHandle, AssetLoadResult, asset_manager_new::AssetManager},
+    asset_manager::{AssetHandle, AssetLoadResult, asset_manager::AssetManager},
+    common::entity::EntityHandle,
     world::{
         WorldUpdateError,
-        entity_manager::{EntityHandle, entity_manager::EntityManager},
+        entity_manager::entity_manager::EntityManager,
         scene::{Scene, SceneId, SceneLoadLevel},
     },
 };
@@ -210,7 +211,7 @@ impl EntityLoadQueue {
 #[cfg(test)]
 mod load_queue_tests {
     use crate::{
-        asset_manager::{asset_manager_new::AssetManager, gltf_asset::GltfAsset},
+        asset_manager::{asset_manager::AssetManager, gltf_asset::GltfAsset},
         renderer::GPUAllocationHandle,
         world::{
             entity_manager::{

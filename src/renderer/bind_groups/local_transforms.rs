@@ -1,14 +1,13 @@
 use std::num::NonZero;
 
 use crate::{
+    common::instance::{GPUInstanceHandle, InstanceHandle},
     renderer::{
         InstanceUploadJob,
         bind_groups::{BindGroupProvider, BindGroupUploadResult},
         gpu_allocator::{VertexArenaError, instance_arena::InstanceArena},
-        renderer::GPUInstanceHandle,
     },
     util::types::{LocalTransform, Mat4F32},
-    world::instance_manager::InstanceHandle,
 };
 pub struct LocalTransformBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,

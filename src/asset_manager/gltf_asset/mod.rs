@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    animation::animation::{AnimationChannels, AnimationSampler},
+    animation::{AnimationChannels, AnimationSampler},
     app::GPUAssetUploadJob,
     asset_manager::{
         Asset, AssetHandle, AssetLoadError, ModelBuilderError, gltf_asset::mesh::Mesh,

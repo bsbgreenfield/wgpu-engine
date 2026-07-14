@@ -4,6 +4,7 @@ use wgpu::RenderPass;
 
 use crate::{
     app::app_config::AppConfig,
+    common::instance::GPUInstanceHandle,
     renderer::{
         DrawPacket, InstanceUploadJob, Instruction, PrototypeHandle, RenderCategory,
         RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
@@ -73,11 +74,6 @@ impl VertexArenaCollection {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct GPUInstanceHandle {
-    pub prototype: PrototypeHandle,
-    pub instance_id: u32,
-}
 impl RenderKey for GPUInstanceHandle {
     fn as_key(&self) -> u64 {
         let i = self.instance_id as u64;
@@ -116,11 +112,11 @@ pub struct Renderer {
 impl Renderer {
     #[cfg(test)]
     pub fn get_prototype_count(&self) -> usize {
-        self.bind_groups.prototypes.len()
+        self.bind_groups.get_prototype_count()
     }
     #[cfg(test)]
     pub fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
-        self.bind_groups.prototypes.get(handle).map(|p| p.ref_count)
+        self.bind_groups.get_prototype_ref_count(handle)
     }
     pub fn new() -> Self {
         Self {
@@ -246,16 +242,7 @@ impl Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        let prototype = job.gpu_instance_handle.prototype.clone();
-        let upload_result = self
-            .bind_groups
-            .local_transforms
-            .upload_local_transforms(job, queue, device)?;
-        self.bind_groups
-            .prototypes
-            .entry(prototype)
-            .and_modify(|entry| entry.local_transforms_slot = upload_result.alloc_meta_idx);
-        Ok(upload_result.buffer_offset)
+        self.bind_groups.upload_local_transforms(job, queue, device)
     }
 
     pub(super) fn upload_skin_data<'frame>(
@@ -265,16 +252,8 @@ impl Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        let prototype = joint_job.gpu_instance_handle.prototype.clone();
-        let upload_result = self
-            .bind_groups
-            .skinning
-            .upload(joint_job, ibm_job, queue, device)?;
         self.bind_groups
-            .prototypes
-            .entry(prototype)
-            .and_modify(|entry| entry.joint_transforms_slot = Some(upload_result.alloc_meta_idx));
-        Ok(upload_result.buffer_offset)
+            .upload_skin_data(joint_job, ibm_job, queue, device)
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {

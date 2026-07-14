@@ -23,7 +23,7 @@ pub struct PipelineCollection {
 }
 
 impl PipelineCollection {
-    pub(super) fn new(config: &AppConfig) -> Self {
+    pub fn new(config: &AppConfig) -> Self {
         use super::RenderCategory::*;
         Self {
             opaque_skinned: Self::create_pipeline(OpaqueSkinned, config),

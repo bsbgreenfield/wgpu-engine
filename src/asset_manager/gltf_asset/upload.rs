@@ -3,7 +3,7 @@ use std::{any::TypeId, sync::Arc};
 use cgmath::SquareMatrix;
 
 use crate::{
-    animation::animation::{Animation, EntityAnimationData},
+    animation::{Animation, EntityAnimationData},
     asset_manager::{
         AssetLoadError, MeshRenderables, ProvidesAnimationData, ProvidesMeshData,
         gltf_asset::{
@@ -130,7 +130,7 @@ impl ProvidesAnimationData for GltfAsset {
         &self,
         animation_accessor: &AnimationAccessor,
         mesh_accesor: &MeshAcessor,
-    ) -> crate::animation::animation::EntityAnimationData {
+    ) -> crate::animation::EntityAnimationData {
         let mut jts: Vec<Vec<Mat4F32>> = self
             .skins
             .iter()

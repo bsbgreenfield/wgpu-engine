@@ -2,7 +2,7 @@
 mod rigid_tests {
 
     use crate::{
-        animation::animation::{AnimationSampler, AnimationTransforms, InterpolationType},
+        animation::{AnimationSampler, AnimationTransforms, InterpolationType},
         asset_manager::gltf_asset::NodeTransforms,
     };
 

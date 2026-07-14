@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::range::Range;
 use std::sync::Arc;
 
-use crate::animation::animation::{
+use crate::animation::{
     AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
     InterpolationType,
 };

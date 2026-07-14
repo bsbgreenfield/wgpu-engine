@@ -2,10 +2,8 @@ use std::fmt::Display;
 
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError},
-    world::{
-        entity_manager::{EntityHandle, EntityManagerError},
-        instance_manager::InstanceHandle,
-    },
+    common::{entity::EntityHandle, instance::InstanceHandle},
+    world::entity_manager::EntityManagerError,
 };
 
 pub mod camera;

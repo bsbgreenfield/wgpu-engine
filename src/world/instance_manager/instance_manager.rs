@@ -1,17 +1,19 @@
 use std::collections::HashMap;
-#[cfg(test)]
-use std::sync::Arc;
 
 use crate::{
-    animation::animation::EntityAnimations,
+    animation::EntityAnimations,
     app::app::AppCommand,
-    asset_manager::asset_manager_new::AssetManager,
-    renderer::{DrawItem, PrototypeHandle, RenderPacket, renderer::GPUInstanceHandle},
+    asset_manager::asset_manager::AssetManager,
+    common::{
+        entity::{EntityHandle, PrototypeHandle},
+        instance::{GPUInstanceHandle, InstanceHandle},
+    },
+    renderer::{DrawItem, RenderPacket},
     world::{
         WorldUpdateError,
-        entity_manager::{EntityHandle, Renderables, entity_manager::EntityManager},
+        entity_manager::{Renderables, entity_manager::EntityManager},
         instance_manager::{
-            Archetype, ArchetypeId, InstanceHandle, RenderFrame,
+            Archetype, ArchetypeId, RenderFrame,
             animation_controller::AnimationController,
             archetype_table::{APositionTable, ArchetypeTable},
             gpu_bind_registry::GPUBindRegistry,
@@ -19,99 +21,17 @@ use crate::{
         world::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
     },
 };
-#[cfg(test)]
-use crate::{
-    animation::animation::{Animation, AnimationInstance},
-    util::types::GlobalTransform,
-};
 
 pub struct InstanceManager {
     pub(super) _next_id: u16,
-    gpu_bind_registry: GPUBindRegistry,
+    pub(super) gpu_bind_registry: GPUBindRegistry,
     pub(super) pos: APositionTable,
-    render_groups: Vec<RenderGroup>,
+    pub(super) render_groups: Vec<RenderGroup>,
     pub(super) sparse_entity_group: Vec<usize>,
     pub animation_controller: AnimationController,
 }
 
 impl InstanceManager {
-    #[cfg(test)]
-    pub fn get_registered_prototypes(&self) -> &HashMap<EntityHandle, PrototypeHandle> {
-        &self.gpu_bind_registry.registered_prototypes
-    }
-    #[cfg(test)]
-    pub fn get_registered_instances(&self) -> &HashMap<GPUInstanceHandle, InstanceHandle> {
-        &self.gpu_bind_registry.registered_instances
-    }
-
-    #[cfg(test)]
-    pub fn assert_animation_exists(&self, instance_handle: &InstanceHandle) {
-        assert!(
-            self.animation_controller
-                .registered_animations
-                .contains_key(&instance_handle.entity_handle)
-        )
-    }
-
-    #[cfg(test)]
-    pub fn get_joint_slot_map(&self, entity_handle: &EntityHandle) -> &Vec<usize> {
-        &self
-            .animation_controller
-            .registered_animations
-            .get(entity_handle)
-            .expect("entity must be registered")
-            .skin_offset_map
-    }
-
-    #[cfg(test)]
-    pub fn get_active_animations(&self) -> &[AnimationInstance] {
-        &self.animation_controller.active_animations
-    }
-
-    #[cfg(test)]
-    pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
-        self.gpu_bind_registry
-            .registered_instances
-            .values()
-            .cloned()
-            .collect()
-    }
-
-    #[cfg(test)]
-    pub fn get_animation_ref(
-        &self,
-        entity_handle: &EntityHandle,
-        index: usize,
-    ) -> &Arc<dyn Animation> {
-        &self
-            .animation_controller
-            .registered_animations
-            .get(entity_handle)
-            .unwrap()
-            .animation[index]
-    }
-
-    #[cfg(test)]
-    pub fn get_entity_animation(&self, entity_handle: &EntityHandle) -> Option<&EntityAnimations> {
-        self.animation_controller
-            .registered_animations
-            .get(entity_handle)
-    }
-
-    #[cfg(test)]
-    pub fn get_pos_table_positions(&self) -> Vec<GlobalTransform> {
-        self.pos.get_positions()
-    }
-    #[cfg(test)]
-    pub fn get_pos_table_handles(&self) -> Vec<InstanceHandle> {
-        self.pos.arena.handles.clone()
-    }
-
-    #[cfg(test)]
-    pub fn get_groups(&self) -> &Vec<RenderGroup> {
-        &self.render_groups
-    }
-
     pub fn register_prototype(
         &mut self,
         entity_handle: EntityHandle,
@@ -192,23 +112,6 @@ impl InstanceManager {
             }
         }
         self.animation_controller.update();
-    }
-
-    #[cfg(test)]
-    pub fn run_animations(&mut self, time_delta: f32) {
-        self.animation_controller.run_animations(time_delta);
-    }
-
-    #[cfg(test)]
-    pub fn get_buffer_slot_map(&self, instance_idx: usize) -> &Vec<usize> {
-        let a = &self.animation_controller.active_animations[instance_idx];
-        let entity_anim = self
-            .animation_controller
-            .registered_animations
-            .get(&a.instance_handle.entity_handle)
-            .unwrap();
-
-        &entity_anim.mesh_slot_map
     }
 
     pub fn spawn_instances(

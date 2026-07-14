@@ -6,9 +6,9 @@ use std::range::Range;
 use bytemuck::Pod;
 use std::error::Error;
 
+use crate::common::instance::GPUInstanceHandle;
 use crate::renderer::StorageData;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
-use crate::renderer::renderer::GPUInstanceHandle;
 use crate::util::types::{
     GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
     LocalTransform,
@@ -31,7 +31,7 @@ struct AllocMetaData {
     node_id: usize,
     ref_count: usize,
 }
-pub(super) struct GPUChunk<T: bytemuck::Pod + Debug> {
+pub struct GPUChunk<T: bytemuck::Pod + Debug> {
     remaining_space: u32,
     buffer: wgpu::Buffer,
     allocator: FreeListAllocator,
@@ -39,7 +39,7 @@ pub(super) struct GPUChunk<T: bytemuck::Pod + Debug> {
 }
 
 impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
-    pub(super) fn gpu_alloc(
+    pub fn gpu_alloc(
         &mut self,
         data: &[u8],
         queue: &wgpu::Queue,
@@ -61,7 +61,7 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
     }
 }
 
-pub(super) trait GPUAllocator<T: Pod> {
+pub trait GPUAllocator<T: Pod> {
     type UploadJob<'a>;
     type AllocationError: Error;
 
@@ -147,7 +147,7 @@ impl Display for VertexArenaError {
 
 impl Error for VertexArenaError {}
 
-pub(super) struct UploadMeshJob<'frame, V: ModelVertex> {
+pub struct UploadMeshJob<'frame, V: ModelVertex> {
     pub verts: &'frame [u8],
     pub(super) global_alloc_id: u32,
     _t: PhantomData<V>,
@@ -163,7 +163,7 @@ impl<'frame, V: ModelVertex> UploadMeshJob<'frame, V> {
     }
 }
 
-pub(super) struct UploadIndexJob<'frame> {
+pub struct UploadIndexJob<'frame> {
     pub indices: &'frame [u8],
     pub(super) global_alloc_id: u32,
 }

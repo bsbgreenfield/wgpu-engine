@@ -3,15 +3,14 @@ use std::{iter::Peekable, slice::Iter};
 
 use crate::{
     asset_manager::AssetHandle,
+    common::instance::{GPUInstanceHandle, InstanceHandle},
     renderer::{
         BufferType, GPUAllocationHandle, GPUBindings, InstanceUploadJob, Instruction, Operations,
         PrototypeHandle, RenderConstant, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
-        VertexArenaSelector,
-        gpu_allocator::UploadIndexJob,
-        renderer::{GPUInstanceHandle, Renderer},
+        VertexArenaSelector, gpu_allocator::UploadIndexJob, renderer::Renderer,
     },
     util::types::{InstanceRecordData, PNUJWVertex, PNUVertex},
-    world::{RenderKey, instance_manager::InstanceHandle},
+    world::RenderKey,
 };
 
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
@@ -38,7 +37,7 @@ impl<'frame> Renderer {
             _ => panic!("expected a byte"),
         }
     }
-    pub(super) fn interpret(
+    pub fn interpret(
         &mut self,
         constants: Vec<RenderConstant>,
         instructions: Vec<Instruction>,
