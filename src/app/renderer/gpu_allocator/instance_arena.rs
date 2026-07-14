@@ -4,9 +4,7 @@ use crate::{
     app::renderer::{
         InstanceUploadJob, StorageData,
         bind_groups::{BindGroupUploadResult, SharedInstanceData},
-        gpu_allocator::{
-            GPUChunk, GPUInstanceAllocator, VertexArenaError, allocation_table::AllocationTable,
-        },
+        gpu_allocator::{GPUChunk, VertexArenaError, allocation_table::AllocationTable},
         renderer::GPUInstanceHandle,
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},

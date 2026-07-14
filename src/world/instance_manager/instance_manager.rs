@@ -405,8 +405,6 @@ impl InstanceManager {
             &self.sparse_entity_group,
         );
 
-        println!("HANDLES: {:?}", self.pos.arena.handles);
-        println!("RECORD INDICES: {:?}", self.pos.record_indices);
         for (i, record_slot) in self.pos.record_indices.iter().enumerate() {
             packet.global_transforms[*record_slot as usize] = self.pos.positions[i].into();
         }

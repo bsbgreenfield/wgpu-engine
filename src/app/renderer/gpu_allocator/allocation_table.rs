@@ -31,26 +31,30 @@ impl AllocationTable {
         chunk_id: usize,
         node_id: usize,
     ) -> usize {
-        self.table.insert(handle, self.alloc_meta.len());
         let meta = AllocMetaData {
             chunk_id,
             node_id,
             ref_count: 1,
         };
-        if let Some(free_idx) = self.free_list.pop() {
-            self.alloc_meta[free_idx] = meta;
-            free_idx
-        } else {
-            self.alloc_meta.push(meta);
-            self.alloc_meta.len() - 1
-        }
+        let slot = match self.free_list.pop() {
+            Some(free_idx) => {
+                self.alloc_meta[free_idx] = meta;
+                free_idx
+            }
+            None => {
+                self.alloc_meta.push(meta);
+                self.alloc_meta.len() - 1
+            }
+        };
+        self.table.insert(handle, slot);
+        slot
     }
 
     pub(super) fn remove(
         &mut self,
         handle: &GPUInstanceHandle,
     ) -> Result<Option<AllocMetaData>, VertexArenaError> {
-        let mut res: Option<AllocMetaData> = None;
+        let res: Option<AllocMetaData>;
         let idx = *self
             .table
             .get(handle)
@@ -62,8 +66,8 @@ impl AllocationTable {
             .ok_or(VertexArenaError::MetadataNotFound)?;
         meta.ref_count -= 1;
         if meta.ref_count == 0 {
-            let meta = self.alloc_meta.remove(idx);
-            res = Some(meta);
+            let goner = self.alloc_meta[idx].clone();
+            res = Some(goner);
         } else {
             panic!("need to implement removing ALL instances of the meta data?")
         }

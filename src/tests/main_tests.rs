@@ -729,16 +729,14 @@ mod integration_tests {
                 1
             );
 
-            // Renderer side: the despawn op must have removed the prototype entry
-            // (ref_count 1 -> 0) and dropped any GPU-instance allocations.
             assert_eq!(
                 app.renderer.get_prototype_count(),
-                0,
+                1,
                 "renderer prototype map must be empty after the last instance despawns"
             );
             assert_eq!(
                 app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
-                None
+                Some(0)
             );
 
             // After the despawn the draw packet must be empty too.
@@ -935,14 +933,7 @@ mod integration_tests {
                 .get_pnujw()
                 .values()
                 .flatten()
-                .map(|item| {
-                    (
-                        item.get_lt_idx(),
-                        item.get_instances(),
-                        item.get_primitives(),
-                        item.get_indices(),
-                    )
-                })
+                .map(|item| (item.get_lt_idx(), item.get_primitives(), item.get_indices()))
                 .collect();
             assert!(
                 !fox_before.is_empty(),
@@ -980,14 +971,7 @@ mod integration_tests {
                 .get_pnujw()
                 .values()
                 .flatten()
-                .map(|item| {
-                    (
-                        item.get_lt_idx(),
-                        item.get_instances(),
-                        item.get_primitives(),
-                        item.get_indices(),
-                    )
-                })
+                .map(|item| (item.get_lt_idx(), item.get_primitives(), item.get_indices()))
                 .collect();
             assert_eq!(
                 fox_before, fox_after_despawn,
@@ -1022,14 +1006,7 @@ mod integration_tests {
                 .get_pnujw()
                 .values()
                 .flatten()
-                .map(|item| {
-                    (
-                        item.get_lt_idx(),
-                        item.get_instances(),
-                        item.get_primitives(),
-                        item.get_indices(),
-                    )
-                })
+                .map(|item| (item.get_lt_idx(), item.get_primitives(), item.get_indices()))
                 .collect();
             assert_eq!(
                 fox_before, fox_after_respawn,

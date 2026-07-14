@@ -28,7 +28,7 @@ static MIMIMUM_VERTEX_ALLOCATION_SIZE: usize = 2048;
 
 static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct AllocMetaData {
     chunk_id: usize,
     node_id: usize,
