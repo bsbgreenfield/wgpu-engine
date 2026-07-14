@@ -1,11 +1,12 @@
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 
 use crate::{
-    app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
+    app::GPUAssetUploadJob,
     asset_manager::{
         Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, LoadedAsset,
         UnloadedAssetData,
     },
+    renderer::GPUAllocationHandle,
     world::{entity_manager::components::ResourceBacking, scene::SceneLoadLevel},
 };
 

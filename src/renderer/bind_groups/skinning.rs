@@ -3,9 +3,9 @@ use std::num::NonZero;
 use wgpu::ShaderStages;
 
 use crate::{
-    app::renderer::{
+    renderer::{
         InstanceUploadJob,
-        bind_groups::{BindGroupProvider, BindGroupUploadResult, SharedInstanceData},
+        bind_groups::{BindGroupProvider, BindGroupUploadResult},
         gpu_allocator::{GPUInstanceAllocator, VertexArenaError, instance_arena::InstanceArena},
         renderer::GPUInstanceHandle,
     },

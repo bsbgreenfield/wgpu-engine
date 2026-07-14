@@ -5,12 +5,8 @@ mod integration_tests {
 
     use crate::{
         animation::animation::AnimationTransformType,
-        app::{
-            app::App,
-            app_config::AppConfig,
-            app_state::AppState,
-            renderer::{DrawItem, Instruction, PrototypeHandle, RenderConstant, RenderUpdateDelta},
-        },
+        app::{app::App, app_config::AppConfig, app_state::AppState},
+        renderer::{DrawItem, Instruction, PrototypeHandle, RenderConstant, RenderUpdateDelta},
         world::{
             entity_manager::EntityHandle,
             instance_manager::{ArchetypeId, InstanceHandle, archetype_table::APosition},

@@ -5,16 +5,16 @@ use std::{fmt::Display, ops::Range};
 use bytemuck::Pod;
 use std::error::Error;
 
-use crate::app::renderer::bind_groups::BindGroupUploadResult;
-use crate::app::renderer::gpu_allocator::free_list::FreeListAllocator;
-use crate::app::renderer::renderer::GPUInstanceHandle;
-use crate::app::renderer::{InstanceUploadJob, StorageData};
+use crate::renderer::bind_groups::BindGroupUploadResult;
+use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
+use crate::renderer::renderer::GPUInstanceHandle;
+use crate::renderer::{InstanceUploadJob, StorageData};
 use crate::util::types::{
     GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
     LocalTransform,
 };
 use crate::{
-    app::renderer::GPUAllocationHandle, util::types::ModelVertex,
+    renderer::GPUAllocationHandle, util::types::ModelVertex,
     world::instance_manager::InstanceHandle,
 };
 

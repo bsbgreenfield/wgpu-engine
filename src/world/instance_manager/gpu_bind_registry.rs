@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::renderer::{PrototypeHandle, renderer::GPUInstanceHandle},
+    renderer::{PrototypeHandle, renderer::GPUInstanceHandle},
     world::{WorldUpdateError, entity_manager::EntityHandle, instance_manager::InstanceHandle},
 };
 

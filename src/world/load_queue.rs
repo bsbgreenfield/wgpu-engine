@@ -210,8 +210,8 @@ impl EntityLoadQueue {
 #[cfg(test)]
 mod load_queue_tests {
     use crate::{
-        app::renderer::GPUAllocationHandle,
         asset_manager::{asset_manager_new::AssetManager, gltf_asset::GltfAsset},
+        renderer::GPUAllocationHandle,
         world::{
             entity_manager::{
                 components::{MeshAcessor, MeshCollectionDescriptor},

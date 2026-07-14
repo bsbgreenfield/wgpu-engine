@@ -1,12 +1,10 @@
 use crate::{
-    app::{
-        app_config::AppConfig,
-        renderer::{
-            RenderCategory,
-            bind_groups::{
-                BindGroupProvider, instance_data::InstanceDataBindGroup,
-                local_transforms::LocalTransformBindGroup, skinning::SkinningBindGroup,
-            },
+    app::app_config::AppConfig,
+    renderer::{
+        RenderCategory,
+        bind_groups::{
+            BindGroupProvider, instance_data::InstanceDataBindGroup,
+            local_transforms::LocalTransformBindGroup, skinning::SkinningBindGroup,
         },
     },
     util::types::{ModelVertex, PNUJWVertex, PNUVertex},
@@ -65,7 +63,7 @@ impl PipelineCollection {
                     .create_shader_module(wgpu::ShaderModuleDescriptor {
                         label: Some("opaque_static shader"),
                         source: wgpu::ShaderSource::Wgsl(
-                            include_str!("../../static_shader.wgsl").into(),
+                            include_str!("../static_shader.wgsl").into(),
                         ),
                     });
                 let layout = Self::opaque_static_layout(&config.device);
@@ -129,7 +127,7 @@ impl PipelineCollection {
                     .create_shader_module(wgpu::ShaderModuleDescriptor {
                         label: Some("opaque_skinned shader"),
                         source: wgpu::ShaderSource::Wgsl(
-                            include_str!("../../skinned_shader.wgsl").into(),
+                            include_str!("../skinned_shader.wgsl").into(),
                         ),
                     });
                 let layout = Self::opaque_skinned_layout(&config.device);

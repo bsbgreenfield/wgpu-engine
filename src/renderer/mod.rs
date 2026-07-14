@@ -3,11 +3,11 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData,
 use bytemuck::Pod;
 
 use crate::{
-    app::renderer::{
+    asset_manager::AssetHandle,
+    renderer::{
         gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
         renderer::GPUInstanceHandle,
     },
-    asset_manager::AssetHandle,
     util::types::{GlobalTransform, ModelVertex},
     world::{RenderKey, entity_manager::EntityHandle, instance_manager::InstanceHandle},
 };

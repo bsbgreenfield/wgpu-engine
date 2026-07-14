@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    app::renderer::{
+    renderer::{
         GPUAllocationHandle,
         gpu_allocator::{
             AllocMetaData, CHUNK_SIZE, GPUAllocator, GPUChunk, MIMIMUM_INDEX_ALLOCATION_SIZE,

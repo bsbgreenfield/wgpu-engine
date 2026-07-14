@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::{
-    app::renderer::renderer::GPUInstanceHandle,
+    renderer::renderer::GPUInstanceHandle,
     util::types::{LocalTransform, Mat4F32},
     world::instance_manager::InstanceHandle,
 };

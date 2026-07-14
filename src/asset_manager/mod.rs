@@ -5,8 +5,9 @@ use std::{
 
 use crate::{
     animation::animation::EntityAnimationData,
-    app::{GPUAssetUploadJob, renderer::GPUAllocationHandle},
+    app::GPUAssetUploadJob,
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
+    renderer::GPUAllocationHandle,
     world::{
         RenderKey,
         entity_manager::{

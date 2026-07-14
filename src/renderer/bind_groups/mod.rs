@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    app::renderer::{
+    renderer::{
         BufferType, PrototypeHandle, StorageData,
         bind_groups::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,

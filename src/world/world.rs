@@ -2,15 +2,12 @@ use std::{fmt::Debug, ops::Range};
 
 use super::scene::Scene;
 use crate::{
-    app::{
-        GPUAssetUploadJob,
-        app::AppCommand,
-        renderer::{
-            BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
-            RenderConstant, RenderUpdateDelta, renderer::GPUInstanceHandle,
-        },
-    },
+    app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetLoadError},
+    renderer::{
+        BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, PrototypeHandle,
+        RenderConstant, RenderUpdateDelta, renderer::GPUInstanceHandle,
+    },
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
     world::{
         RenderKey, WorldUpdateError,

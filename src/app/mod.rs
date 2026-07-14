@@ -1,8 +1,8 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    app::renderer::{RenderError, RenderUpdateError},
     asset_manager::{AssetHandle, AssetLoadError},
+    renderer::{RenderError, RenderUpdateError},
     util::types::{PNUJWVertex, PNUVertex, VIndex},
     world::WorldUpdateError,
 };
@@ -10,7 +10,6 @@ use crate::{
 pub mod app;
 pub mod app_config;
 pub mod app_state;
-pub mod renderer;
 
 #[derive(Debug, Clone)]
 pub struct GPUAssetUploadJob {

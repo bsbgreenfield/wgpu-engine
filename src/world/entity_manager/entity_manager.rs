@@ -2,10 +2,10 @@ use std::{collections::HashSet, mem::MaybeUninit, ops::Range, sync::Arc};
 
 use crate::{
     animation::animation::{Animation, EntityAnimationData},
-    app::renderer::{GPUAllocationHandle, PrototypeHandle},
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager_new::AssetManager,
     },
+    renderer::{GPUAllocationHandle, PrototypeHandle},
     util::types::{LocalTransform, Mat4F32},
     world::{
         entity_manager::{

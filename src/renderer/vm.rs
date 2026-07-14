@@ -2,14 +2,14 @@ use core::panic;
 use std::{iter::Peekable, slice::Iter};
 
 use crate::{
-    app::renderer::{
+    asset_manager::AssetHandle,
+    renderer::{
         BufferType, GPUAllocationHandle, GPUBindings, InstanceUploadJob, Instruction, Operations,
         PrototypeHandle, RenderConstant, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
         VertexArenaSelector,
         gpu_allocator::UploadIndexJob,
         renderer::{GPUInstanceHandle, Renderer},
     },
-    asset_manager::AssetHandle,
     util::types::{InstanceRecordData, PNUJWVertex, PNUVertex},
     world::{RenderKey, instance_manager::InstanceHandle},
 };

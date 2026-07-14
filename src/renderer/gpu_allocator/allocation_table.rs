@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::app::renderer::{
+use crate::renderer::{
     gpu_allocator::{AllocMetaData, VertexArenaError},
     renderer::GPUInstanceHandle,
 };

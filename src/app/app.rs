@@ -1,16 +1,9 @@
 use std::{sync::Arc, time::Instant};
 
 use crate::{
-    app::{
-        FrameError,
-        app_config::AppConfig,
-        app_state::AppState,
-        renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
-    },
-    world::{
-        scene::Scene,
-        world::{World, WorldUpdateDelta},
-    },
+    app::{FrameError, app_config::AppConfig, app_state::AppState},
+    renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
+    world::{scene::Scene, world::World},
 };
 use winit::{
     application::ApplicationHandler,

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::app::renderer::gpu_allocator::{CHUNK_SIZE, FreeListAllocError};
+use crate::renderer::gpu_allocator::{CHUNK_SIZE, FreeListAllocError};
 
 pub(super) struct FreeListAllocator {
     free_nodes: Vec<usize>,

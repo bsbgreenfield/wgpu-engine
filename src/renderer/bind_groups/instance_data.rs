@@ -1,4 +1,4 @@
-use crate::app::renderer::{
+use crate::renderer::{
     InstanceUploadJob,
     bind_groups::BindGroupUploadResult,
     gpu_allocator::{GPUInstanceAllocator, VertexArenaError},
@@ -7,7 +7,7 @@ use crate::app::renderer::{
 use std::num::NonZero;
 
 use crate::{
-    app::renderer::{bind_groups::BindGroupProvider, gpu_allocator::instance_arena::InstanceArena},
+    renderer::{bind_groups::BindGroupProvider, gpu_allocator::instance_arena::InstanceArena},
     util::types::{GlobalTransform, InstanceOffset, InstanceRecordData},
     world::instance_manager::InstanceHandle,
 };

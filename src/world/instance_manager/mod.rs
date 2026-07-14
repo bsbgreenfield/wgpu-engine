@@ -1,5 +1,5 @@
 use crate::{
-    app::renderer::renderer::GPUInstanceHandle,
+    renderer::renderer::GPUInstanceHandle,
     util::types::GlobalTransform,
     world::{
         RenderKey, entity_manager::EntityHandle,

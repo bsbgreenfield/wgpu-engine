@@ -3,16 +3,14 @@ use std::ops::Deref;
 use wgpu::RenderPass;
 
 use crate::{
-    app::{
-        app_config::AppConfig,
-        renderer::{
-            DrawPacket, InstanceUploadJob, Instruction, PrototypeHandle, RenderCategory,
-            RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
-            VertexArenaError, VertexArenaSelector,
-            bind_groups::BindGroupCollection,
-            gpu_allocator::{GPUAllocator, UploadIndexJob, vertex_arena::GPUArena},
-            pipeline::PipelineCollection,
-        },
+    app::app_config::AppConfig,
+    renderer::{
+        DrawPacket, InstanceUploadJob, Instruction, PrototypeHandle, RenderCategory,
+        RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
+        VertexArenaError, VertexArenaSelector,
+        bind_groups::BindGroupCollection,
+        gpu_allocator::{GPUAllocator, UploadIndexJob, vertex_arena::GPUArena},
+        pipeline::PipelineCollection,
     },
     util::types::{
         InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex,

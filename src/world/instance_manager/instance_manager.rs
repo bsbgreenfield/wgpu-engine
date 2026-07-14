@@ -4,10 +4,8 @@ use std::sync::Arc;
 
 use crate::{
     animation::animation::EntityAnimations,
-    app::{
-        app::AppCommand,
-        renderer::{DrawItem, PrototypeHandle, RenderPacket, renderer::GPUInstanceHandle},
-    },
+    app::app::AppCommand,
+    renderer::{DrawItem, PrototypeHandle, RenderPacket, renderer::GPUInstanceHandle},
     world::{
         WorldUpdateError,
         entity_manager::{
