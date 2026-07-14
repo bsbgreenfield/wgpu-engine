@@ -113,8 +113,10 @@ impl BindGroupProvider for InstanceDataBindGroup {
     }
 
     fn despawn(&mut self, handle: &GPUInstanceHandle) {
+        // all of these are unique per instance,
+        // so when despawn is called, the data needs to actually be removed
+        // reather than just decrementing a ref count
         let _ = self.record_arena.remove(handle);
-
         let _ = self.global_transforms.remove(handle);
         let _ = self.offsets.remove(handle);
     }

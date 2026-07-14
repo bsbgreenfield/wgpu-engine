@@ -112,6 +112,6 @@ impl BindGroupProvider for LocalTransformBindGroup {
     }
 
     fn despawn(&mut self, handle: &GPUInstanceHandle) {
-        let _ = self.lt_arena.remove(handle);
+        let _ = self.lt_arena.dealloc(handle);
     }
 }

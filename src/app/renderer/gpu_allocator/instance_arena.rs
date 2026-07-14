@@ -89,87 +89,17 @@ impl<T: StorageData> InstanceArena<T> {
     }
 }
 
-impl SharedInstanceData for InstanceArena<LocalTransform> {
-    fn register_copy_binding(
-        &mut self,
-        slot_index: usize,
-        new_handle: &GPUInstanceHandle,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
-        self.copy_binding_impl(slot_index, new_handle, device, queue)
-    }
-    fn register_shared_binding(
-        &mut self,
-        slot_index: usize,
-        new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
-        self.alloc_table.register_instance(*new_handle, slot_index);
-        Ok(self.resolve(new_handle))
-    }
+impl SharedInstanceData for LocalTransform {}
+impl SharedInstanceData for JointTransform {}
+impl SharedInstanceData for InverseBindMatrix {}
 
-    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle) {
-        todo!()
-    }
-}
-
-impl SharedInstanceData for InstanceArena<JointTransform> {
-    fn register_copy_binding(
-        &mut self,
-        slot_index: usize,
-        new_handle: &GPUInstanceHandle,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
-        self.copy_binding_impl(slot_index, new_handle, device, queue)
-    }
-    fn register_shared_binding(
-        &mut self,
-        slot_index: usize,
-        new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
-        self.alloc_table.register_instance(*new_handle, slot_index);
-        Ok(self.resolve(new_handle))
-    }
-
-    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle) {
-        todo!()
-    }
-}
-
-impl SharedInstanceData for InstanceArena<InverseBindMatrix> {
-    fn register_copy_binding(
-        &mut self,
-        _slot_index: usize,
-        _new_handle: &GPUInstanceHandle,
-        _queue: &wgpu::Queue,
-        _device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
-        panic!("should not need to copy ibms")
-    }
-
-    fn register_shared_binding(
-        &mut self,
-        slot_index: usize,
-        new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
-        self.alloc_table.register_instance(*new_handle, slot_index);
-        Ok(self.resolve(new_handle))
-    }
-
-    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle) {
-        todo!()
-    }
-}
-
-impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
-    type AllocationError = VertexArenaError;
-    fn upload<'a>(
+impl<T: StorageData> InstanceArena<T> {
+    pub fn upload<'a>(
         &mut self,
         job: InstanceUploadJob<'a, T>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<BindGroupUploadResult, Self::AllocationError> {
+    ) -> Result<BindGroupUploadResult, VertexArenaError> {
         if self.chunks.is_empty() {
             self.add_buffer(device);
         }
@@ -197,31 +127,62 @@ impl<T: StorageData> GPUInstanceAllocator<T> for InstanceArena<T> {
         }
         Err(VertexArenaError::MaxAllocationReached)
     }
-    fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), Self::AllocationError> {
-        todo!()
+
+    pub fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), VertexArenaError> {
+        // TODO: if this is called on shared instance data, then we
+        // need to remove ALL meta and then dealloc
+        match self.alloc_table.remove(handle)? {
+            Some(meta) => {
+                self.chunks[meta.chunk_id].allocator.dealloc(meta.node_id)?;
+            }
+            None => todo!(),
+        }
+
+        Ok(())
     }
 
-    fn purge_prototype_data(&mut self, slot_id: usize) {
-        todo!("remove meta data from AllocationTable. deallocate data in chunk")
-    }
-
-    fn resolve(&self, handle: &GPUInstanceHandle) -> u32 {
+    pub fn resolve(&self, handle: &GPUInstanceHandle) -> u32 {
         let meta = self.alloc_table.resolve(handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         range.start / size_of::<T>() as u32
     }
 
-    fn resolve_buffer(&self, _instance_handle: &InstanceHandle) -> &wgpu::Buffer {
+    pub fn resolve_buffer(&self, _instance_handle: &InstanceHandle) -> &wgpu::Buffer {
         //TODO: if we add more chunks, then this will have to actually resolve
         &self.chunks[0].buffer
     }
 
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             max_chunks: 1,
             chunks: vec![],
             alloc_table: AllocationTable::new(),
             label: Some("Local Transform arena".to_string()),
         }
+    }
+}
+
+impl<T: SharedInstanceData + Debug + bytemuck::Pod> InstanceArena<T> {
+    pub fn register_shared_binding(
+        &mut self,
+        slot_index: usize,
+        new_handle: &GPUInstanceHandle,
+    ) -> Result<u32, VertexArenaError> {
+        self.alloc_table.register_instance(*new_handle, slot_index);
+        Ok(self.resolve(new_handle))
+    }
+
+    pub fn register_copy_binding(
+        &mut self,
+        slot_idx: usize,
+        new_handle: &GPUInstanceHandle,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<u32, VertexArenaError> {
+        self.copy_binding_impl(slot_idx, new_handle, device, queue)
+    }
+
+    pub fn dealloc(&mut self, handle: &GPUInstanceHandle) -> Result<(), VertexArenaError> {
+        self.alloc_table.dealloc(handle)
     }
 }

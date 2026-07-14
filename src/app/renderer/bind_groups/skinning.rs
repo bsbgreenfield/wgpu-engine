@@ -174,7 +174,7 @@ impl BindGroupProvider for SkinningBindGroup {
     }
 
     fn despawn(&mut self, handle: &GPUInstanceHandle) {
-        let _ = self.joint_arena.remove(handle);
-        let _ = self.ibm_arena.remove(handle);
+        let _ = self.joint_arena.dealloc(handle);
+        let _ = self.ibm_arena.dealloc(handle);
     }
 }

@@ -46,7 +46,11 @@ impl AllocationTable {
         }
     }
 
-    pub(super) fn remove(&mut self, handle: &GPUInstanceHandle) -> Result<(), VertexArenaError> {
+    pub(super) fn remove(
+        &mut self,
+        handle: &GPUInstanceHandle,
+    ) -> Result<Option<AllocMetaData>, VertexArenaError> {
+        let mut res: Option<AllocMetaData> = None;
         let idx = *self
             .table
             .get(handle)
@@ -57,8 +61,14 @@ impl AllocationTable {
             .get_mut(idx)
             .ok_or(VertexArenaError::MetadataNotFound)?;
         meta.ref_count -= 1;
+        if meta.ref_count == 0 {
+            let meta = self.alloc_meta.remove(idx);
+            res = Some(meta);
+        } else {
+            panic!("need to implement removing ALL instances of the meta data?")
+        }
         self.free_list.push(idx);
-        Ok(())
+        Ok(res)
     }
     pub(super) fn dealloc(&mut self, handle: &GPUInstanceHandle) -> Result<(), VertexArenaError> {
         let idx = *self
@@ -71,10 +81,6 @@ impl AllocationTable {
             .get_mut(idx)
             .ok_or(VertexArenaError::MetadataNotFound)?;
         meta.ref_count -= 1;
-        //if meta.ref_count == 0 {
-        //    let meta = self.alloc_meta.remove(idx);
-        //    res = Some(meta);
-        //}
         self.free_list.push(idx);
         Ok(())
     }

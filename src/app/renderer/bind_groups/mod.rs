@@ -7,7 +7,6 @@ use crate::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
             skinning::SkinningBindGroup,
         },
-        gpu_allocator::VertexArenaError,
         renderer::GPUInstanceHandle,
     },
     world::instance_manager::InstanceHandle,
@@ -25,23 +24,7 @@ pub(super) trait BindGroupProvider {
     fn despawn(&mut self, handle: &GPUInstanceHandle);
 }
 
-pub(super) trait SharedInstanceData {
-    fn register_shared_binding(
-        &mut self,
-        slot_index: usize,
-        new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError>;
-
-    fn register_copy_binding(
-        &mut self,
-        slot_index: usize,
-        new_handle: &GPUInstanceHandle,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError>;
-
-    fn decrement_instance_count(&mut self, handle: &GPUInstanceHandle);
-}
+pub(super) trait SharedInstanceData: StorageData {}
 
 #[derive(Debug)]
 pub struct PrototypeEntry {
