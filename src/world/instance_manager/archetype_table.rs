@@ -2,13 +2,17 @@ use crate::{
     common::entity::EntityHandle,
     util::types::GlobalTransform,
     world::instance_manager::{
-        Archetype, ArchetypeId, ArchetypeIdent, InstanceHandle, instance_arena::InstanceArena,
-        instance_manager::InstanceManager,
+        InstanceHandle,
+        archetypes::{APosition, APositionRef, Archetype},
+        instance_arena::InstanceArena,
     },
 };
 
-pub(super) trait ArchetypeTable {
+pub trait ArchetypeTable {
     type A: Archetype;
+    type Ref<'a>
+    where
+        Self: 'a;
 
     fn new() -> Self;
 
@@ -17,25 +21,11 @@ pub(super) trait ArchetypeTable {
     fn remove(&mut self, handle: InstanceHandle);
 
     fn write_record_index(&mut self, handle: &InstanceHandle, index: u32);
+
+    fn query<'a>(&'a self, handle: &InstanceHandle) -> Option<Self::Ref<'a>>;
 }
 
-pub struct APosition {
-    pub position: GlobalTransform,
-}
-impl ArchetypeIdent for APosition {
-    const ARCHETYPE_ID: ArchetypeId = ArchetypeId::Position;
-}
-impl Archetype for APosition {
-    fn insert_self(
-        self: Box<Self>,
-        manager: &mut InstanceManager,
-        entity_handle: &EntityHandle,
-    ) -> InstanceHandle {
-        manager.pos.insert(*self, *entity_handle)
-    }
-}
-
-pub(super) struct APositionTable {
+pub struct APositionTable {
     pub(super) positions: Vec<GlobalTransform>,
     pub(super) arena: InstanceArena<APosition>,
     pub(super) record_indices: Vec<u32>,
@@ -49,6 +39,19 @@ impl APositionTable {
 
 impl ArchetypeTable for APositionTable {
     type A = APosition;
+    type Ref<'a>
+        = APositionRef<'a>
+    where
+        Self: 'a;
+
+    fn query<'a>(&'a self, handle: &InstanceHandle) -> Option<Self::Ref<'a>> {
+        match self.arena.resolve(handle) {
+            Some(dense) => Some(APositionRef {
+                position: &self.positions[dense],
+            }),
+            None => None,
+        }
+    }
 
     fn write_record_index(&mut self, handle: &InstanceHandle, index: u32) {
         let dense_idx = self

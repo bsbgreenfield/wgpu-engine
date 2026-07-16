@@ -6,6 +6,7 @@ use crate::{
     world::entity_manager::EntityManagerError,
 };
 
+pub(super) mod bytecode_gen;
 pub mod camera;
 pub mod entity_manager;
 pub mod instance_manager;

@@ -1,6 +1,6 @@
 use crate::{
     common::entity::{EntityHandle, PrototypeHandle},
-    world::instance_manager::ArchetypeId,
+    world::instance_manager::archetypes::ArchetypeId,
 };
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

@@ -47,6 +47,12 @@ impl AppState {
             KeyCode::Digit3 => {
                 self.input_controller.key_3_down = is_pressed;
             }
+            KeyCode::KeyD => {
+                self.input_controller.key_d_down = is_pressed;
+            }
+            KeyCode::KeyS => {
+                self.input_controller.key_s_down = is_pressed;
+            }
             _ => {}
         }
     }

@@ -12,7 +12,11 @@ mod integration_tests {
         },
         renderer::{DrawItem, Instruction, RenderConstant, RenderUpdateDelta},
         world::{
-            instance_manager::{ArchetypeId, archetype_table::APosition},
+            bytecode_gen::BytecodeGenerator,
+            instance_manager::{
+                archetypes::{APosition, ArchetypeId},
+                gen_draw_calls::DrawCallGenerator,
+            },
             scene::Scene,
             world::{World, WorldUpdateDelta},
         },

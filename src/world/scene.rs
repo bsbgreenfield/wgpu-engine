@@ -12,7 +12,7 @@ use crate::{
             AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
             MeshCollectionDescriptor,
         },
-        instance_manager::{Archetype, archetype_table::APosition},
+        instance_manager::archetypes::{APosition, Archetype},
         world::InstanceUploadData,
     },
 };

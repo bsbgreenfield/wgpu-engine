@@ -4,41 +4,19 @@ use crate::{
         instance::{GPUInstanceHandle, InstanceHandle},
     },
     util::types::GlobalTransform,
-    world::{RenderKey, instance_manager::instance_manager::InstanceManager},
+    world::{RenderKey, instance_manager::archetypes::ArchetypeId},
 };
 
+pub(super) mod ack;
 mod animation_controller;
-pub mod archetype_table;
+mod archetype_table;
+pub mod archetypes;
+pub mod gen_draw_calls;
 mod gpu_bind_registry;
 mod instance_arena;
 pub(super) mod instance_manager;
+mod spawn;
 pub mod test;
-
-pub trait ArchetypeIdent {
-    const ARCHETYPE_ID: ArchetypeId;
-}
-
-pub trait Archetype {
-    fn insert_self(
-        self: Box<Self>,
-        manager: &mut InstanceManager,
-        entity_handle: &EntityHandle,
-    ) -> InstanceHandle;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ArchetypeId {
-    Position = 0,
-}
-impl TryFrom<u16> for ArchetypeId {
-    type Error = ();
-    fn try_from(v: u16) -> Result<Self, Self::Error> {
-        match v {
-            0 => Ok(Self::Position),
-            _ => Err(()),
-        }
-    }
-}
 
 impl RenderKey for InstanceHandle {
     fn as_key(&self) -> u64 {

@@ -2,7 +2,10 @@ use std::marker::PhantomData;
 
 use crate::{
     common::entity::EntityHandle,
-    world::instance_manager::{Archetype, ArchetypeIdent, InstanceHandle},
+    world::instance_manager::{
+        InstanceHandle,
+        archetypes::{Archetype, ArchetypeIdent},
+    },
 };
 
 struct Slot {

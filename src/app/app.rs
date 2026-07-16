@@ -3,7 +3,10 @@ use std::{sync::Arc, time::Instant};
 use crate::{
     app::{FrameError, app_config::AppConfig, app_state::AppState},
     renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
-    world::{scene::Scene, world::World},
+    world::{
+        bytecode_gen::BytecodeGenerator, instance_manager::gen_draw_calls::DrawCallGenerator,
+        scene::Scene, world::World,
+    },
 };
 use winit::{
     application::ApplicationHandler,
@@ -30,6 +33,8 @@ pub enum AppCommand {
     One,
     Two,
     Three,
+    Despawn,
+    Spawn,
 }
 
 impl App<'_> {
@@ -60,12 +65,20 @@ impl App<'_> {
             self.app_commands.push(AppCommand::Three);
             self.app_state.input_controller.key_3_down = false;
         }
+        if self.app_state.input_controller.key_s_down {
+            self.app_commands.push(AppCommand::Spawn);
+            self.app_state.input_controller.key_s_down = false;
+        }
+        if self.app_state.input_controller.key_d_down {
+            self.app_commands.push(AppCommand::Despawn);
+            self.app_state.input_controller.key_d_down = false;
+        }
         self.world.update(&mut self.app_commands)?;
 
         let mut constants = Vec::<RenderConstant>::new();
         let mut instructions = Vec::<Instruction>::new();
 
-        World::gen_bytecode(&mut self.world.deltas, &mut instructions, &mut constants);
+        World::gen_bytecode(&self.world.deltas, &mut instructions, &mut constants);
 
         let render_deltas = self.renderer.update(
             constants,
@@ -128,7 +141,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             if !self.world.is_initialized() {
                 self.world
                     .init(aspect_ratio, &self.app_config.as_ref().unwrap().device);
-                let scene = Scene::fox_box(&mut self.world).unwrap();
+                let scene = Scene::multi_fox_scene(&mut self.world).unwrap();
                 self.world.add_scene(scene);
                 self.renderer.init(self.app_config.as_ref().unwrap());
                 self.renderer.add_pass(
