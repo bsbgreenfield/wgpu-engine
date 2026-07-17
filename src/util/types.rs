@@ -333,8 +333,8 @@ impl From<cgmath::Matrix4<f32>> for GlobalTransform {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 pub struct InstanceRecordData {
-    lt_base: u32,
-    jt_base: u32,
+    pub lt_base: u32,
+    pub jt_base: u32,
     pad_1: u32,
     pad_2: u32,
 }

@@ -7,9 +7,10 @@ pub mod tests;
 pub mod util;
 pub mod world;
 
-use anyhow::Result;
+use std::error::Error;
+
 use winit::event_loop::{self, EventLoop};
-pub fn run() -> Result<()> {
+pub fn run() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::with_user_event().build()?;
     event_loop.set_control_flow(event_loop::ControlFlow::Poll);
 

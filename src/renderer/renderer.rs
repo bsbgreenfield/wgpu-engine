@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use wgpu::RenderPass;
+use wgpu::{CurrentSurfaceTexture, RenderPass};
 
 use crate::{
     app::app_config::AppConfig,
@@ -30,7 +30,7 @@ impl EngineRenderPass {
         label: &'frame str,
         encoder: &'frame mut wgpu::CommandEncoder,
         view: &'frame wgpu::TextureView,
-    ) -> Result<RenderPass<'frame>, wgpu::SurfaceError> {
+    ) -> Result<RenderPass<'frame>, wgpu::CreateSurfaceError> {
         // TODO match on render cat OR add generics to method call
         // TODO: customize render pass output
         let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -272,8 +272,11 @@ impl Renderer {
     }
 
     pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
-        let output = config.surface.as_ref().unwrap().get_current_texture()?;
-        let view = output
+        let texture = match config.surface.as_ref().unwrap().get_current_texture() {
+            CurrentSurfaceTexture::Success(texture) => texture,
+            _ => return Err(RenderError::BadSurfaceTexture),
+        };
+        let view = texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -303,7 +306,7 @@ impl Renderer {
         });
 
         config.queue.submit(Some(encoder.finish()));
-        output.present();
+        config.queue.present(texture);
         Ok(())
     }
 
@@ -315,8 +318,11 @@ impl Renderer {
     ) -> Result<(), RenderError> {
         let pipeline_collection = self.pipelines.as_ref().unwrap();
         for pass in &self.passes {
-            let output = config.surface.as_ref().unwrap().get_current_texture()?;
-            let view = output
+            let texture = match config.surface.as_ref().unwrap().get_current_texture() {
+                CurrentSurfaceTexture::Success(texture) => texture,
+                _ => return Err(RenderError::BadSurfaceTexture),
+            };
+            let view = texture
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -429,7 +435,7 @@ impl Renderer {
                 }
             }
             config.queue.submit(std::iter::once(encoder.finish()));
-            output.present();
+            config.queue.present(texture);
         }
         Ok(())
     }

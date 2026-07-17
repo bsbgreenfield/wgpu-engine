@@ -1,6 +1,5 @@
-use std::{sync::Arc, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
-use anyhow::{Ok, Result};
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub struct AppConfig<'a> {
@@ -41,6 +40,7 @@ impl<'a> AppConfig<'a> {
                 compatible_surface: None,
                 power_preference: wgpu::PowerPreference::LowPower,
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .expect("failed to make adapter");
@@ -69,11 +69,20 @@ impl<'a> AppConfig<'a> {
         }
     }
 
-    pub(super) async fn new(window: Arc<Window>) -> Result<Self> {
+    pub(super) async fn new(
+        window: Arc<Window>,
+        handle: winit::event_loop::OwnedDisplayHandle,
+    ) -> Result<Self, Box<dyn Error>> {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
+            backend_options: wgpu::BackendOptions::default(),
+            flags: wgpu::InstanceFlags::empty(),
+            memory_budget_thresholds: wgpu::MemoryBudgetThresholds {
+                for_resource_creation: None,
+                for_device_loss: None,
+            },
+            display: Some(Box::new(handle)),
         });
         let surface = instance.create_surface(window.clone()).unwrap();
 
@@ -82,6 +91,7 @@ impl<'a> AppConfig<'a> {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await?;
 
@@ -115,6 +125,7 @@ impl<'a> AppConfig<'a> {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::default(),
         };
         Ok(AppConfig {
             target_fps: Duration::new(1 / 100, 0),

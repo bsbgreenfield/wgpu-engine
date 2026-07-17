@@ -42,7 +42,7 @@ impl GPUAssetUploadJob {
 #[derive(Debug)]
 pub enum FrameError {
     UpdateError(WorldUpdateError),
-    SurfaceError(wgpu::SurfaceError),
+    SurfaceError(wgpu::CreateSurfaceError),
     RenderUpdateError(RenderUpdateError),
     RenderError(RenderError),
 }

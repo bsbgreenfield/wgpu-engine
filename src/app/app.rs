@@ -136,7 +136,11 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             );
             self.window = Some(window);
             self.app_config = Some(
-                pollster::block_on(AppConfig::new(self.window.as_ref().unwrap().clone())).unwrap(),
+                pollster::block_on(AppConfig::new(
+                    self.window.as_ref().unwrap().clone(),
+                    event_loop.owned_display_handle(),
+                ))
+                .unwrap(),
             );
             let aspect_ratio: f32 = self.app_config.as_ref().unwrap().get_aspect_ratio();
 

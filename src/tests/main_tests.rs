@@ -3,6 +3,8 @@ mod integration_tests {
 
     use std::fmt::Debug;
 
+    use cgmath::InnerSpace;
+
     use crate::{
         animation::AnimationTransformType,
         app::{app::App, app_config::AppConfig, app_state::AppState},
@@ -19,7 +21,7 @@ mod integration_tests {
                 gen_draw_calls::DrawCallGenerator,
             },
             scene::Scene,
-            world::{JointTransforms, World, WorldUpdateDelta},
+            world::{World, WorldUpdateDelta},
         },
     };
 
@@ -29,7 +31,7 @@ mod integration_tests {
         instructions: Vec<Instruction>,
     }
     enum TestCases {
-        Brain,
+        BuggyBrain,
         Box,
         MultiBox,
         Fox,
@@ -136,7 +138,7 @@ mod integration_tests {
             TestCases::IndependantFoxes => {
                 Scene::independant_foxes(&mut world).expect("independant foxes")
             }
-            TestCases::Brain => Scene::brain(&mut world).unwrap(),
+            TestCases::BuggyBrain => Scene::buggy(&mut world).unwrap(),
         };
         world.add_scene(scene);
         app.world = world;
@@ -717,61 +719,46 @@ mod integration_tests {
     #[test]
     fn brain_test() {
         pollster::block_on(async {
-            let mut app = setup_world(TestCases::Brain).await;
+            let mut app = setup_world(TestCases::BuggyBrain).await;
             run_frame_unchecked(&mut app);
             gen_draw_calls(&mut app);
-            let dump = run_frame_with_bytecode_dump(&mut app);
+            run_frame_unchecked(&mut app);
             gen_draw_calls(&mut app);
-            for wd in dump.world_update_deltas.iter() {
-                println!("{:?}", wd);
-            }
-            for rd in dump.render_update_deltas.iter() {
-                println!("{:?}", rd);
-            }
-            for i in dump.instructions.iter() {
-                println!("{:?}", i);
-            }
-            for pos in app.render_packet.global_transforms.iter() {
-                println!("{pos:?}")
-            }
-
-            println!("{:?}", app.render_packet.draw_packet.instance_ranges);
-            println!("{:?}", app.render_packet.draw_packet.pnujw);
 
             let gpu_records = crate::tests::gpu_debug::read_buffer::<InstanceRecordData>(
                 &app.app_config.as_ref().unwrap().device,
                 &app.app_config.as_ref().unwrap().queue,
                 app.renderer.get_instance_record_buffer(),
                 0,
-                3,
+                2,
+            )
+            .expect("records");
+
+            assert!(gpu_records[1].lt_base == 190 || gpu_records[1].lt_base == 1);
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
+
+            app.world.instance_manager.activate_animation(
+                &InstanceHandle {
+                    archetype: ArchetypeId::Position,
+                    entity_handle: EntityHandle(1),
+                    instance_id: 1,
+                    generation: 0,
+                },
+                0,
+                None,
             );
 
-            for record in gpu_records.iter() {
-                println!("{:?}", record);
-            }
-            let gpu_lts = crate::tests::gpu_debug::read_buffer::<LocalTransform>(
-                &app.app_config.as_ref().unwrap().device,
-                &app.app_config.as_ref().unwrap().queue,
-                app.renderer.get_lt_buffer(),
-                0,
-                3,
+            run_frame_unchecked(&mut app);
+            run_frame_unchecked(&mut app);
+            run_frame_unchecked(&mut app);
+            assert_eq!(
+                app.world
+                    .instance_manager
+                    .animation_controller
+                    .active_animations
+                    .len(),
+                1
             );
-            for lt in gpu_lts.iter() {
-                println!("{:?}", lt);
-            }
-            let gpu_joints = crate::tests::gpu_debug::read_buffer::<Mat4F32>(
-                &app.app_config.as_ref().unwrap().device,
-                &app.app_config.as_ref().unwrap().queue,
-                app.renderer.get_joint_buffers().0,
-                0,
-                100,
-            );
-            for jt in gpu_joints.iter() {
-                println!("{:?}", jt);
-            }
-
-            assert_eq!(app.world.instance_manager.get_all_instances().len(), 3);
-            panic!()
         });
     }
 
@@ -783,56 +770,64 @@ mod integration_tests {
             gen_draw_calls(&mut app);
             let dump = run_frame_with_bytecode_dump(&mut app);
             gen_draw_calls(&mut app);
-            // for wd in dump.world_update_deltas.iter() {
-            //     println!("{:?}", wd);
-            // }
-            // for rd in dump.render_update_deltas.iter() {
-            //     println!("{:?}", rd);
-            // }
-            // for i in dump.instructions.iter() {
-            //     println!("{:?}", i);
-            // }
-            //for pos in app.render_packet.global_transforms.iter() {
-            //    println!("{pos:?}")
-            //}
 
-            //println!("{:?}", app.render_packet.draw_packet.instance_ranges);
-            //println!("{:?}", app.render_packet.draw_packet.pnujw);
+            let gpu_records = crate::tests::gpu_debug::read_buffer::<InstanceRecordData>(
+                &app.app_config.as_ref().unwrap().device,
+                &app.app_config.as_ref().unwrap().queue,
+                app.renderer.get_instance_record_buffer(),
+                0,
+                3,
+            )
+            .expect("records");
+            assert_eq!(gpu_records[0].lt_base, 0);
+            assert_eq!(gpu_records[1].lt_base, 1);
+            assert_eq!(gpu_records[2].lt_base, 2);
 
-            //let gpu_records = crate::tests::gpu_debug::read_buffer::<InstanceRecordData>(
-            //    &app.app_config.as_ref().unwrap().device,
-            //    &app.app_config.as_ref().unwrap().queue,
-            //    app.renderer.get_instance_record_buffer(),
-            //    0,
-            //    3,
-            //);
-
-            //for record in gpu_records.iter() {
-            //    println!("{:?}", record);
-            //}
-            //let gpu_lts = crate::tests::gpu_debug::read_buffer::<LocalTransform>(
-            //    &app.app_config.as_ref().unwrap().device,
-            //    &app.app_config.as_ref().unwrap().queue,
-            //    app.renderer.get_lt_buffer(),
-            //    0,
-            //    3,
-            //);
-            //for lt in gpu_lts.iter() {
-            //    println!("{:?}", lt);
-            //}
-            //let gpu_joints = crate::tests::gpu_debug::read_buffer::<Mat4F32>(
-            //    &app.app_config.as_ref().unwrap().device,
-            //    &app.app_config.as_ref().unwrap().queue,
-            //    app.renderer.get_joint_buffers().0,
-            //    0,
-            //    100,
-            //);
-            //for jt in gpu_joints.iter() {
-            //    println!("{:?}", jt);
-            //}
+            let gpu_joints = crate::tests::gpu_debug::read_buffer::<Mat4F32>(
+                &app.app_config.as_ref().unwrap().device,
+                &app.app_config.as_ref().unwrap().queue,
+                app.renderer.get_joint_buffers().0,
+                0,
+                100,
+            )
+            .expect("jt");
+            for i in 2..24 {
+                assert!(
+                    LocalTransform::from(gpu_joints[i])
+                        .translation()
+                        .magnitude()
+                        .abs()
+                        > 0.
+                );
+            }
+            for i in 26..48 {
+                assert!(
+                    LocalTransform::from(gpu_joints[i])
+                        .translation()
+                        .magnitude()
+                        .abs()
+                        > 0.
+                );
+            }
+            for i in 50..72 {
+                assert!(
+                    LocalTransform::from(gpu_joints[i])
+                        .translation()
+                        .magnitude()
+                        .abs()
+                        > 0.
+                );
+            }
+            for i in 72..100 {
+                assert!(
+                    LocalTransform::from(gpu_joints[i])
+                        .translation()
+                        .magnitude()
+                        == 0.
+                );
+            }
 
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 3);
-            panic!()
         });
     }
     #[test]

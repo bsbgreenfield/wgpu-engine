@@ -5,7 +5,7 @@ pub fn read_buffer_bytes(
     buffer: &wgpu::Buffer,
     byte_offset: u64,
     byte_len: u64,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, wgpu::MapRangeError> {
     assert!(
         byte_offset + byte_len <= buffer.size(),
         "read range exceeds buffer size {}",
@@ -40,11 +40,11 @@ pub fn read_buffer_bytes(
         .expect("map callback channel dropped")
         .expect("map_async failed");
 
-    let view = slice.get_mapped_range();
+    let view = slice.get_mapped_range()?;
     let out = view[..byte_len as usize].to_vec();
     drop(view);
     staging.unmap();
-    out
+    Ok(out)
 }
 
 /// Read `count` values of `T` starting at element index `elem_offset`.
@@ -54,7 +54,7 @@ pub fn read_buffer<T: bytemuck::Pod>(
     buffer: &wgpu::Buffer,
     elem_offset: u64,
     count: usize,
-) -> Vec<T> {
+) -> Result<Vec<T>, wgpu::MapRangeError> {
     let elem = std::mem::size_of::<T>() as u64;
     let bytes = read_buffer_bytes(
         device,
@@ -62,8 +62,8 @@ pub fn read_buffer<T: bytemuck::Pod>(
         buffer,
         elem_offset * elem,
         count as u64 * elem,
-    );
-    bytemuck::cast_slice::<u8, T>(&bytes).to_vec()
+    )?;
+    Ok(bytemuck::cast_slice::<u8, T>(&bytes).to_vec())
 }
 
 /// Read and reinterpret the entire buffer as `Vec<T>`.
@@ -71,9 +71,10 @@ pub fn read_whole_buffer<T: bytemuck::Pod>(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     buffer: &wgpu::Buffer,
-) -> Vec<T> {
+) -> Result<Vec<T>, wgpu::MapRangeError> {
     let count = (buffer.size() / std::mem::size_of::<T>() as u64) as usize;
-    read_buffer::<T>(device, queue, buffer, 0, count)
+    let res = read_buffer::<T>(device, queue, buffer, 0, count)?;
+    Ok(res)
 }
 
 /// Read `count` values of `T` and pretty-print them with their indices.

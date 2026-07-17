@@ -287,11 +287,12 @@ impl From<VertexArenaError> for RenderUpdateError {
 
 #[derive(Debug)]
 pub enum RenderError {
-    SurfaceError(wgpu::SurfaceError),
+    SurfaceError(wgpu::CreateSurfaceError),
+    BadSurfaceTexture,
 }
 
-impl From<wgpu::SurfaceError> for RenderError {
-    fn from(value: wgpu::SurfaceError) -> Self {
+impl From<wgpu::CreateSurfaceError> for RenderError {
+    fn from(value: wgpu::CreateSurfaceError) -> Self {
         Self::SurfaceError(value)
     }
 }
@@ -308,6 +309,7 @@ impl Display for RenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SurfaceError(e) => e.fmt(f),
+            Self::BadSurfaceTexture => write!(f, "Sub Optimal or invalid surface"),
         }
     }
 }

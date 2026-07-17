@@ -35,9 +35,9 @@ impl PipelineCollection {
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("opaque_static pipeline layout"),
             bind_group_layouts: &[
-                &Camera::get_bind_group_layout(device),
-                &LocalTransformBindGroup::get_bind_group_layout(device),
-                &InstanceDataBindGroup::get_bind_group_layout(device),
+                Some(&Camera::get_bind_group_layout(device)),
+                Some(&LocalTransformBindGroup::get_bind_group_layout(device)),
+                Some(&InstanceDataBindGroup::get_bind_group_layout(device)),
             ],
             immediate_size: 4,
         })
@@ -46,10 +46,10 @@ impl PipelineCollection {
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("opaque_skinned pipeline layout"),
             bind_group_layouts: &[
-                &Camera::get_bind_group_layout(device),
-                &LocalTransformBindGroup::get_bind_group_layout(device),
-                &InstanceDataBindGroup::get_bind_group_layout(device),
-                &SkinningBindGroup::get_bind_group_layout(device),
+                Some(&Camera::get_bind_group_layout(device)),
+                Some(&LocalTransformBindGroup::get_bind_group_layout(device)),
+                Some(&InstanceDataBindGroup::get_bind_group_layout(device)),
+                Some(&SkinningBindGroup::get_bind_group_layout(device)),
             ],
             immediate_size: 8,
         })
@@ -91,7 +91,7 @@ impl PipelineCollection {
                             vertex: wgpu::VertexState {
                                 module: &shader,
                                 entry_point: Some("vs_main"),
-                                buffers: &[PNUVertex::desc()],
+                                buffers: &[Some(PNUVertex::desc())],
                                 compilation_options: Default::default(),
                             },
                             primitive: wgpu::PrimitiveState {
@@ -155,7 +155,7 @@ impl PipelineCollection {
                             vertex: wgpu::VertexState {
                                 module: &shader,
                                 entry_point: Some("vs_main"),
-                                buffers: &[PNUJWVertex::desc()],
+                                buffers: &[Some(PNUJWVertex::desc())],
                                 compilation_options: Default::default(),
                             },
                             primitive: wgpu::PrimitiveState {
