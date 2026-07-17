@@ -118,6 +118,21 @@ impl Renderer {
     pub fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
         self.bind_groups.get_prototype_ref_count(handle)
     }
+
+    #[cfg(test)]
+    pub fn get_lt_buffer(&self) -> &wgpu::Buffer {
+        self.bind_groups.get_lt_buffer()
+    }
+    #[cfg(test)]
+    pub fn get_joint_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
+        self.bind_groups.get_joint_buffer()
+    }
+
+    #[cfg(test)]
+    pub fn get_instance_record_buffer(&self) -> &wgpu::Buffer {
+        self.bind_groups.instance_data.get_first_record_buffer()
+    }
+
     pub fn new() -> Self {
         Self {
             allocations: Vec::new(),

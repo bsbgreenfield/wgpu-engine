@@ -52,11 +52,11 @@ var<storage, read> joint_transforms: array<mat4x4<f32>>;
 @group(3) @binding(1)
 var<storage, read> ibm_transforms: array<mat4x4<f32>>;
 
-fn apply_bone_transform(joint_base: u32, joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>)  -> vec4<f32> {
-	let joint0 = joint_transforms[joint_base + joints[0]] * ibm_transforms[joint_base + joints[0]];
-	let joint1 = joint_transforms[joint_base + joints[1]] * ibm_transforms[joint_base + joints[1]];
-	let joint2 = joint_transforms[joint_base + joints[2]] * ibm_transforms[joint_base + joints[2]];
-	let joint3 = joint_transforms[joint_base + joints[3]] * ibm_transforms[joint_base + joints[3]];
+fn apply_bone_transform(joint_base: u32,  joint_offset: u32, joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>)  -> vec4<f32> {
+	let joint0 = joint_transforms[joint_base + joints[0]] * ibm_transforms[joint_offset + joints[0]];
+	let joint1 = joint_transforms[joint_base + joints[1]] * ibm_transforms[joint_offset + joints[1]];
+	let joint2 = joint_transforms[joint_base + joints[2]] * ibm_transforms[joint_offset + joints[2]];
+	let joint3 = joint_transforms[joint_base + joints[3]] * ibm_transforms[joint_offset + joints[3]];
 	let skin_mat: mat4x4<f32> = 
 	 							joint0 * weights[0] +
 	 							joint1 * weights[1] +
@@ -72,9 +72,8 @@ fn vs_main(obj: VertexInput, @builtin(instance_index) inst_idx: u32 ) -> VertexO
 	let record: InstanceRecord = instance_records[record_idx];
 	let global_t_matrix: mat4x4<f32> = global_transforms[inst_idx];
     var out: VertexOutput;
-	let joint_base: u32 = record.joint_base + pc.joint_offset;
-	let new_position: vec4<f32> = apply_bone_transform(joint_base, obj.joints, obj.weights, obj.position);
-    out.clip_position = camera_uniform.transform * global_t_matrix * local_mesh_transforms[record.lt_base + pc.lt_idx] * new_position;
+	let new_position: vec4<f32> = apply_bone_transform(record.joint_base, pc.joint_offset, obj.joints, obj.weights, obj.position);
+    out.clip_position = camera_uniform.transform * global_t_matrix * new_position;
 	out.tex_coords = obj.tex_coords;
     return out;
 }

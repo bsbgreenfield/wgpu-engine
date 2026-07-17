@@ -138,6 +138,11 @@ impl<T: StorageData> InstanceArena<T> {
         Ok(())
     }
 
+    pub fn resolve_byte_offset(&self, handle: &GPUInstanceHandle) -> u32 {
+        let meta = self.alloc_table.resolve(handle).unwrap();
+        let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
+        range.start
+    }
     pub fn resolve(&self, handle: &GPUInstanceHandle) -> u32 {
         let meta = self.alloc_table.resolve(handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);

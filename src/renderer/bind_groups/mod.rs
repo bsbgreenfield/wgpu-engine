@@ -56,6 +56,15 @@ impl BindGroupCollection {
         self.prototypes.get(handle).map(|p| p.ref_count)
     }
 
+    #[cfg(test)]
+    pub fn get_lt_buffer(&self) -> &wgpu::Buffer {
+        self.local_transforms.get_first_buffer()
+    }
+    #[cfg(test)]
+    pub fn get_joint_buffer(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
+        self.skinning.get_first_buffers()
+    }
+
     pub fn upload_local_transforms<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, LocalTransform>,

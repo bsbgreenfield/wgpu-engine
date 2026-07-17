@@ -64,8 +64,8 @@ impl InstanceManager {
             }
             let dummy = InstanceHandle {
                 archetype: ArchetypeId::Position,
-                entity_handle: EntityHandle(0),
-                instance_id: 0,
+                entity_handle: EntityHandle(1),
+                instance_id: 1,
                 generation: 0,
             };
             if idx >= 0 {

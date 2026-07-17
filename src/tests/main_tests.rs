@@ -11,6 +11,7 @@ mod integration_tests {
             instance::InstanceHandle,
         },
         renderer::{DrawItem, Instruction, RenderConstant, RenderUpdateDelta},
+        util::types::{InstanceRecordData, LocalTransform, Mat4F32},
         world::{
             bytecode_gen::BytecodeGenerator,
             instance_manager::{
@@ -18,7 +19,7 @@ mod integration_tests {
                 gen_draw_calls::DrawCallGenerator,
             },
             scene::Scene,
-            world::{World, WorldUpdateDelta},
+            world::{JointTransforms, World, WorldUpdateDelta},
         },
     };
 
@@ -28,6 +29,7 @@ mod integration_tests {
         instructions: Vec<Instruction>,
     }
     enum TestCases {
+        Brain,
         Box,
         MultiBox,
         Fox,
@@ -134,6 +136,7 @@ mod integration_tests {
             TestCases::IndependantFoxes => {
                 Scene::independant_foxes(&mut world).expect("independant foxes")
             }
+            TestCases::Brain => Scene::brain(&mut world).unwrap(),
         };
         world.add_scene(scene);
         app.world = world;
@@ -712,11 +715,13 @@ mod integration_tests {
     }
 
     #[test]
-    fn independant_foxes() {
+    fn brain_test() {
         pollster::block_on(async {
-            let mut app = setup_world(TestCases::IndependantFoxes).await;
+            let mut app = setup_world(TestCases::Brain).await;
             run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
             let dump = run_frame_with_bytecode_dump(&mut app);
+            gen_draw_calls(&mut app);
             for wd in dump.world_update_deltas.iter() {
                 println!("{:?}", wd);
             }
@@ -726,6 +731,105 @@ mod integration_tests {
             for i in dump.instructions.iter() {
                 println!("{:?}", i);
             }
+            for pos in app.render_packet.global_transforms.iter() {
+                println!("{pos:?}")
+            }
+
+            println!("{:?}", app.render_packet.draw_packet.instance_ranges);
+            println!("{:?}", app.render_packet.draw_packet.pnujw);
+
+            let gpu_records = crate::tests::gpu_debug::read_buffer::<InstanceRecordData>(
+                &app.app_config.as_ref().unwrap().device,
+                &app.app_config.as_ref().unwrap().queue,
+                app.renderer.get_instance_record_buffer(),
+                0,
+                3,
+            );
+
+            for record in gpu_records.iter() {
+                println!("{:?}", record);
+            }
+            let gpu_lts = crate::tests::gpu_debug::read_buffer::<LocalTransform>(
+                &app.app_config.as_ref().unwrap().device,
+                &app.app_config.as_ref().unwrap().queue,
+                app.renderer.get_lt_buffer(),
+                0,
+                3,
+            );
+            for lt in gpu_lts.iter() {
+                println!("{:?}", lt);
+            }
+            let gpu_joints = crate::tests::gpu_debug::read_buffer::<Mat4F32>(
+                &app.app_config.as_ref().unwrap().device,
+                &app.app_config.as_ref().unwrap().queue,
+                app.renderer.get_joint_buffers().0,
+                0,
+                100,
+            );
+            for jt in gpu_joints.iter() {
+                println!("{:?}", jt);
+            }
+
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 3);
+            panic!()
+        });
+    }
+
+    #[test]
+    fn independant_foxes() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::IndependantFoxes).await;
+            run_frame_unchecked(&mut app);
+            gen_draw_calls(&mut app);
+            let dump = run_frame_with_bytecode_dump(&mut app);
+            gen_draw_calls(&mut app);
+            // for wd in dump.world_update_deltas.iter() {
+            //     println!("{:?}", wd);
+            // }
+            // for rd in dump.render_update_deltas.iter() {
+            //     println!("{:?}", rd);
+            // }
+            // for i in dump.instructions.iter() {
+            //     println!("{:?}", i);
+            // }
+            //for pos in app.render_packet.global_transforms.iter() {
+            //    println!("{pos:?}")
+            //}
+
+            //println!("{:?}", app.render_packet.draw_packet.instance_ranges);
+            //println!("{:?}", app.render_packet.draw_packet.pnujw);
+
+            //let gpu_records = crate::tests::gpu_debug::read_buffer::<InstanceRecordData>(
+            //    &app.app_config.as_ref().unwrap().device,
+            //    &app.app_config.as_ref().unwrap().queue,
+            //    app.renderer.get_instance_record_buffer(),
+            //    0,
+            //    3,
+            //);
+
+            //for record in gpu_records.iter() {
+            //    println!("{:?}", record);
+            //}
+            //let gpu_lts = crate::tests::gpu_debug::read_buffer::<LocalTransform>(
+            //    &app.app_config.as_ref().unwrap().device,
+            //    &app.app_config.as_ref().unwrap().queue,
+            //    app.renderer.get_lt_buffer(),
+            //    0,
+            //    3,
+            //);
+            //for lt in gpu_lts.iter() {
+            //    println!("{:?}", lt);
+            //}
+            //let gpu_joints = crate::tests::gpu_debug::read_buffer::<Mat4F32>(
+            //    &app.app_config.as_ref().unwrap().device,
+            //    &app.app_config.as_ref().unwrap().queue,
+            //    app.renderer.get_joint_buffers().0,
+            //    0,
+            //    100,
+            //);
+            //for jt in gpu_joints.iter() {
+            //    println!("{:?}", jt);
+            //}
 
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 3);
             panic!()

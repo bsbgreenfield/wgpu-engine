@@ -122,6 +122,10 @@ impl BindGroupProvider for InstanceDataBindGroup {
 }
 
 impl InstanceDataBindGroup {
+    #[cfg(test)]
+    pub fn get_first_record_buffer(&self) -> &wgpu::Buffer {
+        self.record_arena.get_first_buffer()
+    }
     pub fn get_first_bg(&self) -> &wgpu::BindGroup {
         &self.bind_groups[0]
     }

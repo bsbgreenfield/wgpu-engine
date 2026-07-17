@@ -241,12 +241,23 @@ impl StorageData for GlobalTransform {
 
 impl StorageData for InstanceRecordData {
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("instance record storage buffer"),
-            size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let buf = if cfg!(test) {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("instance record storage buffer"),
+                size: CHUNK_SIZE as u64,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            })
+        } else {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("instance record storage buffer"),
+                size: CHUNK_SIZE as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
 
         GPUChunk {
             remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?

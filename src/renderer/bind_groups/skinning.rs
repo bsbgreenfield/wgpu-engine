@@ -19,6 +19,14 @@ pub struct SkinningBindGroup {
 }
 
 impl SkinningBindGroup {
+    #[cfg(test)]
+    pub fn get_first_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
+        (
+            self.joint_arena.get_first_buffer(),
+            self.ibm_arena.get_first_buffer(),
+        )
+    }
+
     pub fn write_joint_anim_data(
         &self,
         gpu_handle: &GPUInstanceHandle,
@@ -26,7 +34,7 @@ impl SkinningBindGroup {
         queue: &wgpu::Queue,
     ) {
         let buffer = self.get_joint_buffer();
-        let jt_offset = self.joint_arena.resolve(gpu_handle);
+        let jt_offset = self.joint_arena.resolve_byte_offset(gpu_handle);
         queue.write_buffer(buffer, jt_offset.into(), joint_data);
     }
 
@@ -88,12 +96,9 @@ impl SkinningBindGroup {
         if let Ok(jt) = jt {
             if let Ok(ibm) = ibm {
                 return Ok((jt, ibm));
-            } else {
-                return Err(ibm.unwrap_err());
             }
-        } else {
-            return Err(jt.unwrap_err());
         }
+        return Err(jt.unwrap_err());
     }
 
     pub fn get_first_bg(&self) -> &wgpu::BindGroup {

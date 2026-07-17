@@ -15,6 +15,9 @@ pub struct LocalTransformBindGroup {
 }
 
 impl LocalTransformBindGroup {
+    pub fn get_first_buffer(&self) -> &wgpu::Buffer {
+        self.lt_arena.get_first_buffer()
+    }
     pub fn write_lt_anim_data(
         &mut self,
         handle: &GPUInstanceHandle,
@@ -22,7 +25,7 @@ impl LocalTransformBindGroup {
         queue: &wgpu::Queue,
     ) {
         let buf = self.lt_arena.get_first_buffer();
-        let offset = self.lt_arena.resolve(handle) as u64;
+        let offset = self.lt_arena.resolve_byte_offset(handle) as u64;
         queue.write_buffer(buf, offset, lt_data);
     }
 

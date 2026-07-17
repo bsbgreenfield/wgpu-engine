@@ -146,6 +146,8 @@ impl<'frame> Renderer {
                         let lt_offset =
                             stack.pop().expect("should be offset").unwrap_offset() as u32;
 
+                        println!("JT OFFSET: {:?}", joint_offset);
+                        println!("LT OFFSET: {:?}", lt_offset);
                         let record_data: Vec<u8> = bytemuck::pod_collect_to_vec(&[
                             lt_offset,
                             joint_offset.unwrap_or_default(),
