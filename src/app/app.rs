@@ -37,21 +37,7 @@ pub enum AppCommand {
     Spawn,
 }
 
-impl App<'_> {
-    pub fn new() -> Self {
-        Self {
-            last_frame_time: Instant::now(),
-            window: None,
-            app_config: None,
-            app_state: AppState::new(),
-            surface_ready: false,
-            renderer: Renderer::new(),
-            world: World::new(),
-            render_packet: RenderPacket::new(),
-            app_commands: Vec::with_capacity(100),
-        }
-    }
-
+impl<'frame> App<'frame> {
     pub fn run_frame(&mut self) -> Result<(), FrameError> {
         if self.app_state.input_controller.key_1_down {
             self.app_commands.push(AppCommand::One);
@@ -122,6 +108,22 @@ impl App<'_> {
     }
 }
 
+impl App<'_> {
+    pub fn new() -> Self {
+        Self {
+            last_frame_time: Instant::now(),
+            window: None,
+            app_config: None,
+            app_state: AppState::new(),
+            surface_ready: false,
+            renderer: Renderer::new(),
+            world: World::new(),
+            render_packet: RenderPacket::new(),
+            app_commands: Vec::with_capacity(100),
+        }
+    }
+}
+
 impl ApplicationHandler<AppConfig<'static>> for App<'_> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.window.is_none() {
@@ -141,7 +143,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             if !self.world.is_initialized() {
                 self.world
                     .init(aspect_ratio, &self.app_config.as_ref().unwrap().device);
-                let scene = Scene::multi_fox_scene(&mut self.world).unwrap();
+                let scene = Scene::independant_foxes(&mut self.world).unwrap();
                 self.world.add_scene(scene);
                 self.renderer.init(self.app_config.as_ref().unwrap());
                 self.renderer.add_pass(

@@ -10,7 +10,7 @@ struct VertexOutput {
 }
 
 struct DrawPushConstants {
-    mesh_index: u32,
+    lt_idx: u32,
 }
 
 
@@ -46,9 +46,9 @@ var<storage, read> global_transforms: array<mat4x4<f32>>;
 fn vs_main(obj: VertexInput, @builtin(instance_index) inst_idx: u32) -> VertexOutput {
 	let record_idx: u32 = instance_offsets[inst_idx];
 	let record: InstanceRecord = instance_records[record_idx];
-	let global_t_matrix: mat4x4<f32> = global_transforms[record_idx];
+	let global_t_matrix: mat4x4<f32> = global_transforms[inst_idx];
     var out: VertexOutput;
-    out.clip_position = camera_uniform.transform * global_t_matrix * local_mesh_transforms[pc.mesh_index] * vec4<f32>(obj.position, 1.0);
+    out.clip_position = camera_uniform.transform * global_t_matrix * local_mesh_transforms[record.lt_base + pc.lt_idx] * vec4<f32>(obj.position, 1.0);
 	out.tex_coords = obj.tex_coords;
     return out;
 }

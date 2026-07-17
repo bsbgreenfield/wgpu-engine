@@ -10,20 +10,16 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
 
         packet.reset(self.render_groups.len(), record_len);
 
-        packet.draw_packet.count_sort(
+        packet.count_sort(
             &self.pos.arena.handles,
             &self.pos.record_indices,
             &self.sparse_entity_group,
+            &self.pos.positions,
         );
 
-        for (i, record_slot) in self.pos.record_indices.iter().enumerate() {
-            packet.global_transforms[*record_slot as usize] = self.pos.positions[i].into();
-        }
-
         for (group_idx, group) in self.render_groups.iter().enumerate() {
-            if packet.draw_packet.instance_ranges[group_idx].start
-                == packet.draw_packet.instance_ranges[group_idx].end
-            {
+            let instance_range = packet.draw_packet.instance_ranges[group_idx];
+            if instance_range.is_empty() {
                 continue;
             }
             for view in group.views.iter() {
@@ -37,7 +33,7 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
                         entry.push(DrawItem {
                             lt_idx: pnu.mesh_map[i],
                             joint_offset: None,
-                            instances: (packet.draw_packet.instance_ranges[group_idx]).clone(),
+                            instances: instance_range.clone(),
                             primitives: prim_range.clone(),
                             indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
                         });
@@ -53,7 +49,7 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
                         entry.push(DrawItem {
                             lt_idx: pnujw.mesh_map[i],
                             joint_offset: Some(pnujw.joint_map[i]),
-                            instances: (packet.draw_packet.instance_ranges[group_idx]).clone(),
+                            instances: instance_range.clone(),
                             primitives: prim_range.clone(),
                             indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
                         });

@@ -49,6 +49,29 @@ impl RenderPacket {
         }
         self.draw_packet.reset(group_len, record_len);
     }
+
+    pub fn count_sort(
+        &mut self,
+        handles: &[InstanceHandle],
+        record_idxs: &[u32],
+        sparse_entity_group: &[usize],
+        positions: &Vec<GlobalTransform>,
+    ) {
+        self.draw_packet.count_sort(handles, sparse_entity_group);
+
+        // finally, for each record index on the gpu, and each corresponding index handle,
+        // create an indirection list where indirection_list[i] = the gpu record slot
+        // and i = instance idx
+        // this effectively is a translation from instance_idx -> instance record idx
+        // also update global_transforms such that global_transforms[i] = the transform instance i
+        for (i, (record_index, handle)) in record_idxs.iter().zip(handles).enumerate() {
+            let group_id = sparse_entity_group[handle.entity_handle.0 as usize];
+            self.draw_packet.indirection_list[self.draw_packet.cursors[group_id] as usize] =
+                *record_index;
+            self.global_transforms[self.draw_packet.cursors[group_id] as usize] = positions[i];
+            self.draw_packet.cursors[group_id] += 1;
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -62,27 +85,22 @@ pub struct DrawPacket {
 }
 
 impl DrawPacket {
-    pub fn count_sort(
-        &mut self,
-        handles: &[InstanceHandle],
-        record_idxs: &[u32],
-        sparse_entity_group: &[usize],
-    ) {
+    pub fn count_sort(&mut self, handles: &[InstanceHandle], sparse_entity_group: &[usize]) {
+        // build entity_count list, where entity_count[i] = number of entities
+        // and i = render group index
         for handle in handles {
             let group_id = sparse_entity_group[handle.entity_handle.0 as usize];
             self.entity_count[group_id] += 1;
         }
+        // build instance_ranges, where instance_ranges[i] = the GPU shader instance idx range
+        // and i = render group idx
+        // cusors keeps track of the first instance of the entity associated with render_groups[i]
         let mut sum = 0;
         for (group_id, count) in self.entity_count.iter_mut().enumerate() {
             self.instance_ranges[group_id] = Range::from(sum..(sum + *count as u32));
             self.cursors[group_id] = sum;
             sum += *count as u32;
             *count = 0;
-        }
-        for (record_index, handle) in record_idxs.iter().zip(handles) {
-            let group_id = sparse_entity_group[handle.entity_handle.0 as usize];
-            self.indirection_list[self.cursors[group_id] as usize] = *record_index;
-            self.cursors[group_id] += 1;
         }
     }
 
@@ -109,7 +127,7 @@ impl DrawPacket {
         &self.pnujw
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RenderUpdateDelta {
     AssetGPULoaded(AssetHandle, GPUAllocationHandle),
     EntityGPULoaded(EntityHandle),

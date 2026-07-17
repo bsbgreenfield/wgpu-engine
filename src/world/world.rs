@@ -52,7 +52,7 @@ pub struct RenderGroup {
     pub views: Vec<RenderView>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LocalTransforms {
     Uninit,
     Owned { data: Vec<LocalTransform> },
@@ -62,7 +62,7 @@ pub enum LocalTransforms {
     NeedsShared,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum JointTransforms {
     None,
     Owned { data: Vec<Mat4F32> },
@@ -78,7 +78,7 @@ pub enum InverseBindMatrices {
     NeedsShared,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NewInstanceData {
     pub handle: InstanceHandle,
     pub prototype: PrototypeHandle,
@@ -99,7 +99,7 @@ impl NewInstanceData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CopiedInstanceData {
     pub handles: Vec<InstanceHandle>,
     pub prototype_handle: PrototypeHandle,
@@ -128,6 +128,7 @@ impl InstanceUploadData {
     }
 }
 
+#[derive(Clone)]
 pub enum WorldUpdateDelta {
     NewEntitySpawn(NewInstanceData),
     EntityInstanceSpawn(CopiedInstanceData),

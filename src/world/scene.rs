@@ -186,9 +186,7 @@ impl Scene {
             (
                 buggy_entity,
                 Box::new(APosition {
-                    position: (cgmath::Matrix4::from_angle_y(cgmath::Deg(90.0))
-                        * cgmath::Matrix4::<f32>::from_scale(0.02))
-                    .into(),
+                    position: (cgmath::Matrix4::<f32>::from_scale(0.02)).into(),
                 }),
             ),
             (
@@ -358,6 +356,53 @@ impl Scene {
 
         Ok(scene)
     }
+
+    pub fn independant_foxes(
+        world: &mut crate::world::world::World,
+    ) -> Result<Self, crate::world::WorldInitError> {
+        let fox_asset = world.register_asset::<GltfAsset>("fox")?;
+        let fox_entity = world.entity_manager.new_entity()?;
+        let mcc = MeshCollectionDescriptor::new(fox_asset.clone(), MeshAcessor::All)
+            .with_animation(AnimationComponentDescriptor {
+                resource_backing: fox_asset,
+                accessor: AnimationAccessor::All,
+                rigid_animation_mode: AnimationMode::Independent,
+                skinned_animation_mode: AnimationMode::Independent,
+            });
+
+        world
+            .entity_manager
+            .add_mesh_collection_for_entity(&fox_entity, mcc); // mesh
+
+        let mut scene = Scene::new();
+        scene.add_entity(fox_entity);
+        scene.spawn(vec![
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_scale(0.05).into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(3., 0., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+            (
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: (cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(-3., 0., 0.))
+                        * cgmath::Matrix4::<f32>::from_scale(0.05))
+                    .into(),
+                }),
+            ),
+        ]);
+        Ok(scene)
+    }
+
     pub fn shared_foxes(
         world: &mut crate::world::world::World,
     ) -> Result<Self, crate::world::WorldInitError> {

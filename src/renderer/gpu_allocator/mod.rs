@@ -173,7 +173,9 @@ impl StorageData for LocalTransform {
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("local transform storage buffer"),
             size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         GPUChunk {
@@ -189,7 +191,9 @@ impl StorageData for JointTransform {
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("joint transform storage buffer"),
             size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         GPUChunk {

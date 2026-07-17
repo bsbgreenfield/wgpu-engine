@@ -14,6 +14,8 @@ pub trait Archetype {
         manager: &mut InstanceManager,
         entity_handle: &EntityHandle,
     ) -> InstanceHandle;
+
+    fn debug_type(&self) -> ArchetypeId;
 }
 pub struct APosition {
     pub position: GlobalTransform,
@@ -32,6 +34,10 @@ impl Archetype for APosition {
         entity_handle: &EntityHandle,
     ) -> InstanceHandle {
         manager.pos.insert(*self, *entity_handle)
+    }
+
+    fn debug_type(&self) -> ArchetypeId {
+        ArchetypeId::Position
     }
 }
 

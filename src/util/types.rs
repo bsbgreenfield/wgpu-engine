@@ -342,3 +342,23 @@ pub struct InstanceRecordData {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 pub struct InstanceOffset(pub u32);
+pub fn mat4_translation(mat: &Mat4F32) -> cgmath::Vector3<f32> {
+    cgmath::Vector3::new(mat[3][0], mat[3][1], mat[3][2])
+}
+impl LocalTransform {
+    pub fn translation(&self) -> cgmath::Vector3<f32> {
+        mat4_translation(self)
+    }
+}
+
+impl GlobalTransform {
+    pub fn translation(&self) -> cgmath::Vector3<f32> {
+        mat4_translation(&self.transform)
+    }
+}
+
+impl JointTransform {
+    pub fn translation(&self) -> cgmath::Vector3<f32> {
+        mat4_translation(self)
+    }
+}

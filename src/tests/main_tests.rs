@@ -22,11 +22,17 @@ mod integration_tests {
         },
     };
 
+    struct BytecodeDumpResult {
+        world_update_deltas: Vec<WorldUpdateDelta>,
+        render_update_deltas: Vec<RenderUpdateDelta>,
+        instructions: Vec<Instruction>,
+    }
     enum TestCases {
         Box,
         MultiBox,
         Fox,
         FoxAnimated,
+        IndependantFoxes,
         BoxFox,
         BoxAnimated,
     }
@@ -49,7 +55,7 @@ mod integration_tests {
     }
 
     fn get_bytecode<'a>(
-        deltas: &'a mut Vec<WorldUpdateDelta>,
+        deltas: &'a Vec<WorldUpdateDelta>,
     ) -> (Vec<RenderConstant<'a>>, Vec<Instruction>) {
         let mut constants = Vec::<RenderConstant<'a>>::new();
         let mut instructions = Vec::<Instruction>::new();
@@ -125,6 +131,9 @@ mod integration_tests {
             TestCases::FoxAnimated => Scene::fox_animated_scene(&mut world).expect("fox anim init"),
             TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
             TestCases::BoxAnimated => Scene::box_animated(&mut world).expect("box animated init"),
+            TestCases::IndependantFoxes => {
+                Scene::independant_foxes(&mut world).expect("independant foxes")
+            }
         };
         world.add_scene(scene);
         app.world = world;
@@ -146,7 +155,7 @@ mod integration_tests {
             .unwrap_or_else(|e| panic!("{}", e));
         assert_world_deltas(&app.world.deltas, expected_world_deltas);
 
-        let (constants, instructions) = get_bytecode(&mut app.world.deltas);
+        let (constants, instructions) = get_bytecode(&app.world.deltas);
 
         let render_deltas = app
             .renderer
@@ -163,11 +172,42 @@ mod integration_tests {
         app.world.deltas.clear();
     }
 
+    fn run_frame_with_bytecode_dump(app: &mut App<'_>) -> BytecodeDumpResult {
+        app.world
+            .update(&mut app.app_commands)
+            .unwrap_or_else(|e| panic!("{}", e));
+
+        let (constants, instructions) = get_bytecode(&app.world.deltas);
+        let mut lc = Vec::new();
+        for l in instructions.iter() {
+            lc.push(l.clone());
+        }
+
+        let render_deltas: Vec<RenderUpdateDelta> = app
+            .renderer
+            .update(
+                constants,
+                instructions,
+                &app.app_config.as_ref().unwrap().queue,
+                &app.app_config.as_ref().unwrap().device,
+            )
+            .unwrap_or_else(|e| panic!("{}", e));
+        app.world.post_frame_update(render_deltas.clone());
+        let deltas = app.world.deltas.clone();
+        app.world.deltas.clear();
+
+        BytecodeDumpResult {
+            world_update_deltas: deltas,
+            render_update_deltas: render_deltas,
+            instructions: lc,
+        }
+    }
+
     fn run_frame_unchecked(app: &mut App<'_>) {
         app.world
             .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
-        let (constants, instructions) = get_bytecode(&mut app.world.deltas);
+        let (constants, instructions) = get_bytecode(&app.world.deltas);
 
         let render_deltas = app
             .renderer
@@ -670,6 +710,27 @@ mod integration_tests {
             }
         })
     }
+
+    #[test]
+    fn independant_foxes() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::IndependantFoxes).await;
+            run_frame_unchecked(&mut app);
+            let dump = run_frame_with_bytecode_dump(&mut app);
+            for wd in dump.world_update_deltas.iter() {
+                println!("{:?}", wd);
+            }
+            for rd in dump.render_update_deltas.iter() {
+                println!("{:?}", rd);
+            }
+            for i in dump.instructions.iter() {
+                println!("{:?}", i);
+            }
+
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 3);
+            panic!()
+        });
+    }
     #[test]
     fn despawn_box() {
         pollster::block_on(async {
@@ -901,12 +962,61 @@ mod integration_tests {
         });
     }
 
-    /// Spawn two distinct prototypes (Box + Fox), despawn every instance of
-    /// the box, then spawn a fresh box. The surviving fox prototype must keep
-    /// the exact same draw item (lt_idx + instance/primitive/index ranges)
-    /// across the despawn AND the subsequent re-allocation — this is the
-    /// integration-level check that the free-list dealloc + merge path does
-    /// not corrupt the GPU offsets of a live, unrelated prototype.
+    #[test]
+    fn despawn_middle_instance() {
+        pollster::block_on(async {
+            let mut app = setup_world(TestCases::Box).await;
+
+            run_frame_unchecked(&mut app);
+            run_frame_unchecked(&mut app);
+
+            app.world.scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
+                        10., 0., 0.,
+                    ))
+                    .into(),
+                }),
+            )]);
+
+            run_frame_unchecked(&mut app);
+
+            app.world.scene.spawn(vec![(
+                EntityHandle(0),
+                Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
+                        -10., 0., 0.,
+                    ))
+                    .into(),
+                }),
+            )]);
+
+            run_frame_unchecked(&mut app);
+
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 3);
+
+            let _ = app.world.despawn(InstanceHandle {
+                archetype: ArchetypeId::Position,
+                entity_handle: EntityHandle(0),
+                instance_id: 1,
+                generation: 0,
+            });
+            run_frame_unchecked(&mut app);
+
+            let positions = app.world.instance_manager.get_pos_table_positions();
+
+            assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
+
+            assert_eq!(positions[0].translation().x, 0.);
+            assert_eq!(positions[1].translation().x, -10.);
+
+            gen_draw_calls(&mut app);
+            for a in app.render_packet.draw_packet.pnu.iter() {
+                print!("{:?}", a.1)
+            }
+        })
+    }
     #[test]
     fn despawn_one_prototype_preserves_others_and_reuses_space() {
         pollster::block_on(async {
