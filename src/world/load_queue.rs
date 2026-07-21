@@ -10,16 +10,19 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
 pub(super) struct SceneLoadJob {
     load_level: SceneLoadLevel,
     entity_load_jobs: Vec<EntityHandle>,
 }
 
+#[derive(Debug)]
 struct EntityLoadJob {
     ref_count: usize,
     asset_load_jobs: Vec<AssetHandle>,
 }
 
+#[derive(Debug)]
 struct AssetLoadJob {
     current_load_level: SceneLoadLevel,
     max_load_level: SceneLoadLevel,
@@ -219,7 +222,7 @@ mod load_queue_tests {
                 entity_manager::EntityManager,
             },
             load_queue::EntityLoadQueue,
-            scene::{Scene, SceneLoadLevel},
+            scene::{Scene, SceneId, SceneLoadLevel},
         },
     };
 

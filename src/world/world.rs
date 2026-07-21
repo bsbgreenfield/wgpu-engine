@@ -17,7 +17,7 @@ use crate::{
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
-        scene::SceneEvent,
+        scene::{SceneEvent, SceneId, SceneLoadLevel},
     },
 };
 
@@ -167,6 +167,10 @@ impl World {
         self.init = true;
     }
     pub fn add_scene(&mut self, scene: Scene) {
+        for entity in scene.entitites.iter() {
+            let assets = self.entity_manager.rbcs_of(*entity);
+            self.asset_manager.increment_asset_refs(assets);
+        }
         self.scene = scene;
     }
 
@@ -267,8 +271,19 @@ impl World {
                             if !self.try_handle_scene_load()? {
                                 break 'outer;
                             }
-                        } else {
-                            //TODO: continue?
+                        } else if new < old {
+                            match (old, new) {
+                                (SceneLoadLevel::GPU, SceneLoadLevel::CPU) => {
+                                    todo!("remove gpu residencies")
+                                }
+                                (SceneLoadLevel::GPU, SceneLoadLevel::NotLoaded) => {
+                                    todo!("remove gpu and cpu residencies")
+                                }
+                                (SceneLoadLevel::CPU, SceneLoadLevel::NotLoaded) => {
+                                    todo!("remove cpu residencies")
+                                }
+                                _ => unreachable!(),
+                            }
                         }
                     }
                     SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {

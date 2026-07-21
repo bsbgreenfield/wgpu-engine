@@ -81,7 +81,7 @@ impl Debug for SceneEvent {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct SceneId(usize);
 pub struct Scene {
     pub scene_id: SceneId,
@@ -126,6 +126,10 @@ impl Scene {
     pub fn current_event(&self) -> Option<&SceneEvent> {
         self.event_queue.last()
     }
+
+    fn despawn_all(&mut self) {
+        todo!()
+    }
     pub fn spawn(&mut self, instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>) {
         self.dirty = true;
         self.event_queue.push(SceneEvent::Spawn(instance_data));
@@ -135,13 +139,16 @@ impl Scene {
         self.event_queue.sort();
     }
 
-    pub fn add_entity(&mut self, entity: EntityHandle) {
+    pub(super) fn add_entity(&mut self, entity: EntityHandle) {
         self.entitites.push(entity);
     }
 
     fn set_load_level(&mut self, level: SceneLoadLevel) {
         self.event_queue
             .push(SceneEvent::LoadLevelChanged(self.load_level, level));
+        if self.load_level == SceneLoadLevel::GPU && level < self.load_level {
+            self.despawn_all();
+        }
         self.load_level = level;
         self.dirty = true;
     }
