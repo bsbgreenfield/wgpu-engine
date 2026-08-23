@@ -13,11 +13,14 @@ use crate::{
     world::{
         WorldUpdateError,
         camera::Camera,
-        dependency_dag::DependencyDAG,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
-        scene::{SceneEvent, SceneId, SceneLoadLevel, scene::Scene},
+        scene::{
+            SceneEvent, SceneId, SceneLoadLevel,
+            manager::{SceneManager, SceneManagerError},
+            scene::{Scene, Spawn},
+        },
     },
 };
 
@@ -155,8 +158,8 @@ pub struct World {
     pub asset_manager: AssetManager,
     load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
+    pub scene_manager: SceneManager,
     pub deltas: Vec<WorldUpdateDelta>,
-    dependencies: DependencyDAG,
 }
 
 impl World {
@@ -168,7 +171,7 @@ impl World {
         self.init = true;
     }
     pub fn add_scene(&mut self, scene: Scene) {
-        self.dependencies.add_scene(&scene, &self.entity_manager);
+        // self.dependencies.add_scene(&scene, &self.entity_manager);
         self.scene = scene;
     }
 
@@ -192,8 +195,16 @@ impl World {
             asset_manager: AssetManager::new(),
             load_queue: EntityLoadQueue::new(),
             instance_manager: InstanceManager::new(),
-            dependencies: DependencyDAG::new(),
+            scene_manager: SceneManager::new(),
         }
+    }
+
+    pub fn add_instances(
+        &mut self,
+        scene_id: SceneId,
+        spawn_data: Vec<Spawn<dyn Archetype>>,
+    ) -> Result<(), SceneManagerError> {
+        self.scene_manager.add_instances(scene_id, spawn_data)
     }
 
     pub fn spawn(

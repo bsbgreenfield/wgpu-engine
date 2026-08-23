@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     common::{entity::EntityHandle, instance::InstanceHandle},
     world::{
@@ -6,6 +8,43 @@ use crate::{
         world::InstanceUploadData,
     },
 };
+
+pub struct Spawn<T: Archetype + ?Sized> {
+    pub entity: EntityHandle,
+    pub data: Box<T>,
+}
+
+impl<T: Archetype + ?Sized> From<(EntityHandle, Box<T>)> for Spawn<T> {
+    fn from(value: (EntityHandle, Box<T>)) -> Self {
+        Self {
+            entity: value.0,
+            data: value.1,
+        }
+    }
+}
+
+pub(super) struct SceneDesc {
+    pub(super) children: Vec<SceneId>,
+    pub(super) entities: Vec<(EntityHandle, Vec<Box<dyn Archetype>>)>,
+}
+
+pub(super) struct SceneRuntime {
+    pub(super) instances: Vec<InstanceHandle>,
+    pub(super) current_state: SceneLoadLevel,
+    pub(super) requested_level: SceneLoadLevel,
+    pub(super) event_queue: Vec<SceneEvent>,
+}
+
+impl SceneRuntime {
+    pub fn new() -> Self {
+        Self {
+            instances: vec![],
+            current_state: SceneLoadLevel::NotLoaded,
+            requested_level: SceneLoadLevel::NotLoaded,
+            event_queue: vec![],
+        }
+    }
+}
 
 pub struct Scene {
     pub scene_id: SceneId,

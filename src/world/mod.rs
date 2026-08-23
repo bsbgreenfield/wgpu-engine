@@ -3,12 +3,11 @@ use std::fmt::Display;
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError},
     common::{entity::EntityHandle, instance::InstanceHandle},
-    world::entity_manager::EntityManagerError,
+    world::{entity_manager::EntityManagerError, scene::manager::SceneManagerError},
 };
 
 pub(super) mod bytecode_gen;
 pub mod camera;
-mod dependency_dag;
 pub mod entity_manager;
 pub mod instance_manager;
 pub(super) mod load_queue;
@@ -18,6 +17,7 @@ pub mod world;
 pub enum WorldInitError {
     AssetFailure(AssetLoadError),
     EntityFailure(EntityManagerError),
+    SceneCreationFailure(SceneManagerError),
 }
 
 #[derive(Debug)]

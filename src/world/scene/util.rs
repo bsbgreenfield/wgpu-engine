@@ -11,9 +11,71 @@ use crate::{
             MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
-        scene::scene::Scene,
+        scene::{
+            SceneNew,
+            builder::SceneBuilder,
+            scene::{Scene, Spawn},
+        },
     },
 };
+
+impl SceneNew {
+    pub fn create_buggy(
+        world: &mut crate::world::world::World,
+    ) -> Result<(), crate::world::WorldInitError> {
+        let buggy_asset = world.register_asset::<GltfAsset>("buggy")?;
+        let buggy_entity = world.entity_manager.new_entity()?;
+        world.entity_manager.add_mesh_collection_for_entity(
+            &buggy_entity,
+            MeshCollectionDescriptor::new(buggy_asset, MeshAcessor::All),
+        );
+
+        let mut builder = SceneBuilder::new(world);
+        builder = builder.add_entity(buggy_entity);
+
+        let brain_asset = world.register_asset::<GltfAsset>("brain")?;
+        let brain_entity = world.entity_manager.new_entity()?;
+
+        world.entity_manager.add_mesh_collection_for_entity(
+            &brain_entity,
+            MeshCollectionDescriptor::new(brain_asset.clone(), MeshAcessor::All).with_animation(
+                AnimationComponentDescriptor {
+                    resource_backing: brain_asset,
+                    accessor: AnimationAccessor::All,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                },
+            ),
+        );
+        builder = builder.add_entity(brain_entity);
+        let scene_id = builder.create(world);
+
+        world
+            .add_instances(
+                scene_id,
+                vec![
+                    Spawn {
+                        entity: buggy_entity,
+                        data: Box::new(APosition {
+                            position: (cgmath::Matrix4::<f32>::from_scale(0.02)).into(),
+                        }),
+                    },
+                    Spawn {
+                        entity: brain_entity,
+                        data: Box::new(APosition {
+                            position: cgmath::Matrix4::<f32>::from_translation(
+                                cgmath::Vector3::new(3., 0., 0.),
+                            )
+                            .into(),
+                        }),
+                    },
+                ],
+            )
+            .map_err(|e| crate::world::WorldInitError::SceneCreationFailure(e))?;
+
+        Ok(())
+    }
+}
 
 impl Scene {
     pub fn buggy(

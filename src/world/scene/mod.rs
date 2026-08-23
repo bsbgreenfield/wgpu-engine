@@ -1,14 +1,20 @@
 pub mod builder;
+pub mod dependency_graph;
+pub mod manager;
 pub mod scene;
 pub mod util;
 use crate::{
-    asset_manager::AssetLoadResult, common::entity::EntityHandle,
-    world::instance_manager::archetypes::Archetype,
+    asset_manager::AssetLoadResult,
+    common::entity::EntityHandle,
+    world::{
+        instance_manager::archetypes::Archetype,
+        scene::scene::{SceneDesc, SceneRuntime},
+    },
 };
 use std::fmt::Debug;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
-pub struct SceneId(usize);
+pub struct SceneId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum SceneLoadLevel {
     NotLoaded,
@@ -71,4 +77,10 @@ impl Debug for SceneEvent {
             Self::Spawn(arg0) => write!(f, "Spawn {} entities ", arg0.len()),
         }
     }
+}
+
+pub struct SceneNew {
+    pub id: SceneId,
+    pub desc: SceneDesc,
+    pub runtime: SceneRuntime,
 }
