@@ -81,6 +81,7 @@ impl From<GltfLoadError> for AssetLoadError {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct AssetHandle(u32);
+
 impl RenderKey for AssetHandle {
     fn as_key(&self) -> u64 {
         self.0 as u64
