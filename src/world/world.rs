@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 use std::range::Range;
 
-use super::scene::Scene;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetLoadError, asset_manager::AssetManager},
@@ -14,10 +13,11 @@ use crate::{
     world::{
         WorldUpdateError,
         camera::Camera,
+        dependency_dag::DependencyDAG,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
-        scene::{SceneEvent, SceneId, SceneLoadLevel},
+        scene::{SceneEvent, SceneId, SceneLoadLevel, scene::Scene},
     },
 };
 
@@ -156,6 +156,7 @@ pub struct World {
     load_queue: EntityLoadQueue,
     pub instance_manager: InstanceManager,
     pub deltas: Vec<WorldUpdateDelta>,
+    dependencies: DependencyDAG,
 }
 
 impl World {
@@ -167,10 +168,7 @@ impl World {
         self.init = true;
     }
     pub fn add_scene(&mut self, scene: Scene) {
-        for entity in scene.entitites.iter() {
-            let assets = self.entity_manager.rbcs_of(*entity);
-            self.asset_manager.increment_asset_refs(assets);
-        }
+        self.dependencies.add_scene(&scene, &self.entity_manager);
         self.scene = scene;
     }
 
@@ -194,6 +192,7 @@ impl World {
             asset_manager: AssetManager::new(),
             load_queue: EntityLoadQueue::new(),
             instance_manager: InstanceManager::new(),
+            dependencies: DependencyDAG::new(),
         }
     }
 
@@ -212,11 +211,22 @@ impl World {
         instance_upload_data
     }
 
-    pub fn despawn(&mut self, instance_handle: InstanceHandle) -> Result<(), WorldUpdateError> {
+    pub fn despawn_instance(
+        &mut self,
+        instance_handle: InstanceHandle,
+    ) -> Result<(), WorldUpdateError> {
         let gpu_instance_handle = self.instance_manager.despawn(instance_handle)?;
         self.deltas
             .push(WorldUpdateDelta::InstanceDespawn(gpu_instance_handle));
         Ok(())
+    }
+
+    pub fn despawn_scene(&mut self, scene_id: SceneId) {
+        //TODO: find the actual scene
+        let scene = std::mem::replace(&mut self.scene, Scene::new());
+        for instance in scene.instances.iter() {
+            let dead_list = self.despawn_instance(instance.clone());
+        }
     }
 
     pub fn update<'frame>(

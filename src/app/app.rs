@@ -5,7 +5,7 @@ use crate::{
     renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
     world::{
         bytecode_gen::BytecodeGenerator, instance_manager::gen_draw_calls::DrawCallGenerator,
-        scene::Scene, world::World,
+        scene::scene::Scene, world::World,
     },
 };
 use winit::{

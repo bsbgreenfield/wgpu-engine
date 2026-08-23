@@ -6,7 +6,7 @@ use crate::{
     world::{
         WorldUpdateError,
         entity_manager::entity_manager::EntityManager,
-        scene::{Scene, SceneId, SceneLoadLevel},
+        scene::{SceneId, SceneLoadLevel, scene::Scene},
     },
 };
 
@@ -222,7 +222,7 @@ mod load_queue_tests {
                 entity_manager::EntityManager,
             },
             load_queue::EntityLoadQueue,
-            scene::{Scene, SceneId, SceneLoadLevel},
+            scene::{SceneLoadLevel, scene::Scene},
         },
     };
 

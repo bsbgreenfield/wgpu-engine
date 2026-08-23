@@ -20,7 +20,7 @@ mod integration_tests {
                 archetypes::{APosition, ArchetypeId},
                 gen_draw_calls::DrawCallGenerator,
             },
-            scene::Scene,
+            scene::scene::Scene,
             world::{World, WorldUpdateDelta},
         },
     };
@@ -872,7 +872,7 @@ mod integration_tests {
 
             let mock = InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
             app.world
-                .despawn(mock.clone())
+                .despawn_instance(mock.clone())
                 .map_err(|e| println!("{}", e))
                 .unwrap();
 
@@ -956,7 +956,7 @@ mod integration_tests {
             // Despawn the first instance.
             let first = InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
             app.world
-                .despawn(first)
+                .despawn_instance(first)
                 .map_err(|e| println!("{}", e))
                 .unwrap();
             assert_world_deltas(&app.world.deltas, &[WorldDeltaKind::InstanceDespawn]);
@@ -1095,7 +1095,7 @@ mod integration_tests {
 
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 3);
 
-            let _ = app.world.despawn(InstanceHandle {
+            let _ = app.world.despawn_instance(InstanceHandle {
                 archetype: ArchetypeId::Position,
                 entity_handle: EntityHandle(0),
                 instance_id: 1,
@@ -1161,7 +1161,7 @@ mod integration_tests {
                 .expect("this should be the box instance")
                 .clone();
 
-            app.world.despawn(box_handle).unwrap();
+            app.world.despawn_instance(box_handle).unwrap();
             run_frame_unchecked(&mut app);
             gen_draw_calls(&mut app);
 

@@ -8,6 +8,7 @@ use crate::{
 
 pub(super) mod bytecode_gen;
 pub mod camera;
+mod dependency_dag;
 pub mod entity_manager;
 pub mod instance_manager;
 pub(super) mod load_queue;

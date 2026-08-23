@@ -1,0 +1,74 @@
+pub mod builder;
+pub mod scene;
+pub mod util;
+use crate::{
+    asset_manager::AssetLoadResult, common::entity::EntityHandle,
+    world::instance_manager::archetypes::Archetype,
+};
+use std::fmt::Debug;
+
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+pub struct SceneId(usize);
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub enum SceneLoadLevel {
+    NotLoaded,
+    CPU,
+    GPU,
+}
+
+impl From<&AssetLoadResult> for SceneLoadLevel {
+    fn from(value: &AssetLoadResult) -> Self {
+        match value {
+            AssetLoadResult::PendingCPU => SceneLoadLevel::NotLoaded,
+            AssetLoadResult::LoadedCPU => SceneLoadLevel::CPU,
+            AssetLoadResult::PendingGPU => SceneLoadLevel::CPU,
+            AssetLoadResult::LoadedGPU(_) => SceneLoadLevel::GPU,
+        }
+    }
+}
+
+pub enum SceneEvent {
+    LoadLevelChanged(SceneLoadLevel, SceneLoadLevel),
+    Spawn(Vec<(EntityHandle, Box<dyn Archetype>)>),
+}
+
+impl SceneEvent {
+    fn priority(&self) -> usize {
+        match self {
+            Self::LoadLevelChanged(_, _) => 1,
+            Self::Spawn(_) => 0,
+        }
+    }
+}
+
+impl PartialEq for SceneEvent {
+    fn eq(&self, other: &Self) -> bool {
+        self.priority() == other.priority()
+    }
+}
+
+impl Eq for SceneEvent {}
+
+impl PartialOrd for SceneEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SceneEvent {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.priority().cmp(&other.priority())
+    }
+}
+impl Debug for SceneEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LoadLevelChanged(arg0, arg1) => f
+                .debug_tuple("LoadLevelChanged")
+                .field(arg0)
+                .field(arg1)
+                .finish(),
+            Self::Spawn(arg0) => write!(f, "Spawn {} entities ", arg0.len()),
+        }
+    }
+}

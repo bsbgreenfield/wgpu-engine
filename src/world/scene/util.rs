@@ -1,166 +1,21 @@
-use std::fmt::Debug;
-
 use cgmath::{SquareMatrix, Vector3};
 
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
 use crate::{
-    asset_manager::{AssetLoadResult, gltf_asset::GltfAsset},
-    common::{entity::EntityHandle, instance::InstanceHandle},
+    asset_manager::gltf_asset::GltfAsset,
+    common::entity::EntityHandle,
     world::{
         entity_manager::components::{
             AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
             MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
-        world::InstanceUploadData,
+        scene::scene::Scene,
     },
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub enum SceneLoadLevel {
-    NotLoaded,
-    CPU,
-    GPU,
-}
-
-impl From<&AssetLoadResult> for SceneLoadLevel {
-    fn from(value: &AssetLoadResult) -> Self {
-        match value {
-            AssetLoadResult::PendingCPU => SceneLoadLevel::NotLoaded,
-            AssetLoadResult::LoadedCPU => SceneLoadLevel::CPU,
-            AssetLoadResult::PendingGPU => SceneLoadLevel::CPU,
-            AssetLoadResult::LoadedGPU(_) => SceneLoadLevel::GPU,
-        }
-    }
-}
-
-pub enum SceneEvent {
-    LoadLevelChanged(SceneLoadLevel, SceneLoadLevel),
-    Spawn(Vec<(EntityHandle, Box<dyn Archetype>)>),
-}
-
-impl SceneEvent {
-    fn priority(&self) -> usize {
-        match self {
-            Self::LoadLevelChanged(_, _) => 1,
-            Self::Spawn(_) => 0,
-        }
-    }
-}
-
-impl PartialEq for SceneEvent {
-    fn eq(&self, other: &Self) -> bool {
-        self.priority() == other.priority()
-    }
-}
-
-impl Eq for SceneEvent {}
-
-impl PartialOrd for SceneEvent {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SceneEvent {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.priority().cmp(&other.priority())
-    }
-}
-impl Debug for SceneEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::LoadLevelChanged(arg0, arg1) => f
-                .debug_tuple("LoadLevelChanged")
-                .field(arg0)
-                .field(arg1)
-                .finish(),
-            Self::Spawn(arg0) => write!(f, "Spawn {} entities ", arg0.len()),
-        }
-    }
-}
-
-#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
-pub struct SceneId(usize);
-pub struct Scene {
-    pub scene_id: SceneId,
-    pub entitites: Vec<EntityHandle>,
-    pub instances: Vec<InstanceHandle>,
-    dirty: bool,
-    pub load_level: SceneLoadLevel,
-    pub event_queue: Vec<SceneEvent>,
-}
-
 impl Scene {
-    #[cfg(test)]
-    pub fn new_with_id(id: usize) -> Self {
-        Self {
-            scene_id: SceneId(id),
-            entitites: vec![],
-            instances: vec![],
-            dirty: false,
-            load_level: SceneLoadLevel::NotLoaded,
-            event_queue: Vec::new(),
-        }
-    }
-
-    pub(super) fn add_instances(&mut self, instance_upload_data: &InstanceUploadData) {
-        self.instances.extend(instance_upload_data.handles());
-    }
-
-    pub fn new() -> Self {
-        Self {
-            scene_id: SceneId(0), // TODO: scene ids to keep track of loads, querys, etc??
-            entitites: vec![],
-            instances: vec![],
-            dirty: false,
-            load_level: SceneLoadLevel::NotLoaded,
-            event_queue: Vec::new(),
-        }
-    }
-    pub fn mark_clean(&mut self) {
-        self.dirty = false;
-    }
-
-    pub fn current_event(&self) -> Option<&SceneEvent> {
-        self.event_queue.last()
-    }
-
-    fn despawn_all(&mut self) {
-        todo!()
-    }
-    pub fn spawn(&mut self, instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>) {
-        self.dirty = true;
-        self.event_queue.push(SceneEvent::Spawn(instance_data));
-        if self.load_level < SceneLoadLevel::GPU {
-            self.set_load_level(SceneLoadLevel::GPU);
-        }
-        self.event_queue.sort();
-    }
-
-    pub(super) fn add_entity(&mut self, entity: EntityHandle) {
-        self.entitites.push(entity);
-    }
-
-    fn set_load_level(&mut self, level: SceneLoadLevel) {
-        self.event_queue
-            .push(SceneEvent::LoadLevelChanged(self.load_level, level));
-        if self.load_level == SceneLoadLevel::GPU && level < self.load_level {
-            self.despawn_all();
-        }
-        self.load_level = level;
-        self.dirty = true;
-    }
-
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
-    pub fn pop_event(&mut self) -> Option<SceneEvent> {
-        self.event_queue.pop()
-    }
-
     pub fn buggy(
         world: &mut crate::world::world::World,
     ) -> Result<Self, crate::world::WorldInitError> {
@@ -512,9 +367,9 @@ impl Scene {
                     res.push((
                         EntityHandle(0),
                         Box::new(APosition {
-                            position: (cgmath::Matrix4::<f32>::from_translation(Vector3::new(
-                                x, y, z,
-                            )) * cgmath::Matrix4::<f32>::from_scale(0.5))
+                            position: (cgmath::Matrix4::<f32>::from_translation(
+                                cgmath::Vector3::new(x, y, z),
+                            ) * cgmath::Matrix4::<f32>::from_scale(0.5))
                             .into(),
                         }),
                     ));
