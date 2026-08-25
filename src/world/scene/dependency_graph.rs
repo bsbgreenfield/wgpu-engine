@@ -44,7 +44,7 @@ struct AssetNode {
 }
 
 enum LoadLevelChangeResult {
-    Changed,
+    Changed(SceneLoadLevel, SceneLoadLevel),
     Unchanged,
 }
 
@@ -92,7 +92,7 @@ trait DepNode {
         }
         let new_max = get_max_level(rc);
         if old_max != new_max {
-            return LoadLevelChangeResult::Changed;
+            return LoadLevelChangeResult::Changed(old_max, new_max);
         } else {
             return LoadLevelChangeResult::Unchanged;
         }
@@ -173,10 +173,10 @@ impl DependencyGraph {
             for entity_idx in curr.entities.iter() {
                 let entity_node = entities.get_mut(*entity_idx).expect("should exist");
                 match entity_node.set_level(new_level, last_level) {
-                    LoadLevelChangeResult::Changed => {
+                    LoadLevelChangeResult::Changed(old_max, new_max) => {
                         for asset in entity_node.assets.iter() {
                             let asset_node = assets.get_mut(*asset).unwrap();
-                            asset_node.set_level(new_level, last_level);
+                            asset_node.set_level(new_max, old_max);
                         }
                     }
                     LoadLevelChangeResult::Unchanged => {}
