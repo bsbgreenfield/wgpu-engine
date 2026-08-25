@@ -5,7 +5,6 @@ pub mod scene;
 mod test;
 pub mod util;
 use crate::{
-    asset_manager::AssetLoadResult,
     common::entity::EntityHandle,
     world::{
         instance_manager::archetypes::Archetype,
@@ -21,17 +20,6 @@ pub enum SceneLoadLevel {
     NotLoaded,
     CPU,
     GPU,
-}
-
-impl From<&AssetLoadResult> for SceneLoadLevel {
-    fn from(value: &AssetLoadResult) -> Self {
-        match value {
-            AssetLoadResult::PendingCPU => SceneLoadLevel::NotLoaded,
-            AssetLoadResult::LoadedCPU => SceneLoadLevel::CPU,
-            AssetLoadResult::PendingGPU => SceneLoadLevel::CPU,
-            AssetLoadResult::LoadedGPU(_) => SceneLoadLevel::GPU,
-        }
-    }
 }
 
 pub enum SceneEvent {

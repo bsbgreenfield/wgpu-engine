@@ -29,13 +29,6 @@ pub enum AssetLoadError {
     NoVertexData,
     InstanceUploadFailure(String),
 }
-#[derive(Debug)]
-pub enum AssetLoadResult {
-    LoadedCPU,
-    LoadedGPU(GPUAllocationHandle),
-    PendingGPU,
-    PendingCPU,
-}
 
 pub struct MeshRenderables {
     pub pnu_vertex_ranges: Option<Vec<Range<u32>>>,
@@ -127,18 +120,20 @@ pub trait Asset {
 #[derive(Clone, Debug)]
 pub enum AssetResidency {
     Registered,
+    PendingCPU,
     CPU(usize),
+    PendingGPU(usize),
     GPU(GPUAllocationHandle, usize),
 }
 impl PartialEq<SceneLoadLevel> for AssetResidency {
     fn eq(&self, other: &SceneLoadLevel) -> bool {
         match self {
-            AssetResidency::Registered => {
+            AssetResidency::Registered | AssetResidency::PendingCPU => {
                 if *other == SceneLoadLevel::NotLoaded {
                     return true;
                 }
             }
-            AssetResidency::CPU(_) => {
+            AssetResidency::CPU(_) | AssetResidency::PendingGPU(_) => {
                 if *other == SceneLoadLevel::CPU {
                     return true;
                 }
@@ -157,13 +152,13 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
     fn partial_cmp(&self, other: &SceneLoadLevel) -> Option<std::cmp::Ordering> {
         use std::cmp::Ordering;
         match self {
-            AssetResidency::Registered => match other {
+            AssetResidency::Registered | AssetResidency::PendingCPU => match other {
                 SceneLoadLevel::NotLoaded => return Some(Ordering::Equal),
                 SceneLoadLevel::CPU | SceneLoadLevel::GPU => {
                     return Some(Ordering::Less);
                 }
             },
-            AssetResidency::CPU(_) => match other {
+            AssetResidency::CPU(_) | AssetResidency::PendingGPU(_) => match other {
                 SceneLoadLevel::NotLoaded => return Some(Ordering::Greater),
                 SceneLoadLevel::CPU => return Some(Ordering::Equal),
                 SceneLoadLevel::GPU => return Some(Ordering::Less),

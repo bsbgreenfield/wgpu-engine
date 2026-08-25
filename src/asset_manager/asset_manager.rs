@@ -3,8 +3,7 @@ use std::{collections::HashMap, fmt::Debug, marker::PhantomData};
 use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
-        Asset, AssetHandle, AssetLoadError, AssetLoadResult, AssetResidency, LoadedAsset,
-        UnloadedAssetData,
+        Asset, AssetHandle, AssetLoadError, AssetResidency, LoadedAsset, UnloadedAssetData,
     },
     renderer::GPUAllocationHandle,
     world::{entity_manager::components::ResourceBacking, scene::SceneLoadLevel},
@@ -35,14 +34,11 @@ impl<A: Asset + ?Sized> RegisteredAsset<A> {
         let Self::Loaded(res) = self else {
             panic!("set gpu called on unloaded asset");
         };
-        let AssetResidency::CPU(la_index) = res else {
-            if let AssetResidency::GPU(_, _) = res {
-                return;
-            } else {
-                panic!("tried to set gpu loaded on asset with residency of {res:?}");
-            }
-        };
-        *res = AssetResidency::GPU(alloc_handle, *la_index);
+        if let AssetResidency::PendingGPU(idx) = res {
+            *res = AssetResidency::GPU(alloc_handle, *idx);
+        } else {
+            panic!("tried to set gpu loaded on asset with residency of {res:?}");
+        }
     }
 }
 
@@ -62,14 +58,17 @@ impl AssetManager {
         AssetHandle(self.registered_assets.len() as u32)
     }
 
-    fn res_level_of(&self, asset_handle: &AssetHandle) -> Result<&AssetResidency, AssetLoadError> {
+    pub fn res_level_of(
+        &self,
+        asset_handle: &AssetHandle,
+    ) -> Result<AssetResidency, AssetLoadError> {
         let registered = self
             .registered_assets
             .get(asset_handle)
             .ok_or(AssetLoadError::AssetNotFound)?;
         match registered {
-            RegisteredAsset::Unloaded { data: _data, _t } => Ok(&AssetResidency::Registered),
-            RegisteredAsset::Loaded(res) => Ok(res),
+            RegisteredAsset::Unloaded { data: _data, _t } => Ok(AssetResidency::Registered),
+            RegisteredAsset::Loaded(res) => Ok(res.clone()),
         }
     }
 
@@ -144,34 +143,44 @@ impl AssetManager {
         &mut self,
         asset_handle: &AssetHandle,
         load_level: SceneLoadLevel,
-    ) -> Result<AssetLoadResult, AssetLoadError> {
-        let asset_res_level: &AssetResidency = self.res_level_of(asset_handle)?;
+    ) -> Result<AssetResidency, AssetLoadError> {
+        let asset_res_level: AssetResidency = self.res_level_of(asset_handle)?;
         match load_level {
             SceneLoadLevel::NotLoaded => {
                 todo!("unload assets")
             }
             SceneLoadLevel::CPU => match asset_res_level {
                 AssetResidency::Registered => {
-                    self.load(asset_handle)?;
+                    let idx = self.load(asset_handle)?;
                     // TODO: start async operation and return PendingCPU
-                    return Ok(AssetLoadResult::LoadedCPU);
+                    return Ok(AssetResidency::CPU(idx));
                 }
-                AssetResidency::CPU(_) => {
-                    return Ok(AssetLoadResult::LoadedCPU);
+                AssetResidency::PendingCPU => return Ok(AssetResidency::PendingCPU),
+                AssetResidency::PendingGPU(_) => todo!("cancel?"),
+                AssetResidency::CPU(idx) => {
+                    return Ok(AssetResidency::CPU(idx));
                 }
                 AssetResidency::GPU(_, _) => todo!("unload gpu?"),
             },
             SceneLoadLevel::GPU => match asset_res_level {
                 AssetResidency::Registered => {
-                    self.load(asset_handle)?;
+                    let idx = self.load(asset_handle)?;
                     // TODO: return PendingCPU once async
-                    return Ok(AssetLoadResult::PendingGPU);
+                    return Ok(AssetResidency::PendingGPU(idx));
                 }
-                AssetResidency::CPU(_) => {
-                    return Ok(AssetLoadResult::PendingGPU);
+                AssetResidency::PendingCPU => return Ok(AssetResidency::PendingCPU),
+                AssetResidency::CPU(idx) => {
+                    match self.registered_assets.get_mut(asset_handle).unwrap() {
+                        RegisteredAsset::Loaded(res) => *res = AssetResidency::PendingGPU(idx),
+                        _ => panic!("asset not found"),
+                    }
+                    return Ok(AssetResidency::PendingGPU(idx));
                 }
-                AssetResidency::GPU(allocation_handle, _) => {
-                    return Ok(AssetLoadResult::LoadedGPU(allocation_handle.clone()));
+                AssetResidency::PendingGPU(idx) => {
+                    return Ok(AssetResidency::PendingGPU(idx));
+                }
+                AssetResidency::GPU(allocation_handle, idx) => {
+                    return Ok(AssetResidency::GPU(allocation_handle.clone(), idx));
                 }
             },
         }

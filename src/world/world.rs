@@ -16,6 +16,7 @@ use crate::{
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
         load_queue::EntityLoadQueue,
+        load_queue_new::LoadQueueNew,
         scene::{
             SceneEvent, SceneId, SceneLoadLevel,
             manager::{SceneManager, SceneManagerError},
@@ -157,6 +158,7 @@ pub struct World {
     pub entity_manager: EntityManager,
     pub asset_manager: AssetManager,
     load_queue: EntityLoadQueue,
+    load_queue_new: LoadQueueNew,
     pub instance_manager: InstanceManager,
     pub scene_manager: SceneManager,
     pub deltas: Vec<WorldUpdateDelta>,
@@ -194,6 +196,7 @@ impl World {
             entity_manager: EntityManager::new(),
             asset_manager: AssetManager::new(),
             load_queue: EntityLoadQueue::new(),
+            load_queue_new: LoadQueueNew::default(),
             instance_manager: InstanceManager::new(),
             scene_manager: SceneManager::new(),
         }
@@ -238,6 +241,19 @@ impl World {
         for instance in scene.instances.iter() {
             let dead_list = self.despawn_instance(instance.clone());
         }
+    }
+
+    pub fn update_new<'frame>(
+        &'frame mut self,
+        commands: &mut Vec<AppCommand>,
+    ) -> Result<(), WorldUpdateError> {
+        self.scene_manager.process_scene_events();
+        for update in self.scene_manager.asset_updates().drain(..) {
+            self.load_queue_new
+                .add_load_job(update, &self.asset_manager);
+        }
+
+        Ok(())
     }
 
     pub fn update<'frame>(

@@ -1,13 +1,20 @@
-use std::{error::Error, fmt::Display};
+use std::{
+    collections::{binary_heap::Drain, hash_map::Entry},
+    error::Error,
+    fmt::Display,
+};
 
-use crate::world::{
-    entity_manager::entity_manager::EntityManager,
-    instance_manager::archetypes::Archetype,
-    scene::{
-        SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime,
-        builder::SceneBuilder,
-        dependency_graph::{DependencyGraph, DependencyGraphError},
-        scene::Spawn,
+use crate::{
+    asset_manager::AssetHandle,
+    world::{
+        entity_manager::entity_manager::EntityManager,
+        instance_manager::archetypes::Archetype,
+        scene::{
+            SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime,
+            builder::SceneBuilder,
+            dependency_graph::{DependencyGraph, DependencyGraphError},
+            scene::Spawn,
+        },
     },
 };
 
@@ -36,7 +43,7 @@ impl Display for SceneManagerError {
 
 pub struct SceneManager {
     scenes: Vec<SceneNew>,
-    dirty_list: Vec<bool>,
+    dirty_list: Vec<SceneId>,
     dependency_graph: DependencyGraph,
 }
 
@@ -46,6 +53,25 @@ impl SceneManager {
             scenes: vec![],
             dependency_graph: DependencyGraph::new(),
             dirty_list: vec![],
+        }
+    }
+
+    pub fn asset_updates<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
+        self.dependency_graph
+            .load_results
+            .asset_updates
+            .drain()
+            .collect()
+    }
+
+    pub fn process_scene_events(&mut self) {
+        for scene_id in self.dirty_list.drain(..) {
+            let scene = self.scenes.get(scene_id.0).unwrap();
+            if scene.runtime.requested_level == scene.runtime.current_state {
+                continue;
+            }
+            self.dependency_graph
+                .set_load_level(scene_id, scene.runtime.requested_level);
         }
     }
 
@@ -64,7 +90,6 @@ impl SceneManager {
             .add_scene(&new_scene, entity_manager)
             .map_err(|de| SceneManagerError::DependencyGraph(de))?;
         self.scenes.push(new_scene);
-        self.dirty_list.push(false);
         Ok(id)
     }
 
@@ -86,8 +111,7 @@ impl SceneManager {
                 level,
             ));
         modified_scene.runtime.requested_level = level;
-        self.dependency_graph.set_load_level(scene_id, level)?;
-        self.dirty_list[scene_id.0] = true;
+        self.dirty_list.push(modified_scene.id);
         Ok(())
     }
 
@@ -126,7 +150,7 @@ impl SceneManager {
     }
 
     pub(super) fn is_dirty(&self, id: SceneId) -> bool {
-        self.dirty_list[id.0]
+        self.dirty_list.contains(&id)
     }
 
     pub(super) fn graph(&self) -> &DependencyGraph {

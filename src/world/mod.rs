@@ -11,6 +11,7 @@ pub mod camera;
 pub mod entity_manager;
 pub mod instance_manager;
 pub(super) mod load_queue;
+pub(super) mod load_queue_new;
 pub mod scene;
 pub mod world;
 #[derive(Debug)]

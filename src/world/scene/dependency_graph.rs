@@ -1,9 +1,17 @@
-use std::{collections::btree_map::Range, fmt::Display, iter::Copied};
+use std::{
+    collections::{HashMap, HashSet, btree_map::Range},
+    fmt::Display,
+    hash::Hash,
+    iter::Copied,
+};
 
-use crate::world::{
-    RenderKey,
-    entity_manager::entity_manager::EntityManager,
-    scene::{SceneId, SceneLoadLevel, SceneNew},
+use crate::{
+    asset_manager::AssetHandle,
+    world::{
+        RenderKey,
+        entity_manager::entity_manager::EntityManager,
+        scene::{SceneId, SceneLoadLevel, SceneNew},
+    },
 };
 
 #[derive(Debug)]
@@ -117,10 +125,15 @@ impl DepNode for AssetNode {
     }
 }
 
+pub struct FrameLoadResult {
+    pub asset_updates: HashMap<AssetHandle, SceneLoadLevel>,
+}
+
 pub struct DependencyGraph {
     roots: Vec<SceneNode>,
     entities: Vec<EntityNode>,
     assets: Vec<AssetNode>,
+    pub load_results: FrameLoadResult,
 }
 
 impl DependencyGraph {
@@ -149,6 +162,7 @@ impl DependencyGraph {
             roots,
             entities,
             assets,
+            ..
         } = self;
         let maybe_scene = roots.iter_mut().find_map(|r| {
             return Self::find_scene(r, scene_id);
@@ -176,7 +190,13 @@ impl DependencyGraph {
                     LoadLevelChangeResult::Changed(old_max, new_max) => {
                         for asset in entity_node.assets.iter() {
                             let asset_node = assets.get_mut(*asset).unwrap();
-                            asset_node.set_level(new_max, old_max);
+                            if let LoadLevelChangeResult::Changed(_old, new) =
+                                asset_node.set_level(new_max, old_max)
+                            {
+                                self.load_results
+                                    .asset_updates
+                                    .insert(AssetHandle::from_key(*asset as u64), new);
+                            }
                         }
                     }
                     LoadLevelChangeResult::Unchanged => {}
@@ -248,6 +268,9 @@ impl DependencyGraph {
             roots: vec![],
             entities: vec![],
             assets: vec![],
+            load_results: FrameLoadResult {
+                asset_updates: HashMap::new(),
+            },
         }
     }
 }
