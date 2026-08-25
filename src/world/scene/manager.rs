@@ -1,10 +1,13 @@
 use std::{error::Error, fmt::Display};
 
 use crate::world::{
+    entity_manager::entity_manager::EntityManager,
     instance_manager::archetypes::Archetype,
     scene::{
-        SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime, builder::SceneBuilder,
-        dependency_graph::DependencyGraph, scene::Spawn,
+        SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime,
+        builder::SceneBuilder,
+        dependency_graph::{DependencyGraph, DependencyGraphError},
+        scene::Spawn,
     },
 };
 
@@ -12,6 +15,13 @@ use crate::world::{
 pub enum SceneManagerError {
     SpawnError,
     LoadLevelUpdateError,
+    DependencyGraph(DependencyGraphError),
+}
+
+impl From<DependencyGraphError> for SceneManagerError {
+    fn from(value: DependencyGraphError) -> Self {
+        Self::DependencyGraph(value)
+    }
 }
 impl Error for SceneManagerError {}
 impl Display for SceneManagerError {
@@ -19,6 +29,7 @@ impl Display for SceneManagerError {
         match self {
             Self::SpawnError => f.write_str("failed to spawn"),
             Self::LoadLevelUpdateError => f.write_str("failed to update load level"),
+            Self::DependencyGraph(de) => de.fmt(f),
         }
     }
 }
@@ -38,17 +49,23 @@ impl SceneManager {
         }
     }
 
-    pub fn add_scene(&mut self, scene: SceneBuilder) -> SceneId {
+    pub fn add_scene(
+        &mut self,
+        scene: SceneBuilder,
+        entity_manager: &EntityManager,
+    ) -> Result<SceneId, SceneManagerError> {
         let id = SceneId(self.scenes.len());
         let new_scene = SceneNew {
             id,
             desc: scene.desc,
             runtime: SceneRuntime::new(),
         };
+        self.dependency_graph
+            .add_scene(&new_scene, entity_manager)
+            .map_err(|de| SceneManagerError::DependencyGraph(de))?;
         self.scenes.push(new_scene);
         self.dirty_list.push(false);
-        // dep graph?
-        id
+        Ok(id)
     }
 
     pub fn set_load_level(
@@ -69,7 +86,7 @@ impl SceneManager {
                 level,
             ));
         modified_scene.runtime.requested_level = level;
-
+        self.dependency_graph.set_load_level(scene_id, level)?;
         self.dirty_list[scene_id.0] = true;
         Ok(())
     }
@@ -95,5 +112,28 @@ impl SceneManager {
                 .push(spawn_datum.data);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl SceneManager {
+    pub(super) fn scene_count(&self) -> usize {
+        self.scenes.len()
+    }
+
+    pub(super) fn scene(&self, id: SceneId) -> Option<&SceneNew> {
+        self.scenes.get(id.0)
+    }
+
+    pub(super) fn is_dirty(&self, id: SceneId) -> bool {
+        self.dirty_list[id.0]
+    }
+
+    pub(super) fn graph(&self) -> &DependencyGraph {
+        &self.dependency_graph
+    }
+
+    pub(super) fn graph_mut(&mut self) -> &mut DependencyGraph {
+        &mut self.dependency_graph
     }
 }

@@ -20,6 +20,12 @@ pub enum WorldInitError {
     SceneCreationFailure(SceneManagerError),
 }
 
+impl From<SceneManagerError> for WorldInitError {
+    fn from(value: SceneManagerError) -> Self {
+        return Self::SceneCreationFailure(value);
+    }
+}
+
 #[derive(Debug)]
 pub enum WorldUpdateError {
     AssetLoadFailure(AssetLoadError),

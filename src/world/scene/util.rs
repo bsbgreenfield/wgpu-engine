@@ -48,7 +48,7 @@ impl SceneNew {
             ),
         );
         builder = builder.add_entity(brain_entity);
-        let scene_id = builder.create(world);
+        let scene_id = builder.create(world)?;
 
         world
             .add_instances(

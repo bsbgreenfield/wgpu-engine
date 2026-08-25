@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     common::entity::EntityHandle,
     world::{
-        scene::{SceneDesc, SceneId, SceneLoadLevel, SceneNew},
+        scene::{SceneDesc, SceneId, SceneLoadLevel, SceneNew, manager::SceneManagerError},
         world::World,
     },
 };
@@ -32,7 +32,7 @@ impl SceneBuilder {
         self
     }
 
-    pub fn create(self, world: &mut World) -> SceneId {
-        world.scene_manager.add_scene(self)
+    pub fn create(self, world: &mut World) -> Result<SceneId, SceneManagerError> {
+        world.scene_manager.add_scene(self, &world.entity_manager)
     }
 }

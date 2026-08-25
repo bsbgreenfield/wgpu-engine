@@ -2,6 +2,7 @@ pub mod builder;
 pub mod dependency_graph;
 pub mod manager;
 pub mod scene;
+mod test;
 pub mod util;
 use crate::{
     asset_manager::AssetLoadResult,
