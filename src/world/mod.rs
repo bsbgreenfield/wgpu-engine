@@ -10,7 +10,6 @@ pub(super) mod bytecode_gen;
 pub mod camera;
 pub mod entity_manager;
 pub mod instance_manager;
-pub(super) mod load_queue;
 pub(super) mod load_queue_new;
 pub mod scene;
 pub mod world;
@@ -38,6 +37,7 @@ pub enum WorldUpdateError {
     InstanceSpawnFailure,
     InstancceNotFound(InstanceHandle),
     RenderablesNotAvailable(EntityHandle),
+    SceneManagerError(SceneManagerError),
 }
 
 impl Display for WorldUpdateError {
@@ -74,6 +74,7 @@ impl Display for WorldUpdateError {
                 "In update render state, the entity with handle {:?} could not generate renderable data",
                 handle
             ),
+            Self::SceneManagerError(sme) => sme.fmt(f),
         }
     }
 }
@@ -83,6 +84,12 @@ impl std::error::Error for WorldUpdateError {}
 impl From<AssetLoadError> for WorldUpdateError {
     fn from(value: AssetLoadError) -> Self {
         Self::AssetLoadFailure(value)
+    }
+}
+
+impl From<SceneManagerError> for WorldUpdateError {
+    fn from(value: SceneManagerError) -> Self {
+        Self::SceneManagerError(value)
     }
 }
 

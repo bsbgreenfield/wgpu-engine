@@ -1,5 +1,5 @@
-use std::fmt::Debug;
 use std::range::Range;
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
@@ -15,7 +15,6 @@ use crate::{
         camera::Camera,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
-        load_queue::EntityLoadQueue,
         load_queue_new::LoadQueueNew,
         scene::{
             SceneEvent, SceneId, SceneLoadLevel,
@@ -154,10 +153,8 @@ impl<'frame> Debug for WorldUpdateDelta {
 pub struct World {
     init: bool,
     pub camera: Camera,
-    pub scene: Scene,
     pub entity_manager: EntityManager,
     pub asset_manager: AssetManager,
-    load_queue: EntityLoadQueue,
     load_queue_new: LoadQueueNew,
     pub instance_manager: InstanceManager,
     pub scene_manager: SceneManager,
@@ -171,10 +168,6 @@ impl World {
     pub fn init(&mut self, aspect_ratio: f32, device: &wgpu::Device) {
         self.camera.build_camera_uniform(aspect_ratio, device);
         self.init = true;
-    }
-    pub fn add_scene(&mut self, scene: Scene) {
-        // self.dependencies.add_scene(&scene, &self.entity_manager);
-        self.scene = scene;
     }
 
     pub fn register_asset<A>(&mut self, str_dir: &str) -> Result<ResourceBacking<A>, AssetLoadError>
@@ -192,10 +185,8 @@ impl World {
             deltas: Vec::<WorldUpdateDelta>::new(),
             init: false,
             camera,
-            scene: Scene::new(),
             entity_manager: EntityManager::new(),
             asset_manager: AssetManager::new(),
-            load_queue: EntityLoadQueue::new(),
             load_queue_new: LoadQueueNew::default(),
             instance_manager: InstanceManager::new(),
             scene_manager: SceneManager::new(),
@@ -216,9 +207,10 @@ impl World {
             .spawn_instances(&self.entity_manager, &self.asset_manager, instance_data)
             .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e));
 
-        for upload_data in instance_upload_data.iter() {
-            self.scene.add_instances(&upload_data);
+        for iud in instance_upload_data.iter() {
+            todo!("add instance handles to scenes?")
         }
+
         instance_upload_data
     }
 
@@ -232,24 +224,24 @@ impl World {
         Ok(())
     }
 
-    pub fn despawn_scene(&mut self, scene_id: SceneId) {
-        //TODO: find the actual scene
-        let scene = std::mem::replace(&mut self.scene, Scene::new());
-        for instance in scene.instances.iter() {
-            let dead_list = self.despawn_instance(instance.clone());
-        }
-    }
+    // pub fn despawn_scene(&mut self, scene_id: SceneId) {
+    //     //TODO: find the actual scene
+    //     let scene = std::mem::replace(&mut self.scene, Scene::new());
+    //     for instance in scene.instances.iter() {
+    //         let dead_list = self.despawn_instance(instance.clone());
+    //     }
+    // }
 
-    pub fn update_new<'frame>(
+    pub fn update<'frame>(
         &'frame mut self,
         commands: &mut Vec<AppCommand>,
     ) -> Result<(), WorldUpdateError> {
-        self.scene_manager.process_scene_events();
+        self.scene_manager.process_scene_events()?;
         for update in self.scene_manager.asset_updates().drain(..) {
             self.load_queue_new
                 .add_load_job(update, &self.asset_manager);
         }
-        self.load_queue_new.poll_jobs(&mut self.asset_manager);
+        self.load_queue_new.poll_jobs(&mut self.asset_manager)?;
         for handle in self.load_queue_new.pending_gpu.drain(..) {
             let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
             self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
@@ -263,104 +255,104 @@ impl World {
         Ok(())
     }
 
-    pub fn update<'frame>(
-        &'frame mut self,
-        commands: &mut Vec<AppCommand>,
-    ) -> Result<(), WorldUpdateError> {
-        // check scenes
-        if self.scene.is_dirty() {
-            self.handle_scene_event()?; // TODO: allow for multiple scenes
-        }
-        let pending_assets = self.load_queue.pending_asset_uploads.drain(..);
-        for handle in pending_assets {
-            let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
-            self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
-        }
+    // pub fn update<'frame>(
+    //     &'frame mut self,
+    //     commands: &mut Vec<AppCommand>,
+    // ) -> Result<(), WorldUpdateError> {
+    //     // check scenes
+    //     if self.scene.is_dirty() {
+    //         self.handle_scene_event()?; // TODO: allow for multiple scenes
+    //     }
+    //     let pending_assets = self.load_queue.pending_asset_uploads.drain(..);
+    //     for handle in pending_assets {
+    //         let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
+    //         self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+    //     }
 
-        let completed_assets = self.load_queue_new.completed.drain(..);
-        for handle in completed_assets {}
+    //     let completed_assets = self.load_queue_new.completed.drain(..);
+    //     for handle in completed_assets {}
 
-        self.instance_manager.update(commands);
+    //     self.instance_manager.update(commands);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    fn try_handle_scene_load(&mut self) -> Result<bool, WorldUpdateError> {
-        self.load_queue
-            .poll_scene_job(self.scene.scene_id, &mut self.asset_manager)?;
-        if self
-            .load_queue
-            .completed_queue
-            .get(&self.scene.scene_id)
-            .is_some()
-        {
-            self.scene.pop_event();
-            self.load_queue.dequeue_spawned_scene(self.scene.scene_id);
-            return Ok(true);
-        }
+    // fn try_handle_scene_load(&mut self) -> Result<bool, WorldUpdateError> {
+    //     self.load_queue
+    //         .poll_scene_job(self.scene.scene_id, &mut self.asset_manager)?;
+    //     if self
+    //         .load_queue
+    //         .completed_queue
+    //         .get(&self.scene.scene_id)
+    //         .is_some()
+    //     {
+    //         self.scene.pop_event();
+    //         self.load_queue.dequeue_spawned_scene(self.scene.scene_id);
+    //         return Ok(true);
+    //     }
 
-        Ok(false)
-    }
+    //     Ok(false)
+    // }
 
-    fn handle_scene_event(&mut self) -> Result<(), WorldUpdateError> {
-        'outer: loop {
-            let scene_event = self.scene.current_event();
-            if scene_event.is_some() {
-                match scene_event.unwrap() {
-                    SceneEvent::LoadLevelChanged(old, new) => {
-                        if self.load_queue.has_pending_scene_job(self.scene.scene_id) {
-                            if !self.try_handle_scene_load()? {
-                                break;
-                            }
-                        } else if new > old {
-                            self.load_queue
-                                .new_scene_job(&self.scene, &self.entity_manager)?;
-                            if !self.try_handle_scene_load()? {
-                                break 'outer;
-                            }
-                        } else if new < old {
-                            match (old, new) {
-                                (SceneLoadLevel::GPU, SceneLoadLevel::CPU) => {
-                                    todo!("remove gpu residencies")
-                                }
-                                (SceneLoadLevel::GPU, SceneLoadLevel::NotLoaded) => {
-                                    todo!("remove gpu and cpu residencies")
-                                }
-                                (SceneLoadLevel::CPU, SceneLoadLevel::NotLoaded) => {
-                                    todo!("remove cpu residencies")
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                    }
-                    SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
-                        SceneEvent::Spawn(instance_data) => {
-                            let upload_data = self.spawn(instance_data);
-                            for datum in upload_data {
-                                match datum {
-                                    InstanceUploadData::New(new_instance) => {
-                                        self.deltas
-                                            .push(WorldUpdateDelta::NewEntitySpawn(new_instance));
-                                    }
-                                    InstanceUploadData::Copied(copied_instance) => {
-                                        self.deltas.push(WorldUpdateDelta::EntityInstanceSpawn(
-                                            copied_instance,
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        _ => unreachable!(),
-                    },
-                    SceneEvent::SpawnNew => {}
-                }
-            } else {
-                self.scene.mark_clean();
-                break;
-            }
-        }
-        Ok(())
-    }
+    // fn handle_scene_event(&mut self) -> Result<(), WorldUpdateError> {
+    //     'outer: loop {
+    //         let scene_event = self.scene.current_event();
+    //         if scene_event.is_some() {
+    //             match scene_event.unwrap() {
+    //                 SceneEvent::LoadLevelChanged(old, new) => {
+    //                     if self.load_queue.has_pending_scene_job(self.scene.scene_id) {
+    //                         if !self.try_handle_scene_load()? {
+    //                             break;
+    //                         }
+    //                     } else if new > old {
+    //                         self.load_queue
+    //                             .new_scene_job(&self.scene, &self.entity_manager)?;
+    //                         if !self.try_handle_scene_load()? {
+    //                             break 'outer;
+    //                         }
+    //                     } else if new < old {
+    //                         match (old, new) {
+    //                             (SceneLoadLevel::GPU, SceneLoadLevel::CPU) => {
+    //                                 todo!("remove gpu residencies")
+    //                             }
+    //                             (SceneLoadLevel::GPU, SceneLoadLevel::NotLoaded) => {
+    //                                 todo!("remove gpu and cpu residencies")
+    //                             }
+    //                             (SceneLoadLevel::CPU, SceneLoadLevel::NotLoaded) => {
+    //                                 todo!("remove cpu residencies")
+    //                             }
+    //                             _ => unreachable!(),
+    //                         }
+    //                     }
+    //                 }
+    //                 SceneEvent::Spawn(_) => match self.scene.pop_event().unwrap() {
+    //                     SceneEvent::Spawn(instance_data) => {
+    //                         let upload_data = self.spawn(instance_data);
+    //                         for datum in upload_data {
+    //                             match datum {
+    //                                 InstanceUploadData::New(new_instance) => {
+    //                                     self.deltas
+    //                                         .push(WorldUpdateDelta::NewEntitySpawn(new_instance));
+    //                                 }
+    //                                 InstanceUploadData::Copied(copied_instance) => {
+    //                                     self.deltas.push(WorldUpdateDelta::EntityInstanceSpawn(
+    //                                         copied_instance,
+    //                                     ));
+    //                                 }
+    //                             }
+    //                         }
+    //                     }
+    //                     _ => unreachable!(),
+    //                 },
+    //                 SceneEvent::SpawnNew => {}
+    //             }
+    //         } else {
+    //             self.scene.mark_clean();
+    //             break;
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     pub fn post_frame_update(&mut self, render_deltas: Vec<RenderUpdateDelta>) {
         for delta in render_deltas {

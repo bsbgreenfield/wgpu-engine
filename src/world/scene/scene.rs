@@ -8,17 +8,9 @@ use crate::{
 };
 
 pub struct Spawn<T: Archetype + ?Sized> {
+    pub scene_id: SceneId,
     pub entity: EntityHandle,
     pub data: Box<T>,
-}
-
-impl<T: Archetype + ?Sized> From<(EntityHandle, Box<T>)> for Spawn<T> {
-    fn from(value: (EntityHandle, Box<T>)) -> Self {
-        Self {
-            entity: value.0,
-            data: value.1,
-        }
-    }
 }
 
 //TODO: move archetype data to runtime?

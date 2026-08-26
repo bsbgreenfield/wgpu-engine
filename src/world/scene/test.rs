@@ -53,8 +53,13 @@ mod util {
         *assets.iter().next().unwrap()
     }
 
-    pub(super) fn spawn_at(entity: EntityHandle, x: f32) -> Spawn<dyn Archetype> {
+    pub(super) fn spawn_at(
+        entity: EntityHandle,
+        x: f32,
+        scene_id: SceneId,
+    ) -> Spawn<dyn Archetype> {
         Spawn {
+            scene_id,
             entity,
             data: Box::new(APosition {
                 position: cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(x, 0., 0.)).into(),

@@ -55,12 +55,14 @@ impl SceneNew {
                 scene_id,
                 vec![
                     Spawn {
+                        scene_id,
                         entity: buggy_entity,
                         data: Box::new(APosition {
                             position: (cgmath::Matrix4::<f32>::from_scale(0.02)).into(),
                         }),
                     },
                     Spawn {
+                        scene_id,
                         entity: brain_entity,
                         data: Box::new(APosition {
                             position: cgmath::Matrix4::<f32>::from_translation(
@@ -75,7 +77,7 @@ impl SceneNew {
 
         world
             .scene_manager
-            .set_load_level(scene_id, SceneLoadLevel::GPU);
+            .set_load_level(scene_id, SceneLoadLevel::GPU)?;
 
         Ok(())
     }

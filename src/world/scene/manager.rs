@@ -62,7 +62,7 @@ impl SceneManager {
             .collect()
     }
 
-    pub fn process_scene_events(&mut self) {
+    pub fn process_scene_events(&mut self) -> Result<(), SceneManagerError> {
         for scene_id in self.dirty_list.drain(..) {
             let scene = self.scenes.get_mut(scene_id.0).unwrap();
             if scene.runtime.requested_level == scene.runtime.current_state {
@@ -72,8 +72,9 @@ impl SceneManager {
                 }
             }
             self.dependency_graph
-                .set_load_level(scene_id, scene.runtime.requested_level);
+                .set_load_level(scene_id, scene.runtime.requested_level)?;
         }
+        Ok(())
     }
 
     pub fn get_scene(&self, idx: usize) -> &SceneNew {
@@ -107,11 +108,6 @@ impl SceneManager {
             .scenes
             .get_mut(scene_id.0)
             .ok_or(SceneManagerError::LoadLevelUpdateError)?;
-
-        modified_scene
-            .runtime
-            .event_queue
-            .push(SceneEvent::SpawnNew);
 
         modified_scene
             .runtime
