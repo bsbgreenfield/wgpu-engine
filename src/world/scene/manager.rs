@@ -1,15 +1,18 @@
-use std::{error::Error, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt::Display,
+};
 
 use crate::{
-    asset_manager::AssetHandle,
+    asset_manager::{AssetHandle, asset_manager::AssetManager},
+    common::instance::InstanceHandle,
     world::{
         entity_manager::entity_manager::EntityManager,
-        instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
+        instance_manager::archetypes::Archetype,
         scene::{
-            SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime,
-            builder::SceneBuilder,
-            dependency_graph::{DependencyGraph, DependencyGraphError},
-            scene::Spawn,
+            SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime, builder::SceneBuilder,
+            dep_graph_2::DependencyGraphNew, dependency_graph::DependencyGraphError, scene::Spawn,
         },
     },
 };
@@ -39,42 +42,84 @@ impl Display for SceneManagerError {
 
 pub struct SceneManager {
     scenes: Vec<SceneNew>,
-    dirty_list: Vec<SceneId>,
-    dependency_graph: DependencyGraph,
+    dependency_graph: DependencyGraphNew,
     pub spawn_queue: Vec<Spawn<dyn Archetype>>,
+    asset_requests: HashMap<AssetHandle, SceneLoadLevel>,
+    visited: HashMap<SceneId, SceneLoadLevel>,
 }
 
 impl SceneManager {
     pub fn new() -> Self {
         SceneManager {
             scenes: vec![],
-            dependency_graph: DependencyGraph::new(),
-            dirty_list: vec![],
+            dependency_graph: DependencyGraphNew::default(),
             spawn_queue: vec![],
+            asset_requests: HashMap::new(),
+            visited: HashMap::new(),
         }
     }
 
-    pub fn asset_updates<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
-        self.dependency_graph
-            .load_results
-            .asset_updates
-            .drain()
-            .collect()
+    pub fn asset_requests<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
+        self.asset_requests.drain().collect()
     }
 
-    pub fn process_scene_events(&mut self) -> Result<(), SceneManagerError> {
-        for scene_id in self.dirty_list.drain(..) {
-            let scene = self.scenes.get_mut(scene_id.0).unwrap();
-            if scene.runtime.requested_level == scene.runtime.current_state {
-                if !scene.runtime.spawn_queue.is_empty() {
-                    self.spawn_queue
-                        .extend(std::mem::take(&mut scene.runtime.spawn_queue));
+    pub fn process_scene_events(
+        &mut self,
+        asset_manager: &AssetManager,
+    ) -> Result<(), SceneManagerError> {
+        let mut ready: Vec<SceneId> = Vec::new();
+        for idx in 0..self.scenes.len() {
+            let (scene_id, requested) = {
+                let scene = &self.scenes[idx];
+                if !scene.runtime.needs_update() {
+                    continue;
                 }
+                (scene.id, scene.runtime.requested_level)
+            };
+            self.visited.clear();
+            let reached = self.dependency_graph.resolve(
+                scene_id,
+                requested,
+                asset_manager,
+                &mut self.asset_requests,
+                &mut self.visited,
+            )?;
+
+            let actual = reached.min(requested);
+            let scene = &mut self.scenes[idx];
+
+            if actual != scene.runtime.current_state {
+                scene.runtime.event_queue.push(SceneEvent::LoadLevelChanged(
+                    scene.runtime.current_state,
+                    actual,
+                ));
             }
-            self.dependency_graph
-                .set_load_level(scene_id, scene.runtime.requested_level)?;
+            if scene.runtime.ready_to_spawn() {
+                ready.push(scene_id);
+            }
+        }
+
+        for scene_id in ready {
+            self.do_spawns(scene_id);
         }
         Ok(())
+    }
+
+    fn do_spawns(&mut self, root: SceneId) {
+        let mut stack = vec![root];
+        let mut seen = HashSet::new();
+        while let Some(scene_id) = stack.pop() {
+            if !seen.insert(scene_id) {
+                continue;
+            }
+            let spawns = self
+                .scenes
+                .get_mut(scene_id.0)
+                .map(|s| std::mem::take(&mut s.runtime.spawn_queue))
+                .unwrap_or_default();
+            self.spawn_queue.extend(spawns);
+            stack.extend_from_slice(self.dependency_graph.children_of(scene_id));
+        }
     }
 
     pub fn get_scene(&self, idx: usize) -> &SceneNew {
@@ -117,7 +162,6 @@ impl SceneManager {
                 level,
             ));
         modified_scene.runtime.requested_level = level;
-        self.dirty_list.push(modified_scene.id);
         Ok(())
     }
 
@@ -126,37 +170,27 @@ impl SceneManager {
         scene_id: SceneId,
         spawn_data: Vec<Spawn<dyn Archetype>>,
     ) -> Result<(), SceneManagerError> {
+        self.scenes
+            .get_mut(scene_id.0)
+            .ok_or(SceneManagerError::SpawnError)?
+            .runtime
+            .spawn_queue
+            .extend(spawn_data);
+
+        Ok(())
+    }
+
+    pub fn add_instance_handles(
+        &mut self,
+        scene_id: SceneId,
+        handles: impl IntoIterator<Item = InstanceHandle>,
+    ) -> Result<(), SceneManagerError> {
         let scene = self
             .scenes
             .get_mut(scene_id.0)
             .ok_or(SceneManagerError::SpawnError)?;
-        for spawn in spawn_data {
-            scene.runtime.spawn_queue.push(spawn);
-        }
+        scene.runtime.instances.extend(handles);
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-impl SceneManager {
-    pub(super) fn scene_count(&self) -> usize {
-        self.scenes.len()
-    }
-
-    pub(super) fn scene(&self, id: SceneId) -> Option<&SceneNew> {
-        self.scenes.get(id.0)
-    }
-
-    pub(super) fn is_dirty(&self, id: SceneId) -> bool {
-        self.dirty_list.contains(&id)
-    }
-
-    pub(super) fn graph(&self) -> &DependencyGraph {
-        &self.dependency_graph
-    }
-
-    pub(super) fn graph_mut(&mut self) -> &mut DependencyGraph {
-        &mut self.dependency_graph
     }
 }

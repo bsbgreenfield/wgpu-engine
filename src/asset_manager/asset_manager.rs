@@ -165,6 +165,10 @@ impl AssetManager {
             SceneLoadLevel::GPU => match asset_res_level {
                 AssetResidency::Registered => {
                     let idx = self.load(asset_handle)?;
+                    match self.registered_assets.get_mut(asset_handle).unwrap() {
+                        RegisteredAsset::Loaded(res) => *res = AssetResidency::PendingGPU(idx),
+                        _ => panic!("asset not found"),
+                    }
                     // TODO: return PendingCPU once async
                     return Ok(AssetResidency::PendingGPU(idx));
                 }

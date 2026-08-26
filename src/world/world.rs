@@ -1,6 +1,7 @@
 use std::range::Range;
 use std::{collections::HashMap, fmt::Debug};
 
+use crate::renderer::InstanceUploadJob;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetLoadError, asset_manager::AssetManager},
@@ -201,17 +202,30 @@ impl World {
         self.scene_manager.add_instances(scene_id, spawn_data)
     }
 
-    pub fn spawn(&mut self, instance_data: Vec<Spawn<dyn Archetype>>) -> Vec<InstanceUploadData> {
-        let instance_upload_data = self
-            .instance_manager
-            .spawn_instances(&self.entity_manager, &self.asset_manager, instance_data)
-            .unwrap_or_else(|e| panic!("error handle for spawn fail! {:?}", e));
+    pub fn spawn(
+        &mut self,
+        instance_data: Vec<Spawn<dyn Archetype>>,
+    ) -> Result<Vec<InstanceUploadData>, WorldUpdateError> {
+        let mut by_scene: HashMap<SceneId, Vec<Spawn<dyn Archetype>>> = HashMap::new();
 
-        for iud in instance_upload_data.iter() {
-            todo!("add instance handles to scenes?")
+        for spawn in instance_data {
+            by_scene.entry(spawn.scene_id).or_default().push(spawn);
         }
 
-        instance_upload_data
+        let mut all_uploads = Vec::new();
+        for (scene_id, spawns) in by_scene {
+            let upload_data = self.instance_manager.spawn_instances(
+                &self.entity_manager,
+                &self.asset_manager,
+                spawns,
+            )?;
+            for iud in upload_data.iter() {
+                self.scene_manager
+                    .add_instance_handles(scene_id, iud.handles())?;
+            }
+            all_uploads.extend(upload_data);
+        }
+        Ok(all_uploads)
     }
 
     pub fn despawn_instance(
@@ -236,10 +250,11 @@ impl World {
         &'frame mut self,
         commands: &mut Vec<AppCommand>,
     ) -> Result<(), WorldUpdateError> {
-        self.scene_manager.process_scene_events()?;
-        for update in self.scene_manager.asset_updates().drain(..) {
+        self.scene_manager
+            .process_scene_events(&self.asset_manager)?;
+        for request in self.scene_manager.asset_requests() {
             self.load_queue_new
-                .add_load_job(update, &self.asset_manager);
+                .add_load_job(request, &self.asset_manager);
         }
         self.load_queue_new.poll_jobs(&mut self.asset_manager)?;
         for handle in self.load_queue_new.pending_gpu.drain(..) {
@@ -248,7 +263,16 @@ impl World {
         }
         if !self.scene_manager.spawn_queue.is_empty() {
             let sq = std::mem::take(&mut self.scene_manager.spawn_queue);
-            self.spawn(sq);
+            for datum in self.spawn(sq)? {
+                match datum {
+                    InstanceUploadData::New(new) => {
+                        self.deltas.push(WorldUpdateDelta::NewEntitySpawn(new))
+                    }
+                    InstanceUploadData::Copied(copied) => self
+                        .deltas
+                        .push(WorldUpdateDelta::EntityInstanceSpawn(copied)),
+                }
+            }
         }
         self.instance_manager.update(commands);
 

@@ -1,10 +1,11 @@
 pub mod builder;
+pub mod dep_graph_2;
 pub mod dependency_graph;
 pub mod manager;
 pub mod scene;
-mod test;
 pub mod util;
 use crate::{
+    asset_manager::AssetResidency,
     common::entity::EntityHandle,
     world::{
         instance_manager::archetypes::Archetype,
@@ -15,7 +16,7 @@ use std::fmt::Debug;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct SceneId(pub usize);
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub enum SceneLoadLevel {
     NotLoaded,
     CPU,
@@ -24,6 +25,16 @@ pub enum SceneLoadLevel {
 impl Default for SceneLoadLevel {
     fn default() -> Self {
         Self::NotLoaded
+    }
+}
+
+impl From<&AssetResidency> for SceneLoadLevel {
+    fn from(value: &AssetResidency) -> Self {
+        match value {
+            AssetResidency::Registered | AssetResidency::PendingCPU => SceneLoadLevel::NotLoaded,
+            AssetResidency::CPU(_) | AssetResidency::PendingGPU(_) => SceneLoadLevel::CPU,
+            AssetResidency::GPU(_, _) => SceneLoadLevel::GPU,
+        }
     }
 }
 

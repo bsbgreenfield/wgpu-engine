@@ -28,6 +28,20 @@ pub(super) struct SceneRuntime {
     pub(super) spawn_queue: Vec<Spawn<dyn Archetype>>,
 }
 
+impl SceneRuntime {
+    pub(super) fn is_dirty(&self) -> bool {
+        self.current_state != self.requested_level
+    }
+
+    pub(super) fn needs_update(&self) -> bool {
+        self.is_dirty() || !self.spawn_queue.is_empty()
+    }
+
+    pub(super) fn ready_to_spawn(&self) -> bool {
+        self.current_state == SceneLoadLevel::GPU
+    }
+}
+
 pub struct Scene {
     pub scene_id: SceneId,
     pub children: Vec<Scene>,

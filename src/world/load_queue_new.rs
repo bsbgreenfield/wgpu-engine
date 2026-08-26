@@ -5,6 +5,7 @@ use crate::{
     world::scene::SceneLoadLevel,
 };
 
+#[derive(Clone)]
 struct AssetLoadJob {
     target: SceneLoadLevel,
 }
@@ -12,7 +13,6 @@ struct AssetLoadJob {
 #[derive(Default)]
 pub struct LoadQueueNew {
     jobs: HashMap<AssetHandle, AssetLoadJob>,
-    pub completed: Vec<AssetHandle>,
     pub pending_gpu: Vec<AssetHandle>,
 }
 
@@ -44,16 +44,25 @@ impl LoadQueueNew {
         &mut self,
         asset_manager: &mut AssetManager,
     ) -> Result<(), AssetLoadError> {
-        for (asset_handle, job) in self.jobs.iter() {
+        let jobs: Vec<(AssetHandle, AssetLoadJob)> =
+            self.jobs.iter().map(|(ah, aj)| (*ah, aj.clone())).collect();
+        for (asset_handle, job) in jobs.iter() {
             let current = asset_manager.res_level_of(asset_handle)?;
-            if current < job.target {
-                let load_result = asset_manager
-                    .set_minumum_load_level(asset_handle, SceneLoadLevel::from(job.target))?;
-                if matches!(load_result, AssetResidency::PendingGPU(_)) {
-                    self.pending_gpu.push(*asset_handle);
-                } else if load_result == job.target {
-                    self.completed.push(*asset_handle);
-                }
+            if current >= job.target {
+                self.jobs.remove(asset_handle);
+                continue;
+            }
+            if matches!(
+                current,
+                AssetResidency::PendingCPU | AssetResidency::PendingGPU(_)
+            ) {
+                continue;
+            }
+            if matches!(
+                asset_manager.set_minumum_load_level(asset_handle, job.target)?,
+                AssetResidency::PendingGPU(_)
+            ) {
+                self.pending_gpu.push(*asset_handle);
             }
         }
 
