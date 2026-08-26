@@ -1,14 +1,10 @@
-use std::{
-    collections::{binary_heap::Drain, hash_map::Entry},
-    error::Error,
-    fmt::Display,
-};
+use std::{error::Error, fmt::Display};
 
 use crate::{
     asset_manager::AssetHandle,
     world::{
         entity_manager::entity_manager::EntityManager,
-        instance_manager::archetypes::Archetype,
+        instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
         scene::{
             SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime,
             builder::SceneBuilder,
@@ -45,6 +41,7 @@ pub struct SceneManager {
     scenes: Vec<SceneNew>,
     dirty_list: Vec<SceneId>,
     dependency_graph: DependencyGraph,
+    pub spawn_queue: Vec<Spawn<dyn Archetype>>,
 }
 
 impl SceneManager {
@@ -53,6 +50,7 @@ impl SceneManager {
             scenes: vec![],
             dependency_graph: DependencyGraph::new(),
             dirty_list: vec![],
+            spawn_queue: vec![],
         }
     }
 
@@ -66,13 +64,20 @@ impl SceneManager {
 
     pub fn process_scene_events(&mut self) {
         for scene_id in self.dirty_list.drain(..) {
-            let scene = self.scenes.get(scene_id.0).unwrap();
+            let scene = self.scenes.get_mut(scene_id.0).unwrap();
             if scene.runtime.requested_level == scene.runtime.current_state {
-                continue;
+                if !scene.runtime.spawn_queue.is_empty() {
+                    self.spawn_queue
+                        .extend(std::mem::take(&mut scene.runtime.spawn_queue));
+                }
             }
             self.dependency_graph
                 .set_load_level(scene_id, scene.runtime.requested_level);
         }
+    }
+
+    pub fn get_scene(&self, idx: usize) -> &SceneNew {
+        self.scenes.get(idx).expect("scene exists")
     }
 
     pub fn add_scene(
@@ -84,7 +89,7 @@ impl SceneManager {
         let new_scene = SceneNew {
             id,
             desc: scene.desc,
-            runtime: SceneRuntime::new(),
+            runtime: SceneRuntime::default(),
         };
         self.dependency_graph
             .add_scene(&new_scene, entity_manager)
@@ -106,6 +111,11 @@ impl SceneManager {
         modified_scene
             .runtime
             .event_queue
+            .push(SceneEvent::SpawnNew);
+
+        modified_scene
+            .runtime
+            .event_queue
             .push(SceneEvent::LoadLevelChanged(
                 modified_scene.runtime.current_state,
                 level,
@@ -118,23 +128,16 @@ impl SceneManager {
     pub fn add_instances(
         &mut self,
         scene_id: SceneId,
-        mut spawn_data: Vec<Spawn<dyn Archetype>>,
+        spawn_data: Vec<Spawn<dyn Archetype>>,
     ) -> Result<(), SceneManagerError> {
         let scene = self
             .scenes
             .get_mut(scene_id.0)
             .ok_or(SceneManagerError::SpawnError)?;
-
-        for spawn_datum in spawn_data.drain(..) {
-            scene
-                .desc
-                .entities
-                .iter_mut()
-                .find(|e| e.0 == spawn_datum.entity)
-                .ok_or(SceneManagerError::SpawnError)?
-                .1
-                .push(spawn_datum.data);
+        for spawn in spawn_data {
+            scene.runtime.spawn_queue.push(spawn);
         }
+
         Ok(())
     }
 }

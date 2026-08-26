@@ -72,9 +72,9 @@ mod util {
             id: SceneId(id),
             desc: SceneDesc {
                 children,
-                entities: entities.into_iter().map(|e| (e, vec![])).collect(),
+                entities: entities.into_iter().map(|e| e).collect(),
             },
-            runtime: SceneRuntime::new(),
+            runtime: SceneRuntime::default(),
         }
     }
 }
@@ -102,7 +102,7 @@ mod scene_manager_tests {
 
         let scene = world.scene_manager.scene(scene_id).expect("scene exists");
         assert_eq!(scene.desc.entities.len(), 1);
-        assert_eq!(scene.desc.entities[0].0, entity);
+        assert_eq!(scene.desc.entities[0], entity);
 
         assert_eq!(world.scene_manager.graph().root_ids(), vec![scene_id]);
     }
@@ -130,23 +130,6 @@ mod scene_manager_tests {
             scene.runtime.event_queue[0],
             SceneEvent::LoadLevelChanged(SceneLoadLevel::NotLoaded, SceneLoadLevel::GPU)
         ));
-    }
-
-    #[test]
-    fn add_instances_records_spawn_data_against_the_entity() {
-        let mut world = World::new();
-        let entity = asset_entity(&mut world, "box");
-        let scene_id = SceneBuilder::new(&mut world)
-            .add_entity(entity)
-            .create(&mut world)
-            .expect("scene");
-
-        world
-            .add_instances(scene_id, vec![spawn_at(entity, 0.), spawn_at(entity, 3.)])
-            .expect("spawns should be accepted");
-
-        let scene = world.scene_manager.scene(scene_id).expect("scene exists");
-        assert_eq!(scene.desc.entities[0].1.len(), 2);
     }
 }
 

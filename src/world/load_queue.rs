@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    asset_manager::{AssetHandle, AssetLoadResult, asset_manager::AssetManager},
+    asset_manager::{AssetHandle, asset_manager::AssetManager},
     common::entity::EntityHandle,
     world::{
         WorldUpdateError,

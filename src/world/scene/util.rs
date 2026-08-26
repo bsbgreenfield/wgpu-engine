@@ -12,7 +12,7 @@ use crate::{
         },
         instance_manager::archetypes::{APosition, Archetype},
         scene::{
-            SceneNew,
+            SceneLoadLevel, SceneNew,
             builder::SceneBuilder,
             scene::{Scene, Spawn},
         },
@@ -72,6 +72,10 @@ impl SceneNew {
                 ],
             )
             .map_err(|e| crate::world::WorldInitError::SceneCreationFailure(e))?;
+
+        world
+            .scene_manager
+            .set_load_level(scene_id, SceneLoadLevel::GPU);
 
         Ok(())
     }

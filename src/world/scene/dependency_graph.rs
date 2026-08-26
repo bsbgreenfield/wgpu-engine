@@ -234,20 +234,20 @@ impl DependencyGraph {
         }
 
         for child_entity in scene.desc.entities.iter() {
-            new_root.entities.push(child_entity.0.0 as usize);
-            if self.entities.get(child_entity.0.0 as usize).is_none() {
-                if self.entities.len() <= child_entity.0.0 as usize {
+            new_root.entities.push(child_entity.0 as usize);
+            if self.entities.get(child_entity.0 as usize).is_none() {
+                if self.entities.len() <= child_entity.0 as usize {
                     self.entities
-                        .resize_with(child_entity.0.0 as usize + 1, || EntityNode {
+                        .resize_with(child_entity.0 as usize + 1, || EntityNode {
                             rc: (0, 0),
                             assets: vec![],
                         });
                 }
                 let entity_node = self
                     .entities
-                    .get_mut(child_entity.0.0 as usize)
+                    .get_mut(child_entity.0 as usize)
                     .expect("just added entity, where is it?");
-                for asset_handle in entity_manager.rbcs_of(child_entity.0) {
+                for asset_handle in entity_manager.rbcs_of(*child_entity) {
                     entity_node.assets.push(asset_handle.as_key() as usize);
                     if self.assets.len() <= asset_handle.as_key() as usize {
                         self.assets

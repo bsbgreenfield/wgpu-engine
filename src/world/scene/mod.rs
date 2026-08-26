@@ -21,10 +21,16 @@ pub enum SceneLoadLevel {
     CPU,
     GPU,
 }
+impl Default for SceneLoadLevel {
+    fn default() -> Self {
+        Self::NotLoaded
+    }
+}
 
 pub enum SceneEvent {
     LoadLevelChanged(SceneLoadLevel, SceneLoadLevel),
     Spawn(Vec<(EntityHandle, Box<dyn Archetype>)>),
+    SpawnNew,
 }
 
 impl SceneEvent {
@@ -32,6 +38,7 @@ impl SceneEvent {
         match self {
             Self::LoadLevelChanged(_, _) => 1,
             Self::Spawn(_) => 0,
+            Self::SpawnNew => 0,
         }
     }
 }
@@ -64,6 +71,7 @@ impl Debug for SceneEvent {
                 .field(arg1)
                 .finish(),
             Self::Spawn(arg0) => write!(f, "Spawn {} entities ", arg0.len()),
+            Self::SpawnNew => write!(f, "SpawnNew"),
         }
     }
 }

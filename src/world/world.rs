@@ -210,10 +210,7 @@ impl World {
         self.scene_manager.add_instances(scene_id, spawn_data)
     }
 
-    pub fn spawn(
-        &mut self,
-        instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
-    ) -> Vec<InstanceUploadData> {
+    pub fn spawn(&mut self, instance_data: Vec<Spawn<dyn Archetype>>) -> Vec<InstanceUploadData> {
         let instance_upload_data = self
             .instance_manager
             .spawn_instances(&self.entity_manager, &self.asset_manager, instance_data)
@@ -252,6 +249,16 @@ impl World {
             self.load_queue_new
                 .add_load_job(update, &self.asset_manager);
         }
+        self.load_queue_new.poll_jobs(&mut self.asset_manager);
+        for handle in self.load_queue_new.pending_gpu.drain(..) {
+            let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
+            self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+        }
+        if !self.scene_manager.spawn_queue.is_empty() {
+            let sq = std::mem::take(&mut self.scene_manager.spawn_queue);
+            self.spawn(sq);
+        }
+        self.instance_manager.update(commands);
 
         Ok(())
     }
@@ -269,6 +276,9 @@ impl World {
             let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
             self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
         }
+
+        let completed_assets = self.load_queue_new.completed.drain(..);
+        for handle in completed_assets {}
 
         self.instance_manager.update(commands);
 
@@ -342,6 +352,7 @@ impl World {
                         }
                         _ => unreachable!(),
                     },
+                    SceneEvent::SpawnNew => {}
                 }
             } else {
                 self.scene.mark_clean();

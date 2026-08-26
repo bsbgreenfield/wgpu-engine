@@ -11,6 +11,7 @@ use crate::{
         WorldUpdateError,
         entity_manager::{Renderables, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
+        scene::scene::Spawn,
         world::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
     },
 };
@@ -20,7 +21,7 @@ impl InstanceManager {
         &mut self,
         entity_manager: &EntityManager,
         asset_manager: &AssetManager,
-        instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
+        instance_data: Vec<Spawn<dyn Archetype>>,
     ) -> Result<Vec<InstanceUploadData>, WorldUpdateError> {
         let mut res: Vec<InstanceUploadData> = Vec::new();
         let sorted = Self::sort_entities(instance_data);
@@ -161,15 +162,15 @@ impl InstanceManager {
     }
 
     pub(super) fn sort_entities(
-        instance_data: Vec<(EntityHandle, Box<dyn Archetype>)>,
+        instance_data: Vec<Spawn<dyn Archetype>>,
     ) -> HashMap<EntityHandle, Vec<Box<dyn Archetype>>> {
         // loop through the instances being uploaded and sort them by entity handle
         let mut sorted: HashMap<EntityHandle, Vec<Box<dyn Archetype>>> = HashMap::new();
         for instance in instance_data {
             sorted
-                .entry(instance.0)
+                .entry(instance.entity)
                 .or_insert_with(Vec::new)
-                .push(instance.1);
+                .push(instance.data);
         }
         sorted
     }

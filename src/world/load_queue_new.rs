@@ -12,8 +12,8 @@ struct AssetLoadJob {
 #[derive(Default)]
 pub struct LoadQueueNew {
     jobs: HashMap<AssetHandle, AssetLoadJob>,
-    completed: Vec<AssetHandle>,
-    pending_gpu: Vec<AssetHandle>,
+    pub completed: Vec<AssetHandle>,
+    pub pending_gpu: Vec<AssetHandle>,
 }
 
 impl LoadQueueNew {

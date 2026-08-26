@@ -28,7 +28,7 @@ impl SceneBuilder {
     }
 
     pub fn add_entity(mut self, entity: EntityHandle) -> Self {
-        self.desc.entities.push((entity, vec![]));
+        self.desc.entities.push(entity);
         self
     }
 

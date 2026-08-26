@@ -21,27 +21,19 @@ impl<T: Archetype + ?Sized> From<(EntityHandle, Box<T>)> for Spawn<T> {
     }
 }
 
+//TODO: move archetype data to runtime?
 pub(super) struct SceneDesc {
     pub(super) children: Vec<SceneId>,
-    pub(super) entities: Vec<(EntityHandle, Vec<Box<dyn Archetype>>)>,
+    pub(super) entities: Vec<EntityHandle>,
 }
 
+#[derive(Default)]
 pub(super) struct SceneRuntime {
     pub(super) instances: Vec<InstanceHandle>,
     pub(super) current_state: SceneLoadLevel,
     pub(super) requested_level: SceneLoadLevel,
     pub(super) event_queue: Vec<SceneEvent>,
-}
-
-impl SceneRuntime {
-    pub fn new() -> Self {
-        Self {
-            instances: vec![],
-            current_state: SceneLoadLevel::NotLoaded,
-            requested_level: SceneLoadLevel::NotLoaded,
-            event_queue: vec![],
-        }
-    }
+    pub(super) spawn_queue: Vec<Spawn<dyn Archetype>>,
 }
 
 pub struct Scene {
