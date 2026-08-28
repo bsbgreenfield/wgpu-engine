@@ -141,7 +141,7 @@ impl AssetManager {
         }
     }
 
-    pub fn set_minumum_load_level(
+    pub fn set_minimum_load_level(
         &mut self,
         asset_handle: &AssetHandle,
         load_level: SceneLoadLevel,
@@ -149,7 +149,7 @@ impl AssetManager {
         let asset_res_level: AssetResidency = self.res_level_of(asset_handle)?;
         match load_level {
             SceneLoadLevel::NotLoaded => {
-                todo!("unload assets")
+                todo!("UNLOAD")
             }
             SceneLoadLevel::CPU => match asset_res_level {
                 AssetResidency::Registered => {

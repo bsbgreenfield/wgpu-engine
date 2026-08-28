@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, fmt::Display};
+use std::{collections::HashMap, error::Error, fmt::Display, hash::Hash};
 
 use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
@@ -161,6 +161,7 @@ impl SceneManager {
                 let residency = asset_manager
                     .res_level_of(asset)
                     .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
+                // if the asset level drops from this action, then add to requested
                 if SceneLoadLevel::from(&residency) > required {
                     asset_requests.insert(*asset, required);
                 }

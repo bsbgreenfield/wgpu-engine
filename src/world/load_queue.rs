@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager},
-    world::scene::SceneLoadLevel,
+    world::{instance_manager::instance_manager::InstanceManager, scene::SceneLoadLevel},
 };
 
 #[derive(Clone)]
@@ -31,15 +31,11 @@ impl LoadQueue {
         if current == target {
             self.jobs.remove(&update.0);
             return;
-        } else if current < target {
-            if let Some(job) = self.jobs.get_mut(&update.0) {
-                job.target = target;
-            } else {
-                self.jobs.insert(update.0, AssetLoadJob { target });
-            }
-        } else {
-            todo!("downgrade job")
         }
+        self.jobs
+            .entry(update.0)
+            .and_modify(|j| j.target = target)
+            .or_insert(AssetLoadJob { target });
     }
 
     pub(super) fn poll_jobs(
@@ -50,7 +46,7 @@ impl LoadQueue {
             self.jobs.iter().map(|(ah, aj)| (*ah, aj.clone())).collect();
         for (asset_handle, job) in jobs.iter() {
             let current = asset_manager.res_level_of(asset_handle)?;
-            if current >= job.target {
+            if current == job.target {
                 self.jobs.remove(asset_handle);
                 continue;
             }
@@ -62,7 +58,8 @@ impl LoadQueue {
             }
 
             let before = SceneLoadLevel::from(&current);
-            let after = asset_manager.set_minumum_load_level(asset_handle, job.target)?;
+
+            let after = asset_manager.set_minimum_load_level(asset_handle, job.target)?;
             let after_level = SceneLoadLevel::from(&after);
             if after_level > before {
                 self.transitions.push((*asset_handle, before, after_level));

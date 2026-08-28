@@ -5,7 +5,9 @@ use crate::{
     renderer::{
         InstanceUploadJob, StorageData,
         bind_groups::{BindGroupUploadResult, SharedInstanceData},
-        gpu_allocator::{GPUChunk, VertexArenaError, allocation_table::AllocationTable},
+        gpu_allocator::{
+            AllocMetaData, GPUChunk, VertexArenaError, allocation_table::AllocationTable,
+        },
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
 };
@@ -38,14 +40,20 @@ impl<T: StorageData> InstanceArena<T> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<u32, VertexArenaError> {
-        let meta = self
+        // get the chunk and node id of the slot stored by the prototype
+        let AllocMetaData {
+            chunk_id, node_id, ..
+        } = self
             .alloc_table
             .get_meta(slot_idx)
-            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
+            .ok_or(VertexArenaError::AllocationSlotNotFound)?
+            .clone();
 
-        let src_range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
+        // get the data from the prototype allocation
+        let src_range = self.chunks[chunk_id].allocator.resolve(node_id);
         let size = (src_range.end - src_range.start) as u64;
 
+        // allocate for new node of size "size"
         let mut dst_location = None;
         for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
             if let Ok(node_id) = chunk.allocator.alloc_first(size as u32) {
@@ -58,6 +66,7 @@ impl<T: StorageData> InstanceArena<T> {
 
         let dst_offset = self.chunks[dst_chunk_id].allocator.offset_of(dst_node_id);
 
+        // do copying
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("copy binding staging buffer"),
             size,
@@ -68,7 +77,7 @@ impl<T: StorageData> InstanceArena<T> {
             label: Some("copy bindings"),
         });
 
-        let src_buf = &self.chunks[meta.chunk_id].buffer;
+        let src_buf = &self.chunks[chunk_id].buffer;
         encoder.copy_buffer_to_buffer(src_buf, src_range.start as u64, &staging, 0, size);
 
         let dst_buf = &self.chunks[dst_chunk_id].buffer;
@@ -76,7 +85,10 @@ impl<T: StorageData> InstanceArena<T> {
 
         queue.submit(Some(encoder.finish()));
 
-        self.alloc_table.register_instance(*new_handle, slot_idx);
+        // register the new data by inserting alloc metadata for the new instance
+        self.alloc_table
+            .allocate(*new_handle, dst_chunk_id, dst_node_id);
+        // self.alloc_table.register_instance(*new_handle, slot_idx);
 
         Ok(self.chunks[dst_chunk_id]
             .allocator
