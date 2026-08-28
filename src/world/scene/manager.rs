@@ -2,10 +2,11 @@ use std::{collections::HashMap, error::Error, fmt::Display, hash::Hash};
 
 use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
-    common::instance::InstanceHandle,
+    common::instance::{GPUInstanceHandle, InstanceHandle},
     world::{
         entity_manager::entity_manager::EntityManager,
         instance_manager::archetypes::Archetype,
+        load_queue::LoadQueue,
         scene::{
             Scene, SceneId, SceneLoadLevel, SceneRuntime,
             builder::SceneBuilder,
@@ -46,6 +47,7 @@ pub struct SceneManager {
     asset_requests: HashMap<AssetHandle, SceneLoadLevel>,
     pending: Vec<usize>,
     ready: Vec<SceneId>,
+    pub load_queue_new: LoadQueue,
 }
 
 impl SceneManager {
@@ -58,6 +60,23 @@ impl SceneManager {
             asset_requests: HashMap::new(),
             pending: Vec::new(),
             ready: Vec::new(),
+            load_queue_new: LoadQueue::default(),
+        }
+    }
+
+    pub fn ack_despawns(&mut self, gpu_handles: Vec<GPUInstanceHandle>) {
+        for gpu_handle in gpu_handles {
+            let Some(instance) = self.load_queue_new.inflight_despawns.remove(&gpu_handle) else {
+                continue;
+            };
+
+            for free_asset in self.dependency_graph.ack_despawn(instance) {
+                self.load_queue_new.asset_release_queue.remove(&free_asset);
+                self.asset_requests.insert(
+                    free_asset,
+                    self.dependency_graph.required_asset_level(&free_asset),
+                );
+            }
         }
     }
 
@@ -131,16 +150,17 @@ impl SceneManager {
         }
         scene.runtime.requested_level = level;
 
+        let assets = dependency_graph.recompute_asset_levels(scene_id, previous, level);
         if level > previous {
             // raising one holder can only raise each asset's max, so no other
             // scene's request needs consulting
             let mut count = 0;
-            for asset in dependency_graph.required_assets_of(scene_id) {
+            for asset in assets {
                 let residency = asset_manager
-                    .res_level_of(asset)
+                    .res_level_of(&asset)
                     .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
                 if SceneLoadLevel::from(&residency) < level {
-                    asset_requests.insert(*asset, level);
+                    asset_requests.insert(asset, level);
                     count += 1;
                 }
             }
@@ -151,19 +171,16 @@ impl SceneManager {
                 ready.push(scene_id);
             }
         } else {
-            // lowering: an asset only drops if every *other* holder wants less too
-            for asset in dependency_graph.required_assets_of(scene_id) {
-                let required = dependency_graph
-                    .holders_of(asset)
-                    .map(|h| scenes[h.0].runtime.requested_level)
-                    .max()
-                    .unwrap_or(SceneLoadLevel::NotLoaded);
+            // lowering: an asset only drops if every other holder wants less too
+            for asset in assets {
+                let required = dependency_graph.required_asset_level(&asset);
+
                 let residency = asset_manager
-                    .res_level_of(asset)
+                    .res_level_of(&asset)
                     .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
                 // if the asset level drops from this action, then add to requested
                 if SceneLoadLevel::from(&residency) > required {
-                    asset_requests.insert(*asset, required);
+                    self.load_queue_new.asset_release_queue.insert(asset);
                 }
             }
             pending[scene_id.0] = 0;
@@ -172,7 +189,7 @@ impl SceneManager {
             let previous_state = runtime.current_state;
             runtime.current_state = level;
             if previous_state == SceneLoadLevel::GPU && level < SceneLoadLevel::GPU {
-                despawn_queue.extend(std::mem::take(&mut runtime.instances));
+                despawn_queue.extend(dependency_graph.drain_instances_of(scene_id));
             }
         }
         Ok(())
@@ -200,7 +217,7 @@ impl SceneManager {
                 pending[holder.0] -= 1;
                 if pending[holder.0] == 0 {
                     scenes[holder.0].runtime.current_state = requested;
-                    ready.push(holder);
+                    ready.push(*holder);
                 }
             }
         }
@@ -230,11 +247,8 @@ impl SceneManager {
         scene_id: SceneId,
         handles: impl IntoIterator<Item = InstanceHandle>,
     ) -> Result<(), SceneManagerError> {
-        let scene = self
-            .scenes
-            .get_mut(scene_id.0)
-            .ok_or(SceneManagerError::SpawnError)?;
-        scene.runtime.instances.extend(handles);
+        self.dependency_graph
+            .add_instance_handles(scene_id, handles);
 
         Ok(())
     }

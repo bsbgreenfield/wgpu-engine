@@ -29,7 +29,6 @@ pub(super) struct SceneDesc {
 #[allow(unused)]
 #[derive(Default)]
 pub(super) struct SceneRuntime {
-    pub(super) instances: Vec<InstanceHandle>,
     pub(super) current_state: SceneLoadLevel,
     pub(super) requested_level: SceneLoadLevel,
     pub(super) event_queue: Vec<SceneEvent>,

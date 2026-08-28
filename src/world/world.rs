@@ -155,7 +155,6 @@ pub struct World {
     pub camera: Camera,
     pub entity_manager: EntityManager,
     pub asset_manager: AssetManager,
-    load_queue_new: LoadQueue,
     pub instance_manager: InstanceManager,
     pub scene_manager: SceneManager,
     pub deltas: Vec<WorldUpdateDelta>,
@@ -187,7 +186,6 @@ impl World {
             camera,
             entity_manager: EntityManager::new(),
             asset_manager: AssetManager::new(),
-            load_queue_new: LoadQueue::default(),
             instance_manager: InstanceManager::new(),
             scene_manager: SceneManager::new(),
         }
@@ -232,9 +230,14 @@ impl World {
         &mut self,
         instance_handle: InstanceHandle,
     ) -> Result<(), WorldUpdateError> {
-        let gpu_instance_handle = self.instance_manager.despawn(instance_handle)?;
-        self.deltas
-            .push(WorldUpdateDelta::InstanceDespawn(gpu_instance_handle));
+        let gpu_instance_handle = self.instance_manager.despawn(instance_handle.clone())?;
+        self.deltas.push(WorldUpdateDelta::InstanceDespawn(
+            gpu_instance_handle.clone(),
+        ));
+        self.scene_manager
+            .load_queue_new
+            .inflight_despawns
+            .insert(gpu_instance_handle, instance_handle);
         Ok(())
     }
 
@@ -251,12 +254,16 @@ impl World {
         commands: &mut Vec<AppCommand>,
     ) -> Result<(), WorldUpdateError> {
         for request in self.scene_manager.asset_requests() {
-            self.load_queue_new
+            self.scene_manager
+                .load_queue_new
                 .add_load_job(request, &self.asset_manager);
         }
-        self.load_queue_new.poll_jobs(&mut self.asset_manager)?;
+        self.scene_manager
+            .load_queue_new
+            .poll_jobs(&mut self.asset_manager)?;
 
-        for (handle, old, new) in std::mem::take(&mut self.load_queue_new.transitions) {
+        for (handle, old, new) in std::mem::take(&mut self.scene_manager.load_queue_new.transitions)
+        {
             self.scene_manager.on_asset_level_changed(handle, old, new);
         }
 
@@ -265,7 +272,7 @@ impl World {
             self.despawn_instance(handle)?;
         }
 
-        for handle in self.load_queue_new.pending_gpu.drain(..) {
+        for handle in self.scene_manager.load_queue_new.pending_gpu.drain(..) {
             let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
             self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
         }
@@ -322,6 +329,10 @@ impl World {
                 } => self
                     .instance_manager
                     .register_prototype(instance_handle.entity_handle, prototype),
+
+                RenderUpdateDelta::InstanceDespawns(gpu_handles) => {
+                    self.scene_manager.ack_despawns(gpu_handles);
+                }
             }
         }
     }

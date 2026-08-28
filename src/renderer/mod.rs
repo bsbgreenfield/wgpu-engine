@@ -140,6 +140,7 @@ pub enum RenderUpdateDelta {
         instance_handle: InstanceHandle,
         prototype: PrototypeHandle,
     },
+    InstanceDespawns(Vec<GPUInstanceHandle>),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

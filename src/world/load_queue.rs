@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager},
+    common::instance::{GPUInstanceHandle, InstanceHandle},
     world::{instance_manager::instance_manager::InstanceManager, scene::SceneLoadLevel},
 };
 
@@ -15,6 +16,8 @@ pub struct LoadQueue {
     pub transitions: Vec<(AssetHandle, SceneLoadLevel, SceneLoadLevel)>,
     jobs: HashMap<AssetHandle, AssetLoadJob>,
     pub pending_gpu: Vec<AssetHandle>,
+    pub asset_release_queue: HashSet<AssetHandle>,
+    pub inflight_despawns: HashMap<GPUInstanceHandle, InstanceHandle>,
 }
 
 impl LoadQueue {
