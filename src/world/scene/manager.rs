@@ -9,7 +9,7 @@ use crate::{
         scene::{
             Scene, SceneId, SceneLoadLevel, SceneRuntime,
             builder::SceneBuilder,
-            dep_graph_2::{DependencyGraphError, DependencyGraphNew},
+            dependency_graph::{DependencyGraph, DependencyGraphError},
             scene::Spawn,
         },
     },
@@ -40,7 +40,7 @@ impl Display for SceneManagerError {
 
 pub struct SceneManager {
     scenes: Vec<Scene>,
-    dependency_graph: DependencyGraphNew,
+    dependency_graph: DependencyGraph,
     pub spawn_queue: HashMap<SceneId, Vec<Spawn<dyn Archetype>>>,
     pub despawn_queue: Vec<InstanceHandle>,
     asset_requests: HashMap<AssetHandle, SceneLoadLevel>,
@@ -52,7 +52,7 @@ impl SceneManager {
     pub fn new() -> Self {
         SceneManager {
             scenes: vec![],
-            dependency_graph: DependencyGraphNew::default(),
+            dependency_graph: DependencyGraph::default(),
             spawn_queue: HashMap::new(),
             despawn_queue: vec![],
             asset_requests: HashMap::new(),
