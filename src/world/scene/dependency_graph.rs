@@ -6,7 +6,8 @@ use std::{
 };
 
 use crate::{
-    asset_manager::AssetHandle,
+    asset_manager::{AssetHandle, asset_manager::AssetManager},
+    common::instance::InstanceHandle,
     world::{
         RenderKey,
         entity_manager::entity_manager::EntityManager,
@@ -32,6 +33,11 @@ impl Display for DependencyGraphError {
             Self::SceneNotFound => f.write_str("could not find this scene"),
         }
     }
+}
+
+pub struct SweepResult {
+    pub required_assets: HashMap<AssetHandle, SceneLoadLevel>,
+    pub acheived_scenes: HashMap<SceneId, SceneLoadLevel>,
 }
 
 struct SceneNode {

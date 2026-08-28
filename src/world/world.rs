@@ -204,12 +204,13 @@ impl World {
 
     pub fn spawn(
         &mut self,
+        scene_id: SceneId,
         instance_data: Vec<Spawn<dyn Archetype>>,
     ) -> Result<Vec<InstanceUploadData>, WorldUpdateError> {
         let mut by_scene: HashMap<SceneId, Vec<Spawn<dyn Archetype>>> = HashMap::new();
 
         for spawn in instance_data {
-            by_scene.entry(spawn.scene_id).or_default().push(spawn);
+            by_scene.entry(scene_id).or_default().push(spawn);
         }
 
         let mut all_uploads = Vec::new();
@@ -250,27 +251,37 @@ impl World {
         &'frame mut self,
         commands: &mut Vec<AppCommand>,
     ) -> Result<(), WorldUpdateError> {
-        self.scene_manager
-            .process_scene_events(&self.asset_manager)?;
         for request in self.scene_manager.asset_requests() {
             self.load_queue_new
                 .add_load_job(request, &self.asset_manager);
         }
         self.load_queue_new.poll_jobs(&mut self.asset_manager)?;
+
+        for (handle, old, new) in std::mem::take(&mut self.load_queue_new.transitions) {
+            self.scene_manager.on_asset_level_changed(handle, old, new);
+        }
+
+        self.scene_manager.process_scene_events()?;
+        for handle in std::mem::take(&mut self.scene_manager.despawn_queue) {
+            self.despawn_instance(handle)?;
+        }
+
         for handle in self.load_queue_new.pending_gpu.drain(..) {
             let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
             self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
         }
         if !self.scene_manager.spawn_queue.is_empty() {
-            let sq = std::mem::take(&mut self.scene_manager.spawn_queue);
-            for datum in self.spawn(sq)? {
-                match datum {
-                    InstanceUploadData::New(new) => {
-                        self.deltas.push(WorldUpdateDelta::NewEntitySpawn(new))
+            let spawn_data = std::mem::take(&mut self.scene_manager.spawn_queue);
+            for (scene_id, spawns) in spawn_data {
+                for instance_data in self.spawn(scene_id, spawns)? {
+                    match instance_data {
+                        InstanceUploadData::New(new) => {
+                            self.deltas.push(WorldUpdateDelta::NewEntitySpawn(new))
+                        }
+                        InstanceUploadData::Copied(copied) => self
+                            .deltas
+                            .push(WorldUpdateDelta::EntityInstanceSpawn(copied)),
                     }
-                    InstanceUploadData::Copied(copied) => self
-                        .deltas
-                        .push(WorldUpdateDelta::EntityInstanceSpawn(copied)),
                 }
             }
         }
@@ -385,6 +396,11 @@ impl World {
                     self.asset_manager
                         .register_asset_gpu_residency(&asset_handle, allocation_handle.clone())
                         .expect("Asset not found");
+                    self.scene_manager.on_asset_level_changed(
+                        asset_handle,
+                        SceneLoadLevel::CPU,
+                        SceneLoadLevel::GPU,
+                    );
                 }
                 RenderUpdateDelta::EntityGPULoaded(_) => {
                     // TODO wait to dequeue until GPU reports it has successfully loaded entity?

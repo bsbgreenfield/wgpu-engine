@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod integration_tests {
 
-    use std::fmt::Debug;
+    use std::fmt::Display;
 
     use cgmath::InnerSpace;
 
@@ -20,7 +20,7 @@ mod integration_tests {
                 archetypes::{APosition, ArchetypeId},
                 gen_draw_calls::DrawCallGenerator,
             },
-            scene::scene::Scene,
+            scene::{SceneId, SceneNew, scene::Scene},
             world::{World, WorldUpdateDelta},
         },
     };
@@ -128,19 +128,22 @@ mod integration_tests {
         let mut app = App::new();
         let config = AppConfig::new_headless().await;
         let mut world = World::new();
-        let scene = match test_case {
-            TestCases::Box => Scene::box_scene(&mut world).expect("box init"),
-            TestCases::MultiBox => Scene::multi_box_scene(&mut world).expect("multi box "),
-            TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),
-            TestCases::FoxAnimated => Scene::fox_animated_scene(&mut world).expect("fox anim init"),
-            TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
-            TestCases::BoxAnimated => Scene::box_animated(&mut world).expect("box animated init"),
-            TestCases::IndependantFoxes => {
-                Scene::independant_foxes(&mut world).expect("independant foxes")
+        match test_case {
+            TestCases::MultiBox => SceneNew::multi_box_scene(&mut world).expect("multi box "),
+            TestCases::Fox => SceneNew::fox_scene(&mut world).expect("fox init"),
+            TestCases::FoxAnimated => {
+                SceneNew::fox_animated_scene(&mut world).expect("fox anim init")
             }
-            TestCases::BuggyBrain => Scene::buggy(&mut world).unwrap(),
+            TestCases::BoxFox => SceneNew::fox_box(&mut world).expect("fox box init"),
+            TestCases::BoxAnimated => {
+                SceneNew::box_animated(&mut world).expect("box animated init")
+            }
+            TestCases::IndependantFoxes => {
+                SceneNew::independant_foxes(&mut world).expect("independant foxes")
+            }
+            TestCases::BuggyBrain => SceneNew::buggy(&mut world).unwrap(),
+            TestCases::Box => SceneNew::box_scene(&mut world).unwrap(),
         };
-        world.add_scene(scene);
         app.world = world;
         app.app_config = Some(config);
         app.renderer.init(app.app_config.as_ref().unwrap());
@@ -472,12 +475,18 @@ mod integration_tests {
                 cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(3.0, 5.0, 7.0));
             let translation_gt: crate::util::types::GlobalTransform = translation_mat.into();
 
-            app.world.scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: translation_mat.into(),
-                }),
-            )]);
+            app.world.add_instances(
+                SceneId(0),
+                vec![
+                    (
+                        EntityHandle(0),
+                        Box::new(APosition {
+                            position: translation_mat.into(),
+                        }),
+                    )
+                        .into(),
+                ],
+            );
 
             run_frame_unchecked(&mut app);
 
@@ -576,17 +585,27 @@ mod integration_tests {
 
             assert_eq!(groups[0].views.len(), 1);
 
-            app.world.scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
-                        x: 10.0,
-                        y: 10.0,
-                        z: 0.0,
-                    })
-                    .into(),
-                }),
-            )]);
+            app.world
+                .add_instances(
+                    SceneId(0),
+                    vec![
+                        (
+                            EntityHandle(0),
+                            Box::new(APosition {
+                                position: cgmath::Matrix4::<f32>::from_translation(
+                                    cgmath::Vector3 {
+                                        x: 10.0,
+                                        y: 10.0,
+                                        z: 0.0,
+                                    },
+                                )
+                                .into(),
+                            }),
+                        )
+                            .into(),
+                    ],
+                )
+                .unwrap();
 
             run_frame(
                 &mut app,
@@ -927,17 +946,23 @@ mod integration_tests {
             gen_draw_calls(&mut app);
 
             // Spawn the second instance against the existing entity/prototype.
-            app.world.scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
-                        x: 10.0,
-                        y: 0.0,
-                        z: 0.0,
-                    })
-                    .into(),
-                }),
-            )]);
+            app.world.add_instances(
+                SceneId(0),
+                vec![
+                    (
+                        EntityHandle(0),
+                        Box::new(APosition {
+                            position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
+                                x: 10.0,
+                                y: 0.0,
+                                z: 0.0,
+                            })
+                            .into(),
+                        }),
+                    )
+                        .into(),
+                ],
+            );
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::EntityInstanceSpawn],
@@ -992,17 +1017,23 @@ mod integration_tests {
             assert_eq!(pnu_items[0].get_instances().into_iter().count(), 1);
 
             // Spawn a third instance on the same entity/prototype.
-            app.world.scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
-                        x: 20.0,
-                        y: 0.0,
-                        z: 0.0,
-                    })
-                    .into(),
-                }),
-            )]);
+            app.world.add_instances(
+                SceneId(0),
+                vec![
+                    (
+                        EntityHandle(0),
+                        Box::new(APosition {
+                            position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3 {
+                                x: 20.0,
+                                y: 0.0,
+                                z: 0.0,
+                            })
+                            .into(),
+                        }),
+                    )
+                        .into(),
+                ],
+            );
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::EntityInstanceSpawn],
@@ -1069,27 +1100,39 @@ mod integration_tests {
             run_frame_unchecked(&mut app);
             run_frame_unchecked(&mut app);
 
-            app.world.scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
-                        10., 0., 0.,
-                    ))
-                    .into(),
-                }),
-            )]);
+            app.world.add_instances(
+                SceneId(0),
+                vec![
+                    (
+                        EntityHandle(0),
+                        Box::new(APosition {
+                            position: cgmath::Matrix4::<f32>::from_translation(
+                                cgmath::Vector3::new(10., 0., 0.),
+                            )
+                            .into(),
+                        }),
+                    )
+                        .into(),
+                ],
+            );
 
             run_frame_unchecked(&mut app);
 
-            app.world.scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
-                        -10., 0., 0.,
-                    ))
-                    .into(),
-                }),
-            )]);
+            app.world.add_instances(
+                SceneId(0),
+                vec![
+                    (
+                        EntityHandle(0),
+                        Box::new(APosition {
+                            position: cgmath::Matrix4::<f32>::from_translation(
+                                cgmath::Vector3::new(-10., 0., 0.),
+                            )
+                            .into(),
+                        }),
+                    )
+                        .into(),
+                ],
+            );
 
             run_frame_unchecked(&mut app);
 
@@ -1190,17 +1233,25 @@ mod integration_tests {
                 "fox draw items must be unchanged by the box despawn"
             );
 
+            app.world
+                .add_instances(
+                    SceneId(0),
+                    vec![
+                        (
+                            EntityHandle(0),
+                            Box::new(APosition {
+                                position: cgmath::Matrix4::<f32>::from_translation(
+                                    cgmath::Vector3::new(15.0, 0.0, 0.0),
+                                )
+                                .into(),
+                            }),
+                        )
+                            .into(),
+                    ],
+                )
+                .unwrap_or_else(|e| println!("{}", e));
             // Spawn a new box at a known translation. This forces a fresh
             // free-list alloc that may land in space freed by the despawn.
-            app.world.scene.spawn(vec![(
-                EntityHandle(0),
-                Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(
-                        15.0, 0.0, 0.0,
-                    ))
-                    .into(),
-                }),
-            )]);
             run_frame_unchecked(&mut app);
             gen_draw_calls(&mut app);
 

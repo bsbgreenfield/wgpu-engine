@@ -62,6 +62,7 @@ impl AssetManager {
         &self,
         asset_handle: &AssetHandle,
     ) -> Result<AssetResidency, AssetLoadError> {
+        println!("HERE!!!! {:?}", self.registered_assets);
         let registered = self
             .registered_assets
             .get(asset_handle)
@@ -102,7 +103,8 @@ impl AssetManager {
                 String::from("this asset is not yet loaded!"),
             )),
             RegisteredAsset::Loaded(res) => match res {
-                AssetResidency::CPU(la_index) => {
+                AssetResidency::CPU(la_index) | AssetResidency::PendingGPU(la_index) => {
+                    println!("this asset is {:?} RES", res);
                     let asset = &self.loaded_assets[*la_index];
                     return asset.get_upload_job(asset_handle);
                 }

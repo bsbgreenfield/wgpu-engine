@@ -1,16 +1,24 @@
 use crate::{
     common::{entity::EntityHandle, instance::InstanceHandle},
     world::{
-        instance_manager::archetypes::Archetype,
+        instance_manager::archetypes::{APosition, Archetype},
         scene::{SceneEvent, SceneId, SceneLoadLevel},
         world::InstanceUploadData,
     },
 };
 
 pub struct Spawn<T: Archetype + ?Sized> {
-    pub scene_id: SceneId,
     pub entity: EntityHandle,
     pub data: Box<T>,
+}
+
+impl From<(EntityHandle, Box<APosition>)> for Spawn<dyn Archetype> {
+    fn from(value: (EntityHandle, Box<APosition>)) -> Self {
+        Self {
+            entity: value.0,
+            data: value.1,
+        }
+    }
 }
 
 //TODO: move archetype data to runtime?

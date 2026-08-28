@@ -12,6 +12,7 @@ struct AssetLoadJob {
 
 #[derive(Default)]
 pub struct LoadQueueNew {
+    pub transitions: Vec<(AssetHandle, SceneLoadLevel, SceneLoadLevel)>,
     jobs: HashMap<AssetHandle, AssetLoadJob>,
     pub pending_gpu: Vec<AssetHandle>,
 }
@@ -22,6 +23,7 @@ impl LoadQueueNew {
         update: (AssetHandle, SceneLoadLevel),
         asset_manager: &AssetManager,
     ) {
+        println!(" ASSET {:?}", update.0);
         let target = update.1;
         let current = asset_manager
             .res_level_of(&update.0)
@@ -58,10 +60,14 @@ impl LoadQueueNew {
             ) {
                 continue;
             }
-            if matches!(
-                asset_manager.set_minumum_load_level(asset_handle, job.target)?,
-                AssetResidency::PendingGPU(_)
-            ) {
+
+            let before = SceneLoadLevel::from(&current);
+            let after = asset_manager.set_minumum_load_level(asset_handle, job.target)?;
+            let after_level = SceneLoadLevel::from(&after);
+            if after_level > before {
+                self.transitions.push((*asset_handle, before, after_level));
+            }
+            if matches!(after, AssetResidency::PendingGPU(_)) {
                 self.pending_gpu.push(*asset_handle);
             }
         }
