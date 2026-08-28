@@ -217,6 +217,27 @@ impl AssetManager {
         }
     }
 
+    #[cfg(test)]
+    /// Register a handle that has no backing data, pinned at `residency`. Only
+    /// `res_level_of` is meaningful for these — there is no loaded asset behind
+    /// the index they carry, so they must not be resolved or uploaded.
+    pub fn mock_asset(&mut self, residency: AssetResidency) -> AssetHandle {
+        let handle = self.gen_handle();
+        self.registered_assets
+            .insert(handle, RegisteredAsset::Loaded(residency));
+        handle
+    }
+
+    #[cfg(test)]
+    /// Move a mock asset to a new residency, standing in for the load queue.
+    pub fn set_mock_residency(&mut self, asset_handle: &AssetHandle, residency: AssetResidency) {
+        let registered = self
+            .registered_assets
+            .get_mut(asset_handle)
+            .expect("mock asset is registered");
+        *registered = RegisteredAsset::Loaded(residency);
+    }
+
     pub fn resolve_asset_handle(&self, asset_handle: &AssetHandle) -> GPUAllocationHandle {
         let a = self
             .registered_assets
