@@ -1,15 +1,35 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
-    common::entity::EntityHandle,
     world::{
-        RenderKey,
         entity_manager::entity_manager::EntityManager,
-        scene::{SceneId, SceneLoadLevel, SceneNew, dependency_graph::DependencyGraphError},
+        scene::{Scene, SceneId, SceneLoadLevel},
     },
 };
 
+#[derive(Debug)]
+pub enum DependencyGraphError {
+    InvalidChild,
+    ChildNotFound,
+    SceneNotFound,
+}
+
+impl std::error::Error for DependencyGraphError {}
+impl Display for DependencyGraphError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidChild => f.write_str("invalid child node!"),
+            Self::ChildNotFound => {
+                f.write_str("could not find the dependency, although it is listed as a child")
+            }
+            Self::SceneNotFound => f.write_str("could not find this scene"),
+        }
+    }
+}
 pub struct SweepResult {
     pub required_assets: HashMap<AssetHandle, SceneLoadLevel>,
     pub achieved_scenes: HashMap<SceneId, SceneLoadLevel>,
@@ -17,13 +37,7 @@ pub struct SweepResult {
 
 struct SceneNode {
     children: Vec<SceneId>,
-    entities: Vec<EntityHandle>,
     assets: HashSet<AssetHandle>,
-}
-
-struct EntityNode {
-    assets: Vec<AssetHandle>,
-    known: bool,
 }
 
 #[derive(Default)]
@@ -77,7 +91,7 @@ impl DependencyGraphNew {
     }
     pub fn add_scene(
         &mut self,
-        scene: &SceneNew,
+        scene: &Scene,
         entity_manager: &EntityManager,
     ) -> Result<(), DependencyGraphError> {
         let mut children: Vec<SceneId> = Vec::new();
@@ -89,11 +103,7 @@ impl DependencyGraphNew {
         for entity in scene.desc.entities.iter() {
             assets.extend(entity_manager.rbcs_of(*entity));
         }
-        let new_root = SceneNode {
-            children,
-            entities: vec![],
-            assets,
-        };
+        let new_root = SceneNode { children, assets };
 
         self.scenes.insert(scene.id, new_root);
 

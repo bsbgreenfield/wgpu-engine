@@ -1,7 +1,6 @@
+#[allow(unused)]
 #[cfg(test)]
 mod integration_tests {
-
-    use std::fmt::Display;
 
     use cgmath::InnerSpace;
 
@@ -20,7 +19,7 @@ mod integration_tests {
                 archetypes::{APosition, ArchetypeId},
                 gen_draw_calls::DrawCallGenerator,
             },
-            scene::{SceneId, SceneNew, scene::Scene},
+            scene::{Scene, SceneId},
             world::{World, WorldUpdateDelta},
         },
     };
@@ -129,20 +128,16 @@ mod integration_tests {
         let config = AppConfig::new_headless().await;
         let mut world = World::new();
         match test_case {
-            TestCases::MultiBox => SceneNew::multi_box_scene(&mut world).expect("multi box "),
-            TestCases::Fox => SceneNew::fox_scene(&mut world).expect("fox init"),
-            TestCases::FoxAnimated => {
-                SceneNew::fox_animated_scene(&mut world).expect("fox anim init")
-            }
-            TestCases::BoxFox => SceneNew::fox_box(&mut world).expect("fox box init"),
-            TestCases::BoxAnimated => {
-                SceneNew::box_animated(&mut world).expect("box animated init")
-            }
+            TestCases::MultiBox => Scene::multi_box_scene(&mut world).expect("multi box "),
+            TestCases::Fox => Scene::fox_scene(&mut world).expect("fox init"),
+            TestCases::FoxAnimated => Scene::fox_animated_scene(&mut world).expect("fox anim init"),
+            TestCases::BoxFox => Scene::fox_box(&mut world).expect("fox box init"),
+            TestCases::BoxAnimated => Scene::box_animated(&mut world).expect("box animated init"),
             TestCases::IndependantFoxes => {
-                SceneNew::independant_foxes(&mut world).expect("independant foxes")
+                Scene::independant_foxes(&mut world).expect("independant foxes")
             }
-            TestCases::BuggyBrain => SceneNew::buggy(&mut world).unwrap(),
-            TestCases::Box => SceneNew::box_scene(&mut world).unwrap(),
+            TestCases::BuggyBrain => Scene::buggy(&mut world).unwrap(),
+            TestCases::Box => Scene::box_scene(&mut world).unwrap(),
         };
         app.world = world;
         app.app_config = Some(config);

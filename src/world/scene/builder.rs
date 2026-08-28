@@ -1,19 +1,17 @@
-use std::collections::HashMap;
-
 use crate::{
     common::entity::EntityHandle,
     world::{
-        scene::{SceneDesc, SceneId, SceneLoadLevel, SceneNew, manager::SceneManagerError},
+        scene::{SceneDesc, SceneId, manager::SceneManagerError},
         world::World,
     },
 };
 
 pub struct SceneBuilder {
-    pub desc: SceneDesc,
+    pub(super) desc: SceneDesc,
 }
 
 impl SceneBuilder {
-    pub fn new(world: &mut World) -> Self {
+    pub fn new() -> Self {
         Self {
             desc: super::SceneDesc {
                 children: vec![],

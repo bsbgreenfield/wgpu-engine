@@ -4,10 +4,8 @@ use crate::{
     app::{FrameError, app_config::AppConfig, app_state::AppState},
     renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
     world::{
-        bytecode_gen::BytecodeGenerator,
-        instance_manager::gen_draw_calls::DrawCallGenerator,
-        scene::{SceneNew, scene::Scene},
-        world::World,
+        bytecode_gen::BytecodeGenerator, instance_manager::gen_draw_calls::DrawCallGenerator,
+        scene::Scene, world::World,
     },
 };
 use winit::{
@@ -149,7 +147,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             if !self.world.is_initialized() {
                 self.world
                     .init(aspect_ratio, &self.app_config.as_ref().unwrap().device);
-                SceneNew::buggy(&mut self.world).expect("scene creation error");
+                Scene::buggy(&mut self.world).expect("scene creation error");
                 self.renderer.init(self.app_config.as_ref().unwrap());
                 self.renderer.add_pass(
                     "Opaque Pass".to_string(),

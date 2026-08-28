@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    error::Error,
-    fmt::Display,
-};
+use std::{collections::HashMap, error::Error, fmt::Display};
 
 use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
@@ -11,8 +7,10 @@ use crate::{
         entity_manager::entity_manager::EntityManager,
         instance_manager::archetypes::Archetype,
         scene::{
-            SceneEvent, SceneId, SceneLoadLevel, SceneNew, SceneRuntime, builder::SceneBuilder,
-            dep_graph_2::DependencyGraphNew, dependency_graph::DependencyGraphError, scene::Spawn,
+            Scene, SceneId, SceneLoadLevel, SceneRuntime,
+            builder::SceneBuilder,
+            dep_graph_2::{DependencyGraphError, DependencyGraphNew},
+            scene::Spawn,
         },
     },
 };
@@ -41,7 +39,7 @@ impl Display for SceneManagerError {
 }
 
 pub struct SceneManager {
-    scenes: Vec<SceneNew>,
+    scenes: Vec<Scene>,
     dependency_graph: DependencyGraphNew,
     pub spawn_queue: HashMap<SceneId, Vec<Spawn<dyn Archetype>>>,
     pub despawn_queue: Vec<InstanceHandle>,
@@ -86,7 +84,7 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn get_scene(&self, idx: usize) -> &SceneNew {
+    pub fn get_scene(&self, idx: usize) -> &Scene {
         self.scenes.get(idx).expect("scene exists")
     }
 
@@ -96,7 +94,7 @@ impl SceneManager {
         entity_manager: &EntityManager,
     ) -> Result<SceneId, SceneManagerError> {
         let id = SceneId(self.scenes.len());
-        let new_scene = SceneNew {
+        let new_scene = Scene {
             id,
             desc: scene.desc,
             runtime: SceneRuntime::default(),

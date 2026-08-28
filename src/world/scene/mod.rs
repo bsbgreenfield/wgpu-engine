@@ -1,6 +1,5 @@
 pub mod builder;
 pub mod dep_graph_2;
-pub mod dependency_graph;
 pub mod manager;
 pub mod scene;
 pub mod util;
@@ -87,8 +86,8 @@ impl Debug for SceneEvent {
     }
 }
 
-pub struct SceneNew {
+pub struct Scene {
     pub id: SceneId,
-    pub desc: SceneDesc,
-    pub runtime: SceneRuntime,
+    desc: SceneDesc,
+    runtime: SceneRuntime,
 }

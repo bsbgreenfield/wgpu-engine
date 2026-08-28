@@ -1,7 +1,6 @@
 use std::range::Range;
 use std::{collections::HashMap, fmt::Debug};
 
-use crate::renderer::InstanceUploadJob;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetLoadError, asset_manager::AssetManager},
@@ -16,11 +15,11 @@ use crate::{
         camera::Camera,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
-        load_queue_new::LoadQueueNew,
+        load_queue::LoadQueue,
         scene::{
-            SceneEvent, SceneId, SceneLoadLevel,
+            SceneId, SceneLoadLevel,
             manager::{SceneManager, SceneManagerError},
-            scene::{Scene, Spawn},
+            scene::Spawn,
         },
     },
 };
@@ -156,7 +155,7 @@ pub struct World {
     pub camera: Camera,
     pub entity_manager: EntityManager,
     pub asset_manager: AssetManager,
-    load_queue_new: LoadQueueNew,
+    load_queue_new: LoadQueue,
     pub instance_manager: InstanceManager,
     pub scene_manager: SceneManager,
     pub deltas: Vec<WorldUpdateDelta>,
@@ -188,7 +187,7 @@ impl World {
             camera,
             entity_manager: EntityManager::new(),
             asset_manager: AssetManager::new(),
-            load_queue_new: LoadQueueNew::default(),
+            load_queue_new: LoadQueue::default(),
             instance_manager: InstanceManager::new(),
             scene_manager: SceneManager::new(),
         }
