@@ -1,9 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager},
-    common::instance::{GPUInstanceHandle, InstanceHandle},
-    world::{instance_manager::instance_manager::InstanceManager, scene::SceneLoadLevel},
+    world::scene::SceneLoadLevel,
 };
 
 #[derive(Clone)]
@@ -11,13 +10,15 @@ struct AssetLoadJob {
     target: SceneLoadLevel,
 }
 
+pub struct AssetTransition {
+    pub handle: AssetHandle,
+    pub old: SceneLoadLevel,
+    pub new: SceneLoadLevel,
+}
+
 #[derive(Default)]
 pub struct LoadQueue {
-    pub transitions: Vec<(AssetHandle, SceneLoadLevel, SceneLoadLevel)>,
     jobs: HashMap<AssetHandle, AssetLoadJob>,
-    pub pending_gpu: Vec<AssetHandle>,
-    pub asset_release_queue: HashSet<AssetHandle>,
-    pub inflight_despawns: HashMap<GPUInstanceHandle, InstanceHandle>,
 }
 
 impl LoadQueue {
@@ -44,7 +45,8 @@ impl LoadQueue {
     pub(super) fn poll_jobs(
         &mut self,
         asset_manager: &mut AssetManager,
-    ) -> Result<(), AssetLoadError> {
+    ) -> Result<Vec<AssetTransition>, AssetLoadError> {
+        let mut res: Vec<AssetTransition> = Vec::new();
         let jobs: Vec<(AssetHandle, AssetLoadJob)> =
             self.jobs.iter().map(|(ah, aj)| (*ah, aj.clone())).collect();
         for (asset_handle, job) in jobs.iter() {
@@ -60,18 +62,16 @@ impl LoadQueue {
                 continue;
             }
 
-            let before = SceneLoadLevel::from(&current);
-
             let after = asset_manager.set_minimum_load_level(asset_handle, job.target)?;
-            let after_level = SceneLoadLevel::from(&after);
-            if after_level > before {
-                self.transitions.push((*asset_handle, before, after_level));
-            }
-            if matches!(after, AssetResidency::PendingGPU(_)) {
-                self.pending_gpu.push(*asset_handle);
+            if after != current {
+                res.push(AssetTransition {
+                    handle: *asset_handle,
+                    old: SceneLoadLevel::from(&current),
+                    new: SceneLoadLevel::from(&after),
+                });
             }
         }
 
-        Ok(())
+        Ok(res)
     }
 }

@@ -83,14 +83,25 @@ impl DependencyGraph {
         free_assets
     }
     pub fn holders_of(&self, asset_handle: &AssetHandle) -> &[SceneId] {
-        &self.asset_demand.get(asset_handle).unwrap().holders
+        &self
+            .asset_demand
+            .get(asset_handle)
+            .map(|d| d.holders.as_slice())
+            .unwrap_or(&[])
     }
     pub fn required_assets_of(&self, scene_id: SceneId) -> Vec<AssetHandle> {
-        let mut assets = Vec::new();
+        let mut assets = HashSet::new();
         for entity in self.scenes.get(&scene_id).unwrap().entities.iter() {
-            assets.extend(self.entities.get(entity.0 as usize).unwrap().assets.clone());
+            assets.extend(
+                self.entities
+                    .get(entity.0 as usize)
+                    .unwrap()
+                    .assets
+                    .iter()
+                    .copied(),
+            );
         }
-        assets
+        assets.into_iter().collect()
     }
     pub fn recompute_asset_levels(
         &mut self,
@@ -223,13 +234,28 @@ impl DependencyGraph {
 
         for entity in scene.entities.iter() {
             let entity_node = self.entities.get_mut(entity.0 as usize).expect("entity");
-            handles.extend(
-                entity_node
-                    .instances
-                    .get_mut(&scene_id)
-                    .expect("instances")
-                    .drain(..),
-            );
+            if let Some(instances) = entity_node.instances.get_mut(&scene_id) {
+                handles.extend(instances.drain(..));
+            }
+        }
+
+        handles
+    }
+
+    #[cfg(test)]
+    pub fn clone_instances_of(
+        &self,
+        scene_id: SceneId,
+    ) -> impl IntoIterator<Item = InstanceHandle> {
+        let mut handles = Vec::new();
+
+        let scene = self.scenes.get(&scene_id).expect("scene");
+
+        for entity in scene.entities.iter() {
+            let entity_node = self.entities.get(entity.0 as usize).expect("entity");
+            if let Some(instances) = entity_node.instances.get(&scene_id) {
+                handles.extend(instances.clone());
+            }
         }
 
         handles

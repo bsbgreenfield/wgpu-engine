@@ -1,6 +1,8 @@
 use std::range::Range;
 use std::{collections::HashMap, fmt::Debug};
 
+use crate::asset_manager::AssetResidency;
+use crate::world::load_queue::AssetTransition;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetLoadError, asset_manager::AssetManager},
@@ -235,19 +237,10 @@ impl World {
             gpu_instance_handle.clone(),
         ));
         self.scene_manager
-            .load_queue_new
             .inflight_despawns
             .insert(gpu_instance_handle, instance_handle);
         Ok(())
     }
-
-    // pub fn despawn_scene(&mut self, scene_id: SceneId) {
-    //     //TODO: find the actual scene
-    //     let scene = std::mem::replace(&mut self.scene, Scene::new());
-    //     for instance in scene.instances.iter() {
-    //         let dead_list = self.despawn_instance(instance.clone());
-    //     }
-    // }
 
     pub fn update<'frame>(
         &'frame mut self,
@@ -258,13 +251,17 @@ impl World {
                 .load_queue_new
                 .add_load_job(request, &self.asset_manager);
         }
-        self.scene_manager
+        for transition in self
+            .scene_manager
             .load_queue_new
-            .poll_jobs(&mut self.asset_manager)?;
-
-        for (handle, old, new) in std::mem::take(&mut self.scene_manager.load_queue_new.transitions)
+            .poll_jobs(&mut self.asset_manager)?
         {
-            self.scene_manager.on_asset_level_changed(handle, old, new);
+            if matches!(transition.new, SceneLoadLevel::PendingGPU) {
+                let job: GPUAssetUploadJob =
+                    self.asset_manager.get_upload_job_for(transition.handle)?;
+                self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+            }
+            self.scene_manager.on_asset_level_changed(transition);
         }
 
         self.scene_manager.process_scene_events()?;
@@ -272,11 +269,8 @@ impl World {
             self.despawn_instance(handle)?;
         }
 
-        for handle in self.scene_manager.load_queue_new.pending_gpu.drain(..) {
-            let job: GPUAssetUploadJob = self.asset_manager.get_upload_job_for(handle)?;
-            self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
-        }
         if !self.scene_manager.spawn_queue.is_empty() {
+            println!("HELLO!!!!!!!!!!!!!!");
             let spawn_data = std::mem::take(&mut self.scene_manager.spawn_queue);
             for (scene_id, spawns) in spawn_data {
                 for instance_data in self.spawn(scene_id, spawns)? {
@@ -303,11 +297,11 @@ impl World {
                     self.asset_manager
                         .register_asset_gpu_residency(&asset_handle, allocation_handle.clone())
                         .expect("Asset not found");
-                    self.scene_manager.on_asset_level_changed(
-                        asset_handle,
-                        SceneLoadLevel::CPU,
-                        SceneLoadLevel::GPU,
-                    );
+                    self.scene_manager.on_asset_level_changed(AssetTransition {
+                        handle: asset_handle,
+                        old: SceneLoadLevel::CPU,
+                        new: SceneLoadLevel::GPU,
+                    });
                 }
                 RenderUpdateDelta::EntityGPULoaded(_) => {
                     // TODO wait to dequeue until GPU reports it has successfully loaded entity?

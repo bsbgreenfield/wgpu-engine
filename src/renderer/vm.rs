@@ -307,7 +307,15 @@ impl<'frame> Renderer {
                         let gpu_instance_handle =
                             GPUInstanceHandle::from_key(gpu_instance_handle_key.unwrap_key());
                         self.despawn(&gpu_instance_handle);
-                        // remove from instance record buffer
+                        if let Some(delta) = res.pop()
+                            && let RenderUpdateDelta::InstanceDespawns(mut handles) = delta
+                        {
+                            handles.push(gpu_instance_handle);
+                        } else {
+                        }
+                        res.push(RenderUpdateDelta::InstanceDespawns(vec![
+                            gpu_instance_handle,
+                        ]));
                     }
                     Operations::DespawnAsset => {
                         todo!()

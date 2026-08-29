@@ -87,19 +87,27 @@ impl RenderKey for AssetHandle {
 
 pub enum UnloadedAssetData {
     Gltf(gltf::Gltf, BinarySource),
+    #[cfg(test)]
+    Mock,
 }
 impl Debug for UnloadedAssetData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnloadedAssetData::Gltf(_, _) => write!(f, "Gltf Asset",),
+            #[cfg(test)]
+            UnloadedAssetData::Mock => write!(f, "mock"),
         }
     }
 }
 
 impl UnloadedAssetData {
-    fn load(self) -> Result<Box<dyn Asset>, ModelBuilderError> {
+    fn load(&self) -> Result<Box<dyn Asset>, ModelBuilderError> {
         match self {
             Self::Gltf(gltf, bin) => GltfAsset::load(gltf, bin),
+            #[cfg(test)]
+            Self::Mock => Ok(Box::new(
+                crate::asset_manager::asset_manager::AssetMocks::MockAsset,
+            )),
         }
     }
 }
@@ -117,13 +125,22 @@ pub trait Asset {
     fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AssetResidency {
     Registered,
     PendingCPU,
     CPU(usize),
     PendingGPU(usize),
     GPU(GPUAllocationHandle, usize),
+}
+
+impl AssetResidency {
+    fn update_la_idx(&mut self, new_idx: usize) {
+        match self {
+            Self::Registered | Self::PendingCPU => {}
+            Self::CPU(idx) | Self::PendingGPU(idx) | Self::GPU(_, idx) => *idx = new_idx,
+        }
+    }
 }
 impl PartialEq<SceneLoadLevel> for AssetResidency {
     fn eq(&self, other: &SceneLoadLevel) -> bool {
@@ -153,18 +170,25 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
         use std::cmp::Ordering;
         match self {
             AssetResidency::Registered | AssetResidency::PendingCPU => match other {
-                SceneLoadLevel::NotLoaded => return Some(Ordering::Equal),
-                SceneLoadLevel::CPU | SceneLoadLevel::GPU => {
+                SceneLoadLevel::NotLoaded | SceneLoadLevel::PendingCPU => {
+                    return Some(Ordering::Equal);
+                }
+                SceneLoadLevel::CPU | SceneLoadLevel::GPU | SceneLoadLevel::PendingGPU => {
                     return Some(Ordering::Less);
                 }
             },
             AssetResidency::CPU(_) | AssetResidency::PendingGPU(_) => match other {
-                SceneLoadLevel::NotLoaded => return Some(Ordering::Greater),
-                SceneLoadLevel::CPU => return Some(Ordering::Equal),
+                SceneLoadLevel::NotLoaded | SceneLoadLevel::PendingCPU => {
+                    return Some(Ordering::Greater);
+                }
+                SceneLoadLevel::CPU | SceneLoadLevel::PendingGPU => return Some(Ordering::Equal),
                 SceneLoadLevel::GPU => return Some(Ordering::Less),
             },
             AssetResidency::GPU(_, _) => match other {
-                SceneLoadLevel::NotLoaded | SceneLoadLevel::CPU => return Some(Ordering::Greater),
+                SceneLoadLevel::NotLoaded
+                | SceneLoadLevel::CPU
+                | SceneLoadLevel::PendingCPU
+                | SceneLoadLevel::PendingGPU => return Some(Ordering::Greater),
                 SceneLoadLevel::GPU => return Some(Ordering::Equal),
             },
         }

@@ -19,7 +19,9 @@ pub struct SceneId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub enum SceneLoadLevel {
     NotLoaded,
+    PendingCPU,
     CPU,
+    PendingGPU,
     GPU,
 }
 impl Default for SceneLoadLevel {
@@ -31,8 +33,10 @@ impl Default for SceneLoadLevel {
 impl From<&AssetResidency> for SceneLoadLevel {
     fn from(value: &AssetResidency) -> Self {
         match value {
-            AssetResidency::Registered | AssetResidency::PendingCPU => SceneLoadLevel::NotLoaded,
-            AssetResidency::CPU(_) | AssetResidency::PendingGPU(_) => SceneLoadLevel::CPU,
+            AssetResidency::PendingGPU(_) => SceneLoadLevel::PendingGPU,
+            AssetResidency::PendingCPU => SceneLoadLevel::PendingCPU,
+            AssetResidency::Registered => SceneLoadLevel::NotLoaded,
+            AssetResidency::CPU(_) => SceneLoadLevel::CPU,
             AssetResidency::GPU(_, _) => SceneLoadLevel::GPU,
         }
     }

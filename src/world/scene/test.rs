@@ -6,7 +6,10 @@ mod scene_tests {
         asset_manager::{
             AssetHandle, AssetResidency, ProvidesMeshData, asset_manager::AssetManager,
         },
-        common::{entity::EntityHandle, instance::InstanceHandle},
+        common::{
+            entity::{EntityHandle, PrototypeHandle},
+            instance::{GPUInstanceHandle, InstanceHandle},
+        },
         renderer::GPUAllocationHandle,
         world::{
             entity_manager::{
@@ -14,6 +17,7 @@ mod scene_tests {
                 entity_manager::EntityManager,
             },
             instance_manager::archetypes::{APosition, Archetype, ArchetypeId},
+            load_queue::AssetTransition,
             scene::{
                 Scene, SceneId, SceneLoadLevel,
                 builder::SceneBuilder,
@@ -105,12 +109,18 @@ mod scene_tests {
             new: SceneLoadLevel,
         ) {
             let residency = match new {
+                SceneLoadLevel::PendingCPU => AssetResidency::PendingCPU,
+                SceneLoadLevel::PendingGPU => AssetResidency::PendingGPU(0),
                 SceneLoadLevel::NotLoaded => AssetResidency::Registered,
                 SceneLoadLevel::CPU => AssetResidency::CPU(0),
                 SceneLoadLevel::GPU => AssetResidency::GPU(GPUAllocationHandle::mock(0), 0),
             };
             self.assets.set_mock_residency(&asset, residency);
-            manager.on_asset_level_changed(asset, old, new);
+            manager.on_asset_level_changed(AssetTransition {
+                handle: asset,
+                old,
+                new,
+            });
         }
     }
 
@@ -185,14 +195,14 @@ mod scene_tests {
         graph.add_scene(&first, &fixture.entities).expect("added");
         graph.add_scene(&second, &fixture.entities).expect("added");
 
-        let mut holders: Vec<usize> = graph.holders_of(&shared).map(|s| s.0).collect();
+        let mut holders: Vec<usize> = graph.holders_of(&shared).into_iter().map(|s| s.0).collect();
         holders.sort();
         assert_eq!(holders, vec![0, 1]);
 
-        let solo_holders: Vec<usize> = graph.holders_of(&solo).map(|s| s.0).collect();
+        let solo_holders: Vec<usize> = graph.holders_of(&solo).into_iter().map(|s| s.0).collect();
         assert_eq!(solo_holders, vec![1]);
 
-        assert_eq!(graph.holders_of(&unheld).count(), 0);
+        assert_eq!(graph.holders_of(&unheld).len(), 0);
     }
 
     // -------------------------------------------------------------- manager
@@ -316,11 +326,28 @@ mod scene_tests {
         );
         assert_eq!(state(&manager, first), SceneLoadLevel::NotLoaded);
         assert_eq!(manager.despawn_queue, instances);
-        assert!(manager.get_scene(first.0).runtime.instances.is_empty());
+
+        assert!(manager.instances_of(first).is_empty());
 
         manager
             .set_load_level(second, SceneLoadLevel::NotLoaded, &fixture.assets)
             .expect("drop second");
+
+        let gpu_handles: Vec<GPUInstanceHandle> = instances
+            .iter()
+            .enumerate()
+            .map(|(i, instance)| {
+                let gpu_handle = GPUInstanceHandle {
+                    prototype: PrototypeHandle(0),
+                    instance_id: i as u32,
+                };
+                manager
+                    .inflight_despawns
+                    .insert(gpu_handle, instance.clone());
+                gpu_handle
+            })
+            .collect();
+        manager.ack_despawns(gpu_handles);
 
         let requested = requests(&mut manager);
         assert_eq!(

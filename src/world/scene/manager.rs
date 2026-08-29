@@ -1,4 +1,8 @@
-use std::{collections::HashMap, error::Error, fmt::Display, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt::Display,
+};
 
 use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
@@ -6,7 +10,7 @@ use crate::{
     world::{
         entity_manager::entity_manager::EntityManager,
         instance_manager::archetypes::Archetype,
-        load_queue::LoadQueue,
+        load_queue::{AssetTransition, LoadQueue},
         scene::{
             Scene, SceneId, SceneLoadLevel, SceneRuntime,
             builder::SceneBuilder,
@@ -48,6 +52,8 @@ pub struct SceneManager {
     pending: Vec<usize>,
     ready: Vec<SceneId>,
     pub load_queue_new: LoadQueue,
+    pub asset_release_queue: HashSet<AssetHandle>,
+    pub inflight_despawns: HashMap<GPUInstanceHandle, InstanceHandle>,
 }
 
 impl SceneManager {
@@ -60,18 +66,20 @@ impl SceneManager {
             asset_requests: HashMap::new(),
             pending: Vec::new(),
             ready: Vec::new(),
+            asset_release_queue: HashSet::new(),
             load_queue_new: LoadQueue::default(),
+            inflight_despawns: HashMap::new(),
         }
     }
 
     pub fn ack_despawns(&mut self, gpu_handles: Vec<GPUInstanceHandle>) {
         for gpu_handle in gpu_handles {
-            let Some(instance) = self.load_queue_new.inflight_despawns.remove(&gpu_handle) else {
+            let Some(instance) = self.inflight_despawns.remove(&gpu_handle) else {
                 continue;
             };
 
             for free_asset in self.dependency_graph.ack_despawn(instance) {
-                self.load_queue_new.asset_release_queue.remove(&free_asset);
+                self.asset_release_queue.remove(&free_asset);
                 self.asset_requests.insert(
                     free_asset,
                     self.dependency_graph.required_asset_level(&free_asset),
@@ -180,7 +188,7 @@ impl SceneManager {
                     .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
                 // if the asset level drops from this action, then add to requested
                 if SceneLoadLevel::from(&residency) > required {
-                    self.load_queue_new.asset_release_queue.insert(asset);
+                    self.asset_release_queue.insert(asset);
                 }
             }
             pending[scene_id.0] = 0;
@@ -194,15 +202,7 @@ impl SceneManager {
         }
         Ok(())
     }
-    pub fn on_asset_level_changed(
-        &mut self,
-        asset: AssetHandle,
-        old: SceneLoadLevel,
-        new: SceneLoadLevel,
-    ) {
-        if new <= old {
-            return;
-        }
+    pub fn on_asset_level_changed(&mut self, transition: AssetTransition) {
         let Self {
             scenes,
             dependency_graph,
@@ -210,10 +210,10 @@ impl SceneManager {
             ready,
             ..
         } = self;
-        for holder in dependency_graph.holders_of(&asset) {
+        for holder in dependency_graph.holders_of(&transition.handle) {
             let requested = scenes[holder.0].runtime.requested_level;
             // was blocking this holder, no longer is
-            if old < requested && new >= requested {
+            if transition.old < requested && transition.new >= requested {
                 pending[holder.0] -= 1;
                 if pending[holder.0] == 0 {
                     scenes[holder.0].runtime.current_state = requested;
@@ -251,5 +251,13 @@ impl SceneManager {
             .add_instance_handles(scene_id, handles);
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn instances_of(&self, scene_id: SceneId) -> Vec<InstanceHandle> {
+        self.dependency_graph
+            .clone_instances_of(scene_id)
+            .into_iter()
+            .collect()
     }
 }

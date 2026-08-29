@@ -345,11 +345,14 @@ fn build_all_models(
     Ok((pnujw_vertices, pnu_vertices, maybe_index_data, meshes))
 }
 impl GltfAsset {
-    pub fn load(gltf: gltf::Gltf, bin: BinarySource) -> Result<Box<dyn Asset>, ModelBuilderError> {
-        let buffer_offsets = get_buffer_offsets(&gltf);
-        let skins = get_skins(&gltf);
-        let node_tree = build_node_trees(&gltf, &skins)?;
-        let binary_data = super::loader::load_binary_data_from_source(&bin)
+    pub fn load(
+        gltf: &gltf::Gltf,
+        bin: &BinarySource,
+    ) -> Result<Box<dyn Asset>, ModelBuilderError> {
+        let buffer_offsets = get_buffer_offsets(gltf);
+        let skins = get_skins(gltf);
+        let node_tree = build_node_trees(gltf, &skins)?;
+        let binary_data = super::loader::load_binary_data_from_source(bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
 
         let ibms = get_ibms(&gltf, &binary_data, &buffer_offsets)?;
