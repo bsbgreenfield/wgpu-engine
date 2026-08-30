@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::range::Range;
 use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData};
 
@@ -5,6 +7,7 @@ use bytemuck::Pod;
 
 use crate::common::entity::{EntityHandle, PrototypeHandle};
 use crate::common::instance::{GPUInstanceHandle, InstanceHandle};
+use crate::renderer::gpu_allocator::GPUUploadJob;
 use crate::{
     asset_manager::AssetHandle,
     renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
@@ -18,6 +21,12 @@ mod pipeline;
 pub mod renderer;
 mod vm;
 
+pub trait GPUUploadable: Debug + bytemuck::Pod {
+    type GPUHandle: Debug + Clone + Hash + Eq;
+    type UploadJob<'a>: GPUUploadJob<GPUHandle = Self::GPUHandle>;
+    fn arena_label() -> String;
+    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self>;
+}
 impl RenderKey for PrototypeHandle {
     fn as_key(&self) -> u64 {
         self.0 as u64
@@ -309,7 +318,7 @@ impl Display for RenderUpdateError {
 impl Display for RenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SurfaceError(e) => e.fmt(f),
+            Self::SurfaceError(e) => std::fmt::Display::fmt(&e, f),
             Self::BadSurfaceTexture => write!(f, "Sub Optimal or invalid surface"),
         }
     }

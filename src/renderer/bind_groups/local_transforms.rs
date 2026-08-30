@@ -5,13 +5,17 @@ use crate::{
     renderer::{
         InstanceUploadJob,
         bind_groups::{BindGroupProvider, BindGroupUploadResult},
-        gpu_allocator::{VertexArenaError, instance_arena::InstanceArena},
+        gpu_allocator::{
+            GPUAllocator, GPUUploadResult, VertexArenaError,
+            gpu_arena::GPUArena,
+            instance_arena::{InstanceArena, SharedInstanceArena},
+        },
     },
     util::types::{LocalTransform, Mat4F32},
 };
 pub struct LocalTransformBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
-    lt_arena: InstanceArena<LocalTransform>,
+    lt_arena: GPUArena<LocalTransform>,
 }
 
 impl LocalTransformBindGroup {
@@ -38,7 +42,7 @@ impl LocalTransformBindGroup {
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<BindGroupUploadResult, VertexArenaError> {
+    ) -> Result<GPUUploadResult, VertexArenaError> {
         let upload_result = self.lt_arena.upload(job, queue, device);
         if self.bind_groups.is_empty() {
             self.add_bind_group(device);
@@ -101,7 +105,7 @@ impl BindGroupProvider for LocalTransformBindGroup {
     }
 
     fn new() -> Self {
-        let lts = InstanceArena::<LocalTransform>::new();
+        let lts = GPUArena::<LocalTransform>::new();
         Self {
             bind_groups: vec![],
             lt_arena: lts,

@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
-use crate::world::world::RenderView;
+use crate::{renderer::GPUUploadable, world::world::RenderView};
 
 pub type Mat4F32 = [[f32; 4]; 4];
 pub const MAT4_IDENTITY: Mat4F32 = [
@@ -17,7 +17,7 @@ pub struct PrimitiveVerticesData {
     pub weights: Option<Vec<u8>>,
     pub count: usize,
 }
-pub trait ModelVertex: Debug + bytemuck::Pod {
+pub trait ModelVertex: Debug + bytemuck::Pod + GPUUploadable {
     fn from_primitive_data(p: &PrimitiveVerticesData) -> Vec<Self>;
     fn normalize_f32_to_u8(input: Vec<f32>) -> Vec<u8> {
         input

@@ -10,7 +10,7 @@ use crate::{
         RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
         VertexArenaError, VertexArenaSelector,
         bind_groups::BindGroupCollection,
-        gpu_allocator::{GPUAllocator, UploadIndexJob, vertex_arena::GPUArena},
+        gpu_allocator::{GPUAllocator, GPUUploadResult, UploadIndexJob, gpu_arena::GPUArena},
         pipeline::PipelineCollection,
     },
     util::types::{
@@ -244,11 +244,14 @@ impl Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
-        let result = self
+        let GPUUploadResult::BindGroupUploadResult {
+            buffer_offset,
+            alloc_meta_idx,
+        } = self
             .bind_groups
             .instance_data
             .upload_instance_record(job, queue, device)?;
-        Ok(result.buffer_offset)
+        Ok(buffer_offset)
     }
 
     pub(super) fn upload_local_transforms<'frame>(

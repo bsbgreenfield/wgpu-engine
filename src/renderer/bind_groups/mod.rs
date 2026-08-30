@@ -8,7 +8,7 @@ use crate::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
             skinning::SkinningBindGroup,
         },
-        gpu_allocator::VertexArenaError,
+        gpu_allocator::{GPUUploadResult, VertexArenaError},
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
 };
@@ -72,13 +72,17 @@ impl BindGroupCollection {
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
         let prototype = job.gpu_instance_handle.prototype.clone();
-        let upload_result = self
+        let GPUUploadResult::BindGroupUploadResult {
+            buffer_offset,
+            alloc_meta_idx,
+        } = self
             .local_transforms
             .upload_local_transforms(job, queue, device)?;
+
         self.prototypes
             .entry(prototype)
-            .and_modify(|entry| entry.local_transforms_slot = upload_result.alloc_meta_idx);
-        Ok(upload_result.buffer_offset)
+            .and_modify(|entry| entry.local_transforms_slot = alloc_meta_idx);
+        Ok(buffer_offset)
     }
 
     pub fn upload_skin_data<'frame>(
@@ -89,11 +93,14 @@ impl BindGroupCollection {
         device: &wgpu::Device,
     ) -> Result<u32, VertexArenaError> {
         let prototype = joint_job.gpu_instance_handle.prototype.clone();
-        let upload_result = self.skinning.upload(joint_job, ibm_job, queue, device)?;
+        let GPUUploadResult::BindGroupUploadResult {
+            buffer_offset,
+            alloc_meta_idx,
+        } = self.skinning.upload(joint_job, ibm_job, queue, device)?;
         self.prototypes
             .entry(prototype)
-            .and_modify(|entry| entry.joint_transforms_slot = Some(upload_result.alloc_meta_idx));
-        Ok(upload_result.buffer_offset)
+            .and_modify(|entry| entry.joint_transforms_slot = Some(alloc_meta_idx));
+        Ok(buffer_offset)
     }
 
     pub fn get_slot(&self, prototype: &PrototypeHandle, buffer_type: BufferType) -> usize {

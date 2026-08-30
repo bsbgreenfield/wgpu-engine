@@ -1,21 +1,23 @@
 use crate::{
     common::instance::{GPUInstanceHandle, InstanceHandle},
     renderer::{
-        InstanceUploadJob, bind_groups::BindGroupUploadResult, gpu_allocator::VertexArenaError,
+        InstanceUploadJob,
+        bind_groups::BindGroupUploadResult,
+        gpu_allocator::{GPUUploadResult, VertexArenaError, gpu_arena::GPUArena},
     },
 };
 use std::num::NonZero;
 
 use crate::{
-    renderer::{bind_groups::BindGroupProvider, gpu_allocator::instance_arena::InstanceArena},
+    renderer::{bind_groups::BindGroupProvider, gpu_allocator::GPUAllocator},
     util::types::{GlobalTransform, InstanceOffset, InstanceRecordData},
 };
 
 pub struct InstanceDataBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
-    record_arena: InstanceArena<InstanceRecordData>,
-    offsets: InstanceArena<InstanceOffset>,
-    global_transforms: InstanceArena<GlobalTransform>,
+    record_arena: GPUArena<InstanceRecordData>,
+    offsets: GPUArena<InstanceOffset>,
+    global_transforms: GPUArena<GlobalTransform>,
 }
 
 impl BindGroupProvider for InstanceDataBindGroup {
@@ -99,9 +101,9 @@ impl BindGroupProvider for InstanceDataBindGroup {
     }
 
     fn new() -> Self {
-        let instance_records = InstanceArena::<InstanceRecordData>::new();
-        let instance_offsets = InstanceArena::<InstanceOffset>::new();
-        let global_transforms = InstanceArena::<GlobalTransform>::new();
+        let instance_records = GPUArena::<InstanceRecordData>::new();
+        let instance_offsets = GPUArena::<InstanceOffset>::new();
+        let global_transforms = GPUArena::<GlobalTransform>::new();
 
         Self {
             bind_groups: vec![],
@@ -142,12 +144,12 @@ impl InstanceDataBindGroup {
         job: InstanceUploadJob<'frame, InstanceRecordData>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<BindGroupUploadResult, VertexArenaError> {
-        let upload_result = self.record_arena.upload(job, queue, device);
+    ) -> Result<GPUUploadResult, VertexArenaError> {
+        let upload_result = self.record_arena.upload(job, queue, device)?;
         if self.bind_groups.is_empty() {
             self.add_bind_group(device);
         }
-        upload_result
+        Ok(upload_result)
     }
     pub fn upload_instance_offsets<'frame>(
         &mut self,

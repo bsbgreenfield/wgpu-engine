@@ -7,15 +7,19 @@ use crate::{
     renderer::{
         InstanceUploadJob,
         bind_groups::{BindGroupProvider, BindGroupUploadResult},
-        gpu_allocator::{VertexArenaError, instance_arena::InstanceArena},
+        gpu_allocator::{
+            GPUAllocator, GPUUploadResult, VertexArenaError,
+            gpu_arena::GPUArena,
+            instance_arena::{InstanceArena, SharedInstanceArena},
+        },
     },
     util::types::{InverseBindMatrix, JointTransform, Mat4F32},
 };
 
 pub struct SkinningBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
-    joint_arena: InstanceArena<JointTransform>,
-    ibm_arena: InstanceArena<InverseBindMatrix>,
+    joint_arena: GPUArena<JointTransform>,
+    ibm_arena: GPUArena<InverseBindMatrix>,
 }
 
 impl SkinningBindGroup {
@@ -48,7 +52,7 @@ impl SkinningBindGroup {
         ibm_job: InstanceUploadJob<'frame, InverseBindMatrix>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<BindGroupUploadResult, VertexArenaError> {
+    ) -> Result<GPUUploadResult, VertexArenaError> {
         let jt_result = self.joint_arena.upload(joint_job, queue, device)?;
         let _ibm_offset = self.ibm_arena.upload(ibm_job, queue, device)?;
         if self.bind_groups.is_empty() {
@@ -133,8 +137,8 @@ impl BindGroupProvider for SkinningBindGroup {
         self.bind_groups.push(bg);
     }
     fn new() -> Self {
-        let joints = InstanceArena::<JointTransform>::new();
-        let ibms = InstanceArena::<InverseBindMatrix>::new();
+        let joints = GPUArena::<JointTransform>::new();
+        let ibms = GPUArena::<InverseBindMatrix>::new();
         Self {
             bind_groups: vec![],
             joint_arena: joints,

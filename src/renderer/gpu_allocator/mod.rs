@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::range::Range;
 
@@ -7,6 +8,8 @@ use bytemuck::Pod;
 use std::error::Error;
 
 use crate::common::instance::GPUInstanceHandle;
+use crate::renderer::GPUUploadable;
+use crate::renderer::InstanceUploadJob;
 use crate::renderer::StorageData;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::util::types::{
@@ -17,6 +20,7 @@ use crate::{renderer::GPUAllocationHandle, util::types::ModelVertex};
 
 mod allocation_table;
 mod free_list;
+pub(super) mod gpu_arena;
 pub(super) mod instance_arena;
 pub(super) mod vertex_arena;
 
@@ -61,20 +65,29 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
     }
 }
 
-pub trait GPUAllocator<T: Pod> {
-    type UploadJob<'a>;
+pub enum GPUUploadResult {
+    BindGroupUploadResult {
+        buffer_offset: u32,
+        alloc_meta_idx: usize,
+    },
+}
+pub trait GPUAllocator<T: GPUUploadable> {
     type AllocationError: Error;
 
     fn upload<'a>(
         &mut self,
-        job: Self::UploadJob<'a>,
+        job: T::UploadJob<'a>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<(), Self::AllocationError>;
+    ) -> Result<GPUUploadResult, Self::AllocationError>;
 
-    fn resolve(&self, handle: &GPUAllocationHandle) -> (Range<u32>, &wgpu::Buffer);
+    fn resolve(&self, handle: &T::GPUHandle) -> (Range<u32>, &wgpu::Buffer);
+
+    fn remove(&mut self, handle: &T::GPUHandle) -> Result<(), Self::AllocationError>;
 
     fn new() -> Self;
+
+    fn dealloc(&mut self, handle: &T::GPUHandle) -> Result<(), Self::AllocationError>;
 }
 
 #[derive(Debug)]
@@ -284,4 +297,10 @@ impl StorageData for InstanceOffset {
             _t: PhantomData,
         }
     }
+}
+
+pub trait GPUUploadJob {
+    type GPUHandle: Eq + Debug + Clone + Hash;
+    fn get_data(&self) -> &[u8];
+    fn get_handle(&self) -> Self::GPUHandle;
 }
