@@ -154,12 +154,12 @@ impl BindGroupCollection {
         }
     }
     pub fn despawn(&mut self, handle: &GPUInstanceHandle) {
-        let entry = self
+        let prototype_entry = self
             .prototypes
             .get_mut(&handle.prototype)
             .expect("invalid instance");
 
-        entry.ref_count -= 1;
+        prototype_entry.ref_count -= 1;
 
         //if entry.ref_count == 0 {
         //    self.prototypes.remove(&handle.prototype);

@@ -6,10 +6,11 @@ use crate::{
     common::instance::GPUInstanceHandle,
     renderer::{
         GPUAllocationHandle, GPUUploadable, InstanceUploadJob, StorageData,
+        bind_groups::SharedInstanceData,
         gpu_allocator::{
-            CHUNK_SIZE, FreeListAllocator, GPUAllocator, GPUChunk, GPUUploadJob, GPUUploadResult,
-            MIMIMUM_INDEX_ALLOCATION_SIZE, MIMIMUM_VERTEX_ALLOCATION_SIZE, UploadIndexJob,
-            UploadMeshJob, VertexArenaError, allocation_table::AllocationTable,
+            AllocMetaData, CHUNK_SIZE, FreeListAllocator, GPUAllocator, GPUChunk, GPUUploadJob,
+            GPUUploadResult, MIMIMUM_INDEX_ALLOCATION_SIZE, MIMIMUM_VERTEX_ALLOCATION_SIZE,
+            UploadIndexJob, UploadMeshJob, VertexArenaError, allocation_table::AllocationTable,
         },
     },
     util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
@@ -37,6 +38,35 @@ impl<T: GPUUploadable> GPUArena<T> {
         let meta = self.alloc_table.resolve(handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         range.start
+    }
+
+    pub fn get_chunks(&self) -> &[GPUChunk<T>] {
+        &self.chunks
+    }
+    pub fn get_chunks_mut(&mut self) -> &mut [GPUChunk<T>] {
+        &mut self.chunks
+    }
+}
+
+impl<T: SharedInstanceData> GPUArena<T> {
+    pub fn register_instance(&mut self, handle: GPUInstanceHandle, slot_idx: usize) {
+        self.alloc_table.register_instance(handle, slot_idx);
+    }
+
+    pub fn get_meta(&mut self, slot_idx: usize) -> Result<&mut AllocMetaData, VertexArenaError> {
+        Ok(self
+            .alloc_table
+            .get_meta(slot_idx)
+            .ok_or(VertexArenaError::AllocationSlotNotFound)?)
+    }
+
+    pub fn allocate_copy_data(
+        &mut self,
+        handle: GPUInstanceHandle,
+        dst_chunk_id: usize,
+        dst_node_id: usize,
+    ) {
+        self.alloc_table.allocate(handle, dst_chunk_id, dst_node_id);
     }
 }
 
@@ -83,22 +113,26 @@ impl<'a, T: Pod> GPUUploadJob for InstanceUploadJob<'a, T> {
 }
 
 impl<'a, T: ModelVertex> GPUUploadJob for UploadMeshJob<'a, T> {
-    type GPUHandle = u32;
+    type GPUHandle = GPUAllocationHandle;
     fn get_data(&self) -> &[u8] {
         self.verts
     }
     fn get_handle(&self) -> Self::GPUHandle {
-        self.global_alloc_id
+        GPUAllocationHandle {
+            global_allocation_id: self.global_alloc_id,
+        }
     }
 }
 
 impl<'a> GPUUploadJob for UploadIndexJob<'a> {
-    type GPUHandle = u32;
+    type GPUHandle = GPUAllocationHandle;
     fn get_data(&self) -> &[u8] {
         self.indices
     }
     fn get_handle(&self) -> Self::GPUHandle {
-        self.global_alloc_id
+        GPUAllocationHandle {
+            global_allocation_id: self.global_alloc_id,
+        }
     }
 }
 
@@ -115,7 +149,7 @@ impl<T: StorageData> GPUUploadable for T {
 
 impl GPUUploadable for VIndex {
     type UploadJob<'a> = UploadIndexJob<'a>;
-    type GPUHandle = u32;
+    type GPUHandle = GPUAllocationHandle;
     fn arena_label() -> String {
         String::from("Index Arena")
     }
@@ -125,7 +159,7 @@ impl GPUUploadable for VIndex {
 }
 
 impl GPUUploadable for PNUJWVertex {
-    type GPUHandle = u32;
+    type GPUHandle = GPUAllocationHandle;
     type UploadJob<'a> = UploadMeshJob<'a, PNUJWVertex>;
     fn arena_label() -> String {
         String::from("PNUJW Arena")
@@ -135,7 +169,7 @@ impl GPUUploadable for PNUJWVertex {
     }
 }
 impl GPUUploadable for PNUVertex {
-    type GPUHandle = u32;
+    type GPUHandle = GPUAllocationHandle;
     type UploadJob<'a> = UploadMeshJob<'a, PNUVertex>;
     fn arena_label() -> String {
         String::from("PNU Arena")
@@ -193,19 +227,24 @@ impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
     }
 
     fn resolve(&self, handle: &T::GPUHandle) -> (std::range::Range<u32>, &wgpu::Buffer) {
-        // let meta = self.alloc_table.get(&handle.global_allocation_id).unwrap();
-        // let mut range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
-        // range.start = range.start / size_of::<V>() as u32;
-        // range.end = range.end / size_of::<V>() as u32;
-        // (range, &self.chunks[meta.chunk_id].buffer)
-        todo!()
+        let meta = self.alloc_table.resolve(&handle).unwrap();
+        let mut range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
+        range.start = range.start / size_of::<T>() as u32;
+        range.end = range.end / size_of::<T>() as u32;
+        (range, &self.chunks[meta.chunk_id].buffer)
     }
 
     fn remove(
         &mut self,
         handle: &<T as GPUUploadable>::GPUHandle,
     ) -> Result<(), Self::AllocationError> {
-        todo!()
+        match self.alloc_table.remove(handle)? {
+            Some(meta) => {
+                self.chunks[meta.chunk_id].allocator.dealloc(meta.node_id)?;
+            }
+            None => todo!(),
+        }
+        Ok(())
     }
 
     fn dealloc(
