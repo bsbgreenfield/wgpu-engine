@@ -1,7 +1,6 @@
 use std::range::Range;
 use std::{collections::HashMap, fmt::Debug};
 
-use crate::asset_manager::AssetResidency;
 use crate::world::load_queue::AssetTransition;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
@@ -17,7 +16,6 @@ use crate::{
         camera::Camera,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
-        load_queue::LoadQueue,
         scene::{
             SceneId, SceneLoadLevel,
             manager::{SceneManager, SceneManagerError},
@@ -138,6 +136,7 @@ pub enum WorldUpdateDelta {
     NewEntitySpawn(NewInstanceData),
     EntityInstanceSpawn(CopiedInstanceData),
     AssetDidLoad(GPUAssetUploadJob),
+    AssetUnload(GPUAllocationHandle),
     InstanceDespawn(GPUInstanceHandle),
 }
 
@@ -148,6 +147,9 @@ impl<'frame> Debug for WorldUpdateDelta {
             WorldUpdateDelta::EntityInstanceSpawn(_) => f.write_str("EntityInstanceSpawn"),
             WorldUpdateDelta::AssetDidLoad(_) => f.write_str("AssetDidLoad"),
             WorldUpdateDelta::InstanceDespawn(handle) => write!(f, "despawn {:?}", handle),
+            WorldUpdateDelta::AssetUnload(alloc_handle) => {
+                write!(f, "unload asset {:?}", alloc_handle)
+            }
         }
     }
 }
@@ -260,6 +262,11 @@ impl World {
                 let job: GPUAssetUploadJob =
                     self.asset_manager.get_upload_job_for(transition.handle)?;
                 self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+            } else if transition.old == SceneLoadLevel::GPU && transition.new < SceneLoadLevel::GPU
+            {
+                let alloc_handle = self.asset_manager.alloc_handle_of(&transition.handle)?;
+                self.deltas
+                    .push(WorldUpdateDelta::AssetUnload(alloc_handle));
             }
             self.scene_manager.on_asset_level_changed(transition);
         }
@@ -270,7 +277,6 @@ impl World {
         }
 
         if !self.scene_manager.spawn_queue.is_empty() {
-            println!("HELLO!!!!!!!!!!!!!!");
             let spawn_data = std::mem::take(&mut self.scene_manager.spawn_queue);
             for (scene_id, spawns) in spawn_data {
                 for instance_data in self.spawn(scene_id, spawns)? {

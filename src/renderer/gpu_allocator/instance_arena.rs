@@ -96,13 +96,7 @@ impl<T: StorageData> InstanceArena<T> {
             .start
             / size_of::<T>() as u32)
     }
-}
 
-impl SharedInstanceData for LocalTransform {}
-impl SharedInstanceData for JointTransform {}
-impl SharedInstanceData for InverseBindMatrix {}
-
-impl<T: StorageData> InstanceArena<T> {
     pub fn upload<'a>(
         &mut self,
         job: InstanceUploadJob<'a, T>,
@@ -161,6 +155,7 @@ impl<T: StorageData> InstanceArena<T> {
         range.start / size_of::<T>() as u32
     }
 
+    #[allow(unused)]
     pub fn resolve_buffer(&self, _instance_handle: &InstanceHandle) -> &wgpu::Buffer {
         //TODO: if we add more chunks, then this will have to actually resolve
         &self.chunks[0].buffer
@@ -175,6 +170,10 @@ impl<T: StorageData> InstanceArena<T> {
         }
     }
 }
+
+impl SharedInstanceData for LocalTransform {}
+impl SharedInstanceData for JointTransform {}
+impl SharedInstanceData for InverseBindMatrix {}
 
 impl<T: SharedInstanceData + Debug + bytemuck::Pod> InstanceArena<T> {
     pub fn register_shared_binding(

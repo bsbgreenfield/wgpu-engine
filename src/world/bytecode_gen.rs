@@ -1,7 +1,9 @@
 use crate::{
     app::GPUAssetUploadJob,
     common::instance::GPUInstanceHandle,
-    renderer::{BufferType, GPUBindings, Instruction, Operations, RenderConstant},
+    renderer::{
+        BufferType, GPUAllocationHandle, GPUBindings, Instruction, Operations, RenderConstant,
+    },
     util::types::{PNUJWVertex, PNUVertex, VIndex},
     world::{
         RenderKey,
@@ -52,8 +54,19 @@ pub trait BytecodeGenerator<'frame> {
                 WorldUpdateDelta::InstanceDespawn(gpu_instance_handle) => {
                     Self::despawn_instance(gpu_instance_handle, instructions, constants)
                 }
+                WorldUpdateDelta::AssetUnload(alloc_handle) => {
+                    Self::unload_asset(alloc_handle, instructions, constants)
+                }
             }
         }
+    }
+
+    fn unload_asset(
+        alloc_handle: &GPUAllocationHandle,
+        instructions: &mut Vec<Instruction>,
+        constants: &mut Vec<RenderConstant<'frame>>,
+    ) {
+        todo!()
     }
 
     fn despawn_instance(

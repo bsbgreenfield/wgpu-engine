@@ -166,6 +166,25 @@ impl AssetManager {
             },
         }
     }
+
+    pub fn alloc_handle_of(
+        &self,
+        asset_handle: &AssetHandle,
+    ) -> Result<GPUAllocationHandle, AssetLoadError> {
+        if let RegisteredAsset::Loaded {
+            residency,
+            data: _,
+            _t,
+        } = self.registered_assets.get(asset_handle).unwrap()
+            && let AssetResidency::GPU(alloc_handle, _la_idx) = residency
+        {
+            return Ok(alloc_handle.clone());
+        } else {
+            return Err(AssetLoadError::AssetNotLoaded(
+                "handle {:?} was not successfully gpu loaded".to_string(),
+            ));
+        }
+    }
     pub fn register_asset<A>(&mut self, source: &str) -> Result<ResourceBacking<A>, AssetLoadError>
     where
         A: Asset + 'static,
