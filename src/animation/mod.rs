@@ -2,7 +2,8 @@ pub mod test;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::{
-    common::instance::{GPUInstanceHandle, InstanceHandle},
+    common::instance::InstanceHandle,
+    renderer::GPUInstanceHandle,
     util::types::{LocalTransform, Mat4F32},
 };
 

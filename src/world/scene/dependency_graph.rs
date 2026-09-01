@@ -3,14 +3,9 @@ use std::{
     fmt::Display,
 };
 
-use gltf::accessor::Item;
-
 use crate::{
-    asset_manager::{AssetHandle, asset_manager::AssetManager},
-    common::{
-        entity::EntityHandle,
-        instance::{GPUInstanceHandle, InstanceHandle},
-    },
+    asset_manager::AssetHandle,
+    common::{entity::EntityHandle, instance::InstanceHandle},
     world::{
         entity_manager::entity_manager::EntityManager,
         scene::{Scene, SceneId, SceneLoadLevel},

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    common::instance::{GPUInstanceHandle, InstanceHandle},
+    common::instance::InstanceHandle,
     renderer::{
-        BufferType, InstanceUploadJob, PrototypeHandle, StorageData,
+        BufferType, GPUInstanceHandle, InstanceUploadJob, PrototypeHandle, StorageData,
         bind_groups::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
             skinning::SkinningBindGroup,
@@ -13,11 +13,11 @@ use crate::{
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
 };
 
-pub mod instance_data;
-pub mod local_transforms;
-pub mod skinning;
+pub(super) mod instance_data;
+pub(super) mod local_transforms;
+pub(super) mod skinning;
 
-pub trait BindGroupProvider {
+pub(super) trait BindGroupProvider {
     fn get_bind_group(&self, alloc_handle: &InstanceHandle) -> &wgpu::BindGroup;
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
     fn add_bind_group(&mut self, device: &wgpu::Device);
@@ -25,85 +25,91 @@ pub trait BindGroupProvider {
     fn despawn(&mut self, handle: &GPUInstanceHandle);
 }
 
-pub trait SharedInstanceData: StorageData {}
+pub(super) trait SharedInstanceData: StorageData {}
 
 #[derive(Debug)]
 struct PrototypeEntry {
-    pub(super) ref_count: usize,
-    pub local_transforms_slot: usize,
-    pub joint_transforms_slot: Option<usize>,
+    ref_count: usize,
+    local_transforms_slot: usize,
+    joint_transforms_slot: Option<usize>,
 }
 
-pub struct BindGroupUploadResult {
-    pub buffer_offset: u32,
-    pub alloc_meta_idx: usize,
-}
-pub struct BindGroupCollection {
+pub(super) struct BindGroupCollection {
     next_handle: u32,
     prototypes: HashMap<PrototypeHandle, PrototypeEntry>,
-    pub local_transforms: LocalTransformBindGroup,
-    pub skinning: SkinningBindGroup,
-    pub instance_data: InstanceDataBindGroup,
+    pub(super) local_transforms: LocalTransformBindGroup,
+    pub(super) skinning: SkinningBindGroup,
+    pub(super) instance_data: InstanceDataBindGroup,
 }
 
 impl BindGroupCollection {
     #[cfg(test)]
-    pub fn get_prototype_count(&self) -> usize {
+    pub(super) fn get_prototype_count(&self) -> usize {
         self.prototypes.len()
     }
     #[cfg(test)]
-    pub fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
+    pub(super) fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
         self.prototypes.get(handle).map(|p| p.ref_count)
     }
 
     #[cfg(test)]
-    pub fn get_lt_buffer(&self) -> &wgpu::Buffer {
+    pub(super) fn get_lt_buffer(&self) -> &wgpu::Buffer {
         self.local_transforms.get_first_buffer()
     }
     #[cfg(test)]
-    pub fn get_joint_buffer(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
+    pub(super) fn get_joint_buffer(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
         self.skinning.get_first_buffers()
     }
 
-    pub fn upload_local_transforms<'frame>(
+    pub(super) fn upload_local_transforms<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<GPUUploadResult, VertexArenaError> {
         let prototype = job.gpu_instance_handle.prototype.clone();
-        let GPUUploadResult::BindGroupUploadResult {
-            buffer_offset,
-            alloc_meta_idx,
-        } = self
+        let res = self
             .local_transforms
             .upload_local_transforms(job, queue, device)?;
+        if let GPUUploadResult::BindGroupUploadResult {
+            buffer_element_offset: _,
+            alloc_meta_idx,
+        } = res
+        {
+            self.prototypes
+                .entry(prototype)
+                .and_modify(|entry| entry.local_transforms_slot = alloc_meta_idx);
+        } else {
+            panic!("wrong upload type");
+        }
 
-        self.prototypes
-            .entry(prototype)
-            .and_modify(|entry| entry.local_transforms_slot = alloc_meta_idx);
-        Ok(buffer_offset)
+        Ok(res)
     }
 
-    pub fn upload_skin_data<'frame>(
+    pub(super) fn upload_skin_data<'frame>(
         &mut self,
         joint_job: InstanceUploadJob<'frame, JointTransform>,
         ibm_job: InstanceUploadJob<'frame, InverseBindMatrix>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<GPUUploadResult, VertexArenaError> {
         let prototype = joint_job.gpu_instance_handle.prototype.clone();
+        let res = self.skinning.upload(joint_job, ibm_job, queue, device)?;
+
         let GPUUploadResult::BindGroupUploadResult {
-            buffer_offset,
+            buffer_element_offset: _,
             alloc_meta_idx,
-        } = self.skinning.upload(joint_job, ibm_job, queue, device)?;
+        } = res
+        else {
+            panic!("wrong upload type");
+        };
         self.prototypes
             .entry(prototype)
             .and_modify(|entry| entry.joint_transforms_slot = Some(alloc_meta_idx));
-        Ok(buffer_offset)
+        Ok(res)
     }
 
-    pub fn get_slot(&self, prototype: &PrototypeHandle, buffer_type: BufferType) -> usize {
+    pub(super) fn get_slot(&self, prototype: &PrototypeHandle, buffer_type: BufferType) -> usize {
         match buffer_type {
             BufferType::LocalTransform => {
                 self.prototypes
@@ -119,7 +125,10 @@ impl BindGroupCollection {
                 .expect("joints dont exist for prototype"),
         }
     }
-    pub fn gen_gpu_instance_handle(&mut self, prototype: &PrototypeHandle) -> GPUInstanceHandle {
+    pub(super) fn gen_gpu_instance_handle(
+        &mut self,
+        prototype: &PrototypeHandle,
+    ) -> GPUInstanceHandle {
         self.next_handle += 1;
         GPUInstanceHandle {
             instance_id: self.next_handle - 1,
@@ -127,24 +136,24 @@ impl BindGroupCollection {
         }
     }
 
-    pub fn add_prototype(&mut self, prototype: PrototypeHandle) {
+    pub(super) fn add_prototype(&mut self, prototype: PrototypeHandle) {
         self.prototypes.insert(
             prototype,
             PrototypeEntry {
                 ref_count: 0,
-                local_transforms_slot: 0,
+                local_transforms_slot: 0, //dummy temp
                 joint_transforms_slot: None,
             },
         );
     }
-    pub fn add_prototype_instance(&mut self, prototype: &PrototypeHandle) {
+    pub(super) fn add_prototype_instance(&mut self, prototype: &PrototypeHandle) {
         self.prototypes
             .get_mut(prototype)
             .expect("should be prototype")
             .ref_count += 1;
     }
 
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             next_handle: 0,
             prototypes: HashMap::new(),
@@ -153,7 +162,7 @@ impl BindGroupCollection {
             instance_data: InstanceDataBindGroup::new(),
         }
     }
-    pub fn despawn(&mut self, handle: &GPUInstanceHandle) {
+    pub(super) fn despawn(&mut self, handle: &GPUInstanceHandle) {
         let prototype_entry = self
             .prototypes
             .get_mut(&handle.prototype)

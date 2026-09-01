@@ -7,11 +7,8 @@ mod integration_tests {
     use crate::{
         animation::AnimationTransformType,
         app::{app::App, app_config::AppConfig, app_state::AppState},
-        common::{
-            entity::{EntityHandle, PrototypeHandle},
-            instance::InstanceHandle,
-        },
-        renderer::{DrawItem, Instruction, RenderConstant, RenderUpdateDelta},
+        common::{entity::EntityHandle, instance::InstanceHandle},
+        renderer::{DrawItem, Instruction, PrototypeHandle, RenderConstant, RenderUpdateDelta},
         util::types::{InstanceRecordData, LocalTransform, Mat4F32},
         world::{
             bytecode_gen::BytecodeGenerator,
@@ -43,6 +40,7 @@ mod integration_tests {
     /// Variant-only mirrors of WorldUpdateDelta — use these to declare what a frame should produce.
     #[derive(Debug)]
     enum WorldDeltaKind {
+        AssetUnload,
         AssetDidLoad,
         EntityInstanceSpawn,
         NewEntitySpawn,
@@ -53,8 +51,9 @@ mod integration_tests {
     #[derive(Debug)]
     enum RenderDeltaKind {
         AssetGPULoaded,
+        AssetUnloaded,
         EntitySpawn,
-        PrototypeCreated,
+        InstanceDespawns,
     }
 
     fn get_bytecode<'a>(
@@ -91,6 +90,9 @@ mod integration_tests {
                 ) | (
                     WorldUpdateDelta::InstanceDespawn(..),
                     WorldDeltaKind::InstanceDespawn
+                ) | (
+                    WorldUpdateDelta::AssetUnload { .. },
+                    WorldDeltaKind::AssetUnload,
                 )
             );
             assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
@@ -109,14 +111,17 @@ mod integration_tests {
             let matches = matches!(
                 (a, e),
                 (
-                    RenderUpdateDelta::AssetGPULoaded(..),
+                    RenderUpdateDelta::AssetGPULoaded { .. },
                     RenderDeltaKind::AssetGPULoaded
                 ) | (
                     RenderUpdateDelta::EntitySpawned { .. },
                     RenderDeltaKind::EntitySpawn
                 ) | (
-                    RenderUpdateDelta::ProtypeCreated { .. },
-                    RenderDeltaKind::PrototypeCreated
+                    RenderUpdateDelta::InstanceDespawns(_),
+                    RenderDeltaKind::InstanceDespawns
+                ) | (
+                    RenderUpdateDelta::AssetUnloaded { .. },
+                    RenderDeltaKind::AssetUnloaded
                 )
             );
             assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
@@ -247,10 +252,7 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
+                &[RenderDeltaKind::EntitySpawn],
             );
             let instance_manager = &app.world.instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
@@ -297,10 +299,7 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
+                &[RenderDeltaKind::EntitySpawn],
             );
             let instance_manager = &app.world.instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 1);
@@ -348,10 +347,7 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
+                &[RenderDeltaKind::EntitySpawn],
             );
 
             gen_draw_calls(&mut app);
@@ -396,12 +392,7 @@ mod integration_tests {
                     WorldDeltaKind::NewEntitySpawn,
                     WorldDeltaKind::NewEntitySpawn,
                 ],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
+                &[RenderDeltaKind::EntitySpawn, RenderDeltaKind::EntitySpawn],
             );
             let instance_manager = &app.world.instance_manager;
             assert_eq!(instance_manager.get_all_instances().len(), 2);
@@ -531,7 +522,7 @@ mod integration_tests {
 
             assert_eq!(groups.len(), 1);
 
-            assert_eq!(groups[0].views.len(), 1);
+            assert_eq!(groups[0].views().len(), 1);
 
             gen_draw_calls(&mut app);
 
@@ -578,7 +569,7 @@ mod integration_tests {
 
             assert_eq!(groups.len(), 1);
 
-            assert_eq!(groups[0].views.len(), 1);
+            assert_eq!(groups[0].views().len(), 1);
 
             app.world
                 .add_instances(
@@ -613,7 +604,7 @@ mod integration_tests {
             let groups = app.world.instance_manager.get_groups();
 
             assert_eq!(groups.len(), 1);
-            assert_eq!(groups[0].views.len(), 1);
+            assert_eq!(groups[0].views().len(), 1);
 
             let pnu_items: Vec<&DrawItem> = app
                 .render_packet
@@ -656,10 +647,7 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
+                &[RenderDeltaKind::EntitySpawn],
             );
             let instance_handle =
                 InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
@@ -860,10 +848,7 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
+                &[RenderDeltaKind::EntitySpawn],
             );
             run_frame_unchecked(&mut app); //random frames
             run_frame_unchecked(&mut app);
@@ -880,7 +865,8 @@ mod integration_tests {
             // Renderer side: the only prototype is registered with ref_count 1.
             assert_eq!(app.renderer.get_prototype_count(), 1);
             assert_eq!(
-                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                app.renderer
+                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
                 Some(1)
             );
 
@@ -892,7 +878,7 @@ mod integration_tests {
 
             assert_world_deltas(&app.world.deltas, &[WorldDeltaKind::InstanceDespawn]);
             if let WorldUpdateDelta::InstanceDespawn(handle) = &app.world.deltas[0] {
-                assert!(handle.instance_id == 0 && handle.prototype.0 == 0);
+                assert!(handle.instance_id() == 0 && handle.prototype_id() == 0);
             }
 
             run_frame_unchecked(&mut app);
@@ -912,7 +898,8 @@ mod integration_tests {
                 "renderer prototype map must be empty after the last instance despawns"
             );
             assert_eq!(
-                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                app.renderer
+                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
                 Some(0)
             );
 
@@ -968,7 +955,8 @@ mod integration_tests {
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
             assert_eq!(app.renderer.get_prototype_count(), 1);
             assert_eq!(
-                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                app.renderer
+                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
                 Some(2),
                 "two live instances must yield prototype ref_count 2"
             );
@@ -994,7 +982,8 @@ mod integration_tests {
                 "prototype must remain while one instance still references it"
             );
             assert_eq!(
-                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                app.renderer
+                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
                 Some(1),
                 "ref_count must drop from 2 to 1 after despawning one instance"
             );
@@ -1065,7 +1054,8 @@ mod integration_tests {
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
             assert_eq!(app.renderer.get_prototype_count(), 1);
             assert_eq!(
-                app.renderer.get_prototype_ref_count(&PrototypeHandle(0)),
+                app.renderer
+                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
                 Some(2),
                 "ref_count must climb back to 2 after respawning"
             );
@@ -1309,10 +1299,7 @@ mod integration_tests {
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
-                &[
-                    RenderDeltaKind::PrototypeCreated,
-                    RenderDeltaKind::EntitySpawn,
-                ],
+                &[RenderDeltaKind::EntitySpawn],
             );
 
             app.world
@@ -1435,6 +1422,58 @@ mod integration_tests {
                 mesh0_y_descending < 2.0,
                 "mesh 0 should be descending (y ≈ 0.43) at t=3.5s, got {mesh0_y_descending}"
             );
+        })
+    }
+
+    #[test]
+    fn unload_single_scene() {
+        pollster::block_on(async {
+            use crate::asset_manager::{AssetHandle, AssetResidency};
+
+            let mut app = setup_world(TestCases::Box).await;
+
+            // Frame 1: asset loads to GPU
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+            // Frame 2: entity spawns
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::NewEntitySpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
+
+            // ask for despawn
+            app.world
+                .scene_manager
+                .set_load_level(
+                    SceneId(0),
+                    crate::world::scene::SceneLoadLevel::NotLoaded,
+                    &app.world.asset_manager,
+                )
+                .unwrap_or_else(|e| panic!("{}", e));
+
+            assert_eq!(app.world.scene_manager.despawn_queue.len(), 1);
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::InstanceDespawn],
+                &[RenderDeltaKind::InstanceDespawns],
+            );
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetUnload],
+                &[RenderDeltaKind::AssetUnloaded],
+            );
+
+            assert_eq!(
+                app.world
+                    .asset_manager
+                    .res_level_of(&AssetHandle::mock(0))
+                    .unwrap_or_else(|e| panic!("{}", e)),
+                AssetResidency::Registered
+            )
         })
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    common::{entity::EntityHandle, instance::InstanceHandle},
+    common::entity::EntityHandle,
     world::{
         instance_manager::archetypes::{APosition, Archetype},
         scene::{SceneEvent, SceneId, SceneLoadLevel},

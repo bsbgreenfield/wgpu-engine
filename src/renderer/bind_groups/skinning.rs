@@ -3,20 +3,19 @@ use std::num::NonZero;
 use wgpu::ShaderStages;
 
 use crate::{
-    common::instance::{GPUInstanceHandle, InstanceHandle},
+    common::instance::InstanceHandle,
     renderer::{
-        InstanceUploadJob,
-        bind_groups::{BindGroupProvider, BindGroupUploadResult},
+        GPUInstanceHandle, InstanceUploadJob,
+        bind_groups::BindGroupProvider,
         gpu_allocator::{
-            GPUAllocator, GPUUploadResult, VertexArenaError,
-            gpu_arena::GPUArena,
-            instance_arena::{InstanceArena, SharedInstanceArena},
+            GPUAllocator, GPUUploadResult, VertexArenaError, gpu_arena::GPUArena,
+            instance_arena::SharedInstanceArena,
         },
     },
     util::types::{InverseBindMatrix, JointTransform, Mat4F32},
 };
 
-pub struct SkinningBindGroup {
+pub(in crate::renderer) struct SkinningBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
     joint_arena: GPUArena<JointTransform>,
     ibm_arena: GPUArena<InverseBindMatrix>,
@@ -24,14 +23,14 @@ pub struct SkinningBindGroup {
 
 impl SkinningBindGroup {
     #[cfg(test)]
-    pub fn get_first_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
+    pub(super) fn get_first_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
         (
             self.joint_arena.get_first_buffer(),
             self.ibm_arena.get_first_buffer(),
         )
     }
 
-    pub fn write_joint_anim_data(
+    pub(in crate::renderer) fn write_joint_anim_data(
         &self,
         gpu_handle: &GPUInstanceHandle,
         joint_data: &[u8],
@@ -42,11 +41,11 @@ impl SkinningBindGroup {
         queue.write_buffer(buffer, jt_offset.into(), joint_data);
     }
 
-    pub(super) fn get_joint_buffer(&self) -> &wgpu::Buffer {
+    fn get_joint_buffer(&self) -> &wgpu::Buffer {
         //TODO: resolve using handle
         self.joint_arena.get_first_buffer()
     }
-    pub fn upload<'frame>(
+    pub(super) fn upload<'frame>(
         &mut self,
         joint_job: InstanceUploadJob<'frame, JointTransform>,
         ibm_job: InstanceUploadJob<'frame, InverseBindMatrix>,
@@ -61,7 +60,7 @@ impl SkinningBindGroup {
         Ok(jt_result)
     }
 
-    pub fn register_shared_binding(
+    pub(in crate::renderer) fn register_shared_binding(
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
@@ -84,7 +83,7 @@ impl SkinningBindGroup {
         }
     }
 
-    pub fn register_copy_binding(
+    pub(in crate::renderer) fn register_copy_binding(
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
@@ -105,7 +104,7 @@ impl SkinningBindGroup {
         return Err(jt.unwrap_err());
     }
 
-    pub fn get_first_bg(&self) -> &wgpu::BindGroup {
+    pub(in crate::renderer) fn get_first_bg(&self) -> &wgpu::BindGroup {
         &self.bind_groups[0]
     }
 }

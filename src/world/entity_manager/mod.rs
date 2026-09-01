@@ -22,9 +22,9 @@ impl Display for EntityManagerError {
         return f.write_str(&self.to_string());
     }
 }
-pub struct Renderables {
+pub(crate) struct Renderables {
     pub instance_handle: InstanceHandle,
-    pub mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
+    pub(crate) mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimationData>,
 }
 impl Error for EntityManagerError {}

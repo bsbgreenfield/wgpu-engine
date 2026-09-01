@@ -5,10 +5,8 @@ use crate::world::instance_manager::instance_manager::InstanceManager;
 #[cfg(test)]
 use crate::{
     animation::{Animation, AnimationInstance, EntityAnimations},
-    common::{
-        entity::{EntityHandle, PrototypeHandle},
-        instance::{GPUInstanceHandle, InstanceHandle},
-    },
+    common::{entity::EntityHandle, instance::InstanceHandle},
+    renderer::{GPUInstanceHandle, PrototypeHandle},
     util::types::GlobalTransform,
     world::world::RenderGroup,
 };
@@ -103,7 +101,7 @@ impl InstanceManager {
     }
 
     #[cfg(test)]
-    pub fn get_groups(&self) -> &Vec<RenderGroup> {
+    pub(crate) fn get_groups(&self) -> &Vec<RenderGroup> {
         &self.render_groups
     }
 }

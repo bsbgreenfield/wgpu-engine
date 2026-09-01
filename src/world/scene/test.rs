@@ -6,11 +6,8 @@ mod scene_tests {
         asset_manager::{
             AssetHandle, AssetResidency, ProvidesMeshData, asset_manager::AssetManager,
         },
-        common::{
-            entity::{EntityHandle, PrototypeHandle},
-            instance::{GPUInstanceHandle, InstanceHandle},
-        },
-        renderer::GPUAllocationHandle,
+        common::{entity::EntityHandle, instance::InstanceHandle},
+        renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle},
         world::{
             entity_manager::{
                 components::{MeshAcessor, MeshCollectionDescriptor, ResourceBacking},
@@ -21,7 +18,7 @@ mod scene_tests {
             scene::{
                 Scene, SceneId, SceneLoadLevel,
                 builder::SceneBuilder,
-                dependency_graph::{DependencyGraph, DependencyGraphError},
+                dependency_graph::DependencyGraph,
                 manager::SceneManager,
                 scene::{SceneDesc, SceneRuntime, Spawn},
             },
@@ -338,7 +335,7 @@ mod scene_tests {
             .enumerate()
             .map(|(i, instance)| {
                 let gpu_handle = GPUInstanceHandle {
-                    prototype: PrototypeHandle(0),
+                    prototype: PrototypeHandle::new(0),
                     instance_id: i as u32,
                 };
                 manager

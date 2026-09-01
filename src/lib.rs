@@ -2,7 +2,7 @@ pub mod animation;
 pub mod app;
 pub mod asset_manager;
 pub mod common;
-pub mod renderer;
+pub(crate) mod renderer;
 pub mod tests;
 pub mod util;
 pub mod world;

@@ -1,8 +1,6 @@
 use crate::{
-    common::{
-        entity::EntityHandle,
-        instance::{GPUInstanceHandle, InstanceHandle},
-    },
+    common::{entity::EntityHandle, instance::InstanceHandle},
+    renderer::GPUInstanceHandle,
     util::types::GlobalTransform,
     world::{RenderKey, instance_manager::archetypes::ArchetypeId},
 };

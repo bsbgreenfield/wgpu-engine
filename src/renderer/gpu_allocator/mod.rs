@@ -4,25 +4,23 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::range::Range;
 
-use bytemuck::Pod;
 use std::error::Error;
 
-use crate::common::instance::GPUInstanceHandle;
+use crate::renderer::GPUAllocationHandle;
+use crate::renderer::GPUInstanceHandle;
 use crate::renderer::GPUUploadable;
-use crate::renderer::InstanceUploadJob;
 use crate::renderer::StorageData;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
+use crate::util::types::ModelVertex;
 use crate::util::types::{
     GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
     LocalTransform,
 };
-use crate::{renderer::GPUAllocationHandle, util::types::ModelVertex};
 
 mod allocation_table;
 mod free_list;
 pub(super) mod gpu_arena;
 pub(super) mod instance_arena;
-pub(super) mod vertex_arena;
 
 static MIMIMUM_INDEX_ALLOCATION_SIZE: usize = 1024;
 static MIMIMUM_VERTEX_ALLOCATION_SIZE: usize = 2048;
@@ -35,7 +33,8 @@ struct AllocMetaData {
     node_id: usize,
     ref_count: usize,
 }
-pub struct GPUChunk<T: bytemuck::Pod + Debug> {
+// pub(crate): return type of `GPUUploadable::get_chunk`, which is pub(crate).
+pub(crate) struct GPUChunk<T: bytemuck::Pod + Debug> {
     remaining_space: u32,
     buffer: wgpu::Buffer,
     allocator: FreeListAllocator,
@@ -43,7 +42,7 @@ pub struct GPUChunk<T: bytemuck::Pod + Debug> {
 }
 
 impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
-    pub fn gpu_alloc(
+    fn gpu_alloc(
         &mut self,
         data: &[u8],
         queue: &wgpu::Queue,
@@ -65,13 +64,15 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
     }
 }
 
-pub enum GPUUploadResult {
+// pub(crate): return type of `GPUUploadable::upload`, which is pub(crate).
+pub(crate) enum GPUUploadResult {
     BindGroupUploadResult {
-        buffer_offset: u32,
+        buffer_element_offset: u32,
         alloc_meta_idx: usize,
     },
+    VertexDataUploadSuccess,
 }
-pub trait GPUAllocator<T: GPUUploadable> {
+pub(super) trait GPUAllocator<T: GPUUploadable> {
     type AllocationError: Error;
 
     fn upload<'a>(
@@ -90,6 +91,7 @@ pub trait GPUAllocator<T: GPUUploadable> {
     fn dealloc(&mut self, handle: &T::GPUHandle) -> Result<(), Self::AllocationError>;
 }
 
+// pub(crate): wrapped by `VertexArenaError::FreeListError`, which is pub(crate).
 #[derive(Debug)]
 pub enum FreeListAllocError {
     NoRoomLeft(u32, u32),
@@ -160,25 +162,27 @@ impl Display for VertexArenaError {
 
 impl Error for VertexArenaError {}
 
-pub struct UploadMeshJob<'frame, V: ModelVertex> {
-    pub verts: &'frame [u8],
-    pub(super) global_alloc_id: u32,
+// pub(crate): `GPUUploadable::UploadJob` for PNU/PNUJW vertex uploads.
+pub(crate) struct UploadMeshJob<'frame, V: ModelVertex> {
+    verts: &'frame [u8],
+    alloc_handle: GPUAllocationHandle,
     _t: PhantomData<V>,
 }
 
 impl<'frame, V: ModelVertex> UploadMeshJob<'frame, V> {
-    pub(super) fn new(verts: &'frame [u8], alloc_id: u32) -> Self {
+    pub(super) fn new(verts: &'frame [u8], alloc_handle: GPUAllocationHandle) -> Self {
         Self {
             verts,
-            global_alloc_id: alloc_id,
+            alloc_handle,
             _t: PhantomData,
         }
     }
 }
 
-pub struct UploadIndexJob<'frame> {
-    pub indices: &'frame [u8],
-    pub(super) global_alloc_id: u32,
+// pub(crate): `GPUUploadable::UploadJob` for index uploads.
+pub(crate) struct UploadIndexJob<'frame> {
+    pub(super) indices: &'frame [u8],
+    pub(super) alloc_handle: GPUAllocationHandle,
 }
 
 impl StorageData for LocalTransform {
@@ -299,7 +303,8 @@ impl StorageData for InstanceOffset {
     }
 }
 
-pub trait GPUUploadJob {
+// pub(crate): bound on `GPUUploadable::UploadJob`, which is pub(crate).
+pub(crate) trait GPUUploadJob {
     type GPUHandle: Eq + Debug + Clone + Hash;
     fn get_data(&self) -> &[u8];
     fn get_handle(&self) -> Self::GPUHandle;

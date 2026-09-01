@@ -10,7 +10,7 @@ pub(super) mod bytecode_gen;
 pub mod camera;
 pub mod entity_manager;
 pub mod instance_manager;
-pub(super) mod load_queue;
+mod load_queue;
 pub mod scene;
 pub mod world;
 #[derive(Debug)]

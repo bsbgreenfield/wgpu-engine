@@ -11,19 +11,19 @@ use crate::{
     world::camera::Camera,
 };
 
-pub struct EnginePipeline {
+pub(super) struct EnginePipeline {
     pub(super) pipeline: wgpu::RenderPipeline,
 }
 
 impl EnginePipeline {}
 
-pub struct PipelineCollection {
-    pub opaque_skinned: EnginePipeline,
-    pub opaque_static: EnginePipeline,
+pub(super) struct PipelineCollection {
+    pub(super) opaque_skinned: EnginePipeline,
+    pub(super) opaque_static: EnginePipeline,
 }
 
 impl PipelineCollection {
-    pub fn new(config: &AppConfig) -> Self {
+    pub(super) fn new(config: &AppConfig) -> Self {
         use super::RenderCategory::*;
         Self {
             opaque_skinned: Self::create_pipeline(OpaqueSkinned, config),

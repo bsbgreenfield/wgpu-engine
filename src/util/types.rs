@@ -1,7 +1,5 @@
 use std::{fmt::Debug, ops::Deref};
 
-use crate::{renderer::GPUUploadable, world::world::RenderView};
-
 pub type Mat4F32 = [[f32; 4]; 4];
 pub const MAT4_IDENTITY: Mat4F32 = [
     [1.0, 0.0, 0.0, 0.0],
@@ -17,7 +15,7 @@ pub struct PrimitiveVerticesData {
     pub weights: Option<Vec<u8>>,
     pub count: usize,
 }
-pub trait ModelVertex: Debug + bytemuck::Pod + GPUUploadable {
+pub trait ModelVertex: Debug + bytemuck::Pod {
     fn from_primitive_data(p: &PrimitiveVerticesData) -> Vec<Self>;
     fn normalize_f32_to_u8(input: Vec<f32>) -> Vec<u8> {
         input
@@ -33,8 +31,8 @@ pub trait ModelVertex: Debug + bytemuck::Pod + GPUUploadable {
 
     fn debug_str() -> String;
 
-    fn has_view_data(view: &RenderView) -> bool;
-    fn is_indexed(view: &RenderView) -> bool;
+    //    fn has_view_data(view: &RenderView) -> bool;
+    //    fn is_indexed(view: &RenderView) -> bool;
 }
 
 #[repr(C)]
@@ -134,16 +132,16 @@ const PNUJW_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
 ];
 
 impl ModelVertex for PNUJWVertex {
-    fn is_indexed(view: &RenderView) -> bool {
-        if let Some(pnujw_draws) = &view.pnujw_draws {
-            return pnujw_draws.index_ranges.is_some();
-        } else {
-            false
-        }
-    }
-    fn has_view_data(view: &RenderView) -> bool {
-        view.pnujw_draws.is_some()
-    }
+    // fn is_indexed(view: &RenderView) -> bool {
+    //     if let Some(pnujw_draws) = &view.pnujw_draws {
+    //         return pnujw_draws.index_ranges.is_some();
+    //     } else {
+    //         false
+    //     }
+    // }
+    // fn has_view_data(view: &RenderView) -> bool {
+    //     view.pnujw_draws.is_some()
+    // }
     fn debug_str() -> String {
         String::from("PNUJW Vertex")
     }
@@ -242,16 +240,16 @@ const PNU_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
 ];
 
 impl ModelVertex for PNUVertex {
-    fn is_indexed(view: &RenderView) -> bool {
-        if let Some(pnu_draws) = &view.pnu_draws {
-            return pnu_draws.index_ranges.is_some();
-        } else {
-            false
-        }
-    }
-    fn has_view_data(view: &RenderView) -> bool {
-        view.pnu_draws.is_some()
-    }
+    //  fn is_indexed(view: &RenderView) -> bool {
+    //      if let Some(pnu_draws) = &view.pnu_draws {
+    //          return pnu_draws.index_ranges.is_some();
+    //      } else {
+    //          false
+    //      }
+    //  }
+    //  fn has_view_data(view: &RenderView) -> bool {
+    //      view.pnu_draws.is_some()
+    //  }
     fn debug_str() -> String {
         String::from("PNU Vertex")
     }
@@ -295,14 +293,6 @@ impl ModelVertex for PNUVertex {
         vertex_vec
     }
 }
-
-const ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
-             5 => Float32x4,
-             6 => Float32x4,
-             7 => Float32x4,
-             8 => Float32x4,
-
-];
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]

@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    common::{
-        entity::{EntityHandle, PrototypeHandle},
-        instance::GPUInstanceHandle,
-    },
+    common::entity::EntityHandle,
+    renderer::{GPUInstanceHandle, PrototypeHandle},
     world::{WorldUpdateError, instance_manager::InstanceHandle},
 };
 
@@ -21,7 +19,7 @@ impl GPUBindRegistry {
             if let Some(prototype_handle) = self.registered_prototypes.get(&entity_handle) {
                 *prototype_handle
             } else {
-                let p = PrototypeHandle(self.next_prototype);
+                let p = PrototypeHandle::new(self.next_prototype);
                 self.next_prototype += 1;
                 p
             };

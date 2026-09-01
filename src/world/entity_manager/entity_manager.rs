@@ -4,10 +4,8 @@ use crate::{
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager::AssetManager,
     },
-    common::{
-        entity::{EntityHandle, PrototypeHandle},
-        instance::InstanceHandle,
-    },
+    common::{entity::EntityHandle, instance::InstanceHandle},
+    renderer::PrototypeHandle,
     world::{
         entity_manager::{
             EntityManagerError, Renderables,
@@ -65,7 +63,7 @@ impl EntityManager {
         InstanceUploadData::Copied(copied)
     }
 
-    pub fn get_entity_render_data<'frame>(
+    pub(crate) fn get_entity_render_data<'frame>(
         &'frame self,
         instance_handle: &InstanceHandle,
         asset_manager: &AssetManager,
@@ -88,7 +86,7 @@ impl EntityManager {
 
             renderables
                 .mesh_renderables
-                .push((loaded_asset.alloc_handle, mesh_renderables));
+                .push((loaded_asset.alloc_handle().clone(), mesh_renderables));
         }
         if let Some(animation_component) = self
             .animations

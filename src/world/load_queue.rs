@@ -8,6 +8,7 @@ use crate::{
 #[derive(Clone)]
 struct AssetLoadJob {
     target: SceneLoadLevel,
+    base: SceneLoadLevel,
 }
 
 pub struct AssetTransition {
@@ -27,7 +28,6 @@ impl LoadQueue {
         update: (AssetHandle, SceneLoadLevel),
         asset_manager: &AssetManager,
     ) {
-        println!(" ASSET {:?}", update.0);
         let target = update.1;
         let current = asset_manager
             .res_level_of(&update.0)
@@ -39,7 +39,10 @@ impl LoadQueue {
         self.jobs
             .entry(update.0)
             .and_modify(|j| j.target = target)
-            .or_insert(AssetLoadJob { target });
+            .or_insert(AssetLoadJob {
+                target,
+                base: SceneLoadLevel::from(&current),
+            });
     }
 
     pub(super) fn poll_jobs(
@@ -52,17 +55,26 @@ impl LoadQueue {
         for (asset_handle, job) in jobs.iter() {
             let current = asset_manager.res_level_of(asset_handle)?;
             if current == job.target {
-                self.jobs.remove(asset_handle);
+                let (handle, _) = self
+                    .jobs
+                    .remove_entry(asset_handle)
+                    .ok_or(AssetLoadError::AssetNotFound)?;
+                res.push(AssetTransition {
+                    handle: handle,
+                    old: job.base,
+                    new: job.target,
+                });
                 continue;
             }
             if matches!(
                 current,
                 AssetResidency::PendingCPU | AssetResidency::PendingGPU(_)
             ) {
-                continue;
+                panic!("HERE");
             }
 
             let after = asset_manager.set_minimum_load_level(asset_handle, job.target)?;
+            println!("BEFORE: {:?}, AFTER: {:?}", current, after);
             if after != current {
                 res.push(AssetTransition {
                     handle: *asset_handle,

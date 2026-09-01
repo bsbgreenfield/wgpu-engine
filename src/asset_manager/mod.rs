@@ -8,7 +8,7 @@ use crate::{
     animation::EntityAnimationData,
     app::GPUAssetUploadJob,
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
-    renderer::GPUAllocationHandle,
+    renderer::{GPUAllocationHandle, Operations},
     util::types::{LocalTransform, Mat4F32},
     world::{
         RenderKey,
@@ -75,6 +75,13 @@ impl From<GltfLoadError> for AssetLoadError {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct AssetHandle(u32);
 
+#[cfg(test)]
+impl AssetHandle {
+    pub fn mock(id: u32) -> Self {
+        Self(id)
+    }
+}
+
 impl RenderKey for AssetHandle {
     fn as_key(&self) -> u64 {
         self.0 as u64
@@ -126,18 +133,19 @@ pub trait Asset {
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AssetResidency {
+pub(crate) enum AssetResidency {
     Registered,
     PendingCPU,
     CPU(usize),
     PendingGPU(usize),
+    PendingUnloadGPU,
     GPU(GPUAllocationHandle, usize),
 }
 
 impl AssetResidency {
     fn update_la_idx(&mut self, new_idx: usize) {
         match self {
-            Self::Registered | Self::PendingCPU => {}
+            Self::Registered | Self::PendingCPU | Self::PendingUnloadGPU => {}
             Self::CPU(idx) | Self::PendingGPU(idx) | Self::GPU(_, idx) => *idx = new_idx,
         }
     }
@@ -155,7 +163,7 @@ impl PartialEq<SceneLoadLevel> for AssetResidency {
                     return true;
                 }
             }
-            AssetResidency::GPU(_, _) => {
+            AssetResidency::GPU(_, _) | AssetResidency::PendingUnloadGPU => {
                 if *other == SceneLoadLevel::GPU {
                     return true;
                 }
@@ -184,7 +192,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
                 SceneLoadLevel::CPU | SceneLoadLevel::PendingGPU => return Some(Ordering::Equal),
                 SceneLoadLevel::GPU => return Some(Ordering::Less),
             },
-            AssetResidency::GPU(_, _) => match other {
+            AssetResidency::GPU(_, _) | AssetResidency::PendingUnloadGPU => match other {
                 SceneLoadLevel::NotLoaded
                 | SceneLoadLevel::CPU
                 | SceneLoadLevel::PendingCPU
@@ -237,7 +245,13 @@ pub trait ProvidesAnimationData: Asset {
 
 pub struct LoadedAsset<'a> {
     pub asset: &'a Box<dyn Asset>,
-    pub alloc_handle: GPUAllocationHandle,
+    alloc_handle: GPUAllocationHandle,
+}
+
+impl<'a> LoadedAsset<'a> {
+    pub(crate) fn alloc_handle(&self) -> &GPUAllocationHandle {
+        &self.alloc_handle
+    }
 }
 
 impl<'a> Deref for LoadedAsset<'a> {

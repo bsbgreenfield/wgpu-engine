@@ -1,23 +1,12 @@
 use crate::{
-    common::{
-        entity::{EntityHandle, PrototypeHandle},
-        instance::{GPUInstanceHandle, InstanceHandle},
-    },
+    common::instance::InstanceHandle,
+    renderer::GPUInstanceHandle,
     world::instance_manager::{
         ArchetypeId, archetype_table::ArchetypeTable, instance_manager::InstanceManager,
     },
 };
 
 impl InstanceManager {
-    pub fn register_prototype(
-        &mut self,
-        entity_handle: EntityHandle,
-        prototype_handle: PrototypeHandle,
-    ) {
-        self.gpu_bind_registry
-            .registered_prototypes
-            .insert(entity_handle, prototype_handle);
-    }
     pub fn add_record_index(
         &mut self,
         instance_handle: &InstanceHandle,

@@ -1,11 +1,10 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::marker::PhantomData;
 
 use bytemuck::Pod;
 
 use crate::{
-    common::instance::GPUInstanceHandle,
     renderer::{
-        GPUAllocationHandle, GPUUploadable, InstanceUploadJob, StorageData,
+        GPUAllocationHandle, GPUInstanceHandle, GPUUploadable, InstanceUploadJob, StorageData,
         bind_groups::SharedInstanceData,
         gpu_allocator::{
             AllocMetaData, CHUNK_SIZE, FreeListAllocator, GPUAllocator, GPUChunk, GPUUploadJob,
@@ -13,11 +12,12 @@ use crate::{
             UploadIndexJob, UploadMeshJob, VertexArenaError, allocation_table::AllocationTable,
         },
     },
-    util::types::{LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{ModelVertex, PNUJWVertex, PNUVertex, VIndex},
 };
 
+// pub(crate): parameter type of `GPUUploadable::upload`, which is pub(crate).
 #[allow(unused)]
-pub struct GPUArena<T: GPUUploadable> {
+pub(crate) struct GPUArena<T: GPUUploadable> {
     max_chunks: usize,
     chunks: Vec<GPUChunk<T>>,
     alloc_table: AllocationTable<T::GPUHandle>,
@@ -26,41 +26,44 @@ pub struct GPUArena<T: GPUUploadable> {
 }
 
 impl<T: GPUUploadable> GPUArena<T> {
-    pub fn get_first_buffer(&self) -> &wgpu::Buffer {
+    pub(in crate::renderer) fn get_first_buffer(&self) -> &wgpu::Buffer {
         &self.chunks[0].buffer
     }
 
-    pub fn add_buffer(&mut self, device: &wgpu::Device) {
+    pub(in crate::renderer) fn add_buffer(&mut self, device: &wgpu::Device) {
         self.chunks.push(T::get_chunk(device));
     }
 
-    pub fn resolve_byte_offset(&self, handle: &T::GPUHandle) -> u32 {
+    pub(in crate::renderer) fn resolve_byte_offset(&self, handle: &T::GPUHandle) -> u32 {
         let meta = self.alloc_table.resolve(handle).unwrap();
         let range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
         range.start
     }
 
-    pub fn get_chunks(&self) -> &[GPUChunk<T>] {
+    pub(super) fn get_chunks(&self) -> &[GPUChunk<T>] {
         &self.chunks
     }
-    pub fn get_chunks_mut(&mut self) -> &mut [GPUChunk<T>] {
+    pub(super) fn get_chunks_mut(&mut self) -> &mut [GPUChunk<T>] {
         &mut self.chunks
     }
 }
 
 impl<T: SharedInstanceData> GPUArena<T> {
-    pub fn register_instance(&mut self, handle: GPUInstanceHandle, slot_idx: usize) {
+    pub(super) fn register_instance(&mut self, handle: GPUInstanceHandle, slot_idx: usize) {
         self.alloc_table.register_instance(handle, slot_idx);
     }
 
-    pub fn get_meta(&mut self, slot_idx: usize) -> Result<&mut AllocMetaData, VertexArenaError> {
+    pub(super) fn get_meta(
+        &mut self,
+        slot_idx: usize,
+    ) -> Result<&mut AllocMetaData, VertexArenaError> {
         Ok(self
             .alloc_table
             .get_meta(slot_idx)
             .ok_or(VertexArenaError::AllocationSlotNotFound)?)
     }
 
-    pub fn allocate_copy_data(
+    pub(super) fn allocate_copy_data(
         &mut self,
         handle: GPUInstanceHandle,
         dst_chunk_id: usize,
@@ -118,9 +121,7 @@ impl<'a, T: ModelVertex> GPUUploadJob for UploadMeshJob<'a, T> {
         self.verts
     }
     fn get_handle(&self) -> Self::GPUHandle {
-        GPUAllocationHandle {
-            global_allocation_id: self.global_alloc_id,
-        }
+        self.alloc_handle.clone()
     }
 }
 
@@ -130,9 +131,7 @@ impl<'a> GPUUploadJob for UploadIndexJob<'a> {
         self.indices
     }
     fn get_handle(&self) -> Self::GPUHandle {
-        GPUAllocationHandle {
-            global_allocation_id: self.global_alloc_id,
-        }
+        self.alloc_handle.clone()
     }
 }
 
@@ -145,6 +144,21 @@ impl<T: StorageData> GPUUploadable for T {
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
         Self::get_chunk(device)
     }
+
+    fn upload(
+        arena: &mut GPUArena<T>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        let slot_idx = arena.alloc_table.allocate(handle, chunk_id, node_id);
+        let buffer_element_offset =
+            arena.chunks[chunk_id].allocator.resolve(node_id).start / size_of::<T>() as u32;
+        return GPUUploadResult::BindGroupUploadResult {
+            buffer_element_offset,
+            alloc_meta_idx: slot_idx,
+        };
+    }
 }
 
 impl GPUUploadable for VIndex {
@@ -155,6 +169,16 @@ impl GPUUploadable for VIndex {
     }
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
         GPUChunk::<Self>::new(device)
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena.alloc_table.allocate(handle, chunk_id, node_id);
+        return GPUUploadResult::VertexDataUploadSuccess;
     }
 }
 
@@ -167,6 +191,15 @@ impl GPUUploadable for PNUJWVertex {
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
         GPUChunk::<Self>::new(device)
     }
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena.alloc_table.allocate(handle, chunk_id, node_id);
+        return GPUUploadResult::VertexDataUploadSuccess;
+    }
 }
 impl GPUUploadable for PNUVertex {
     type GPUHandle = GPUAllocationHandle;
@@ -176,6 +209,15 @@ impl GPUUploadable for PNUVertex {
     }
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
         GPUChunk::<Self>::new(device)
+    }
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena.alloc_table.allocate(handle, chunk_id, node_id);
+        return GPUUploadResult::VertexDataUploadSuccess;
     }
 }
 
@@ -204,15 +246,7 @@ impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
         'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.get_data(), queue, self.label.as_ref().unwrap()) {
                 Ok((node_id, _)) => {
-                    let slot_idx = self
-                        .alloc_table
-                        .allocate(job.get_handle(), chunk_id, node_id);
-                    let buffer_offset = self.chunks[chunk_id].allocator.resolve(node_id).start
-                        / size_of::<T>() as u32;
-                    return Ok(GPUUploadResult::BindGroupUploadResult {
-                        buffer_offset,
-                        alloc_meta_idx: slot_idx,
-                    });
+                    return Ok(T::upload(self, job.get_handle(), chunk_id, node_id));
                 }
 
                 Err(e) => match e {

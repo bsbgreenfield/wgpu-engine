@@ -1,10 +1,7 @@
 use crate::{
     app::app::AppCommand,
-    common::{
-        entity::EntityHandle,
-        instance::{GPUInstanceHandle, InstanceHandle},
-    },
-    renderer::RenderPacket,
+    common::{entity::EntityHandle, instance::InstanceHandle},
+    renderer::{GPUInstanceHandle, RenderPacket},
     world::{
         WorldUpdateError,
         instance_manager::{

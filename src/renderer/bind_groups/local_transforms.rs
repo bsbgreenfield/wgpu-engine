@@ -1,28 +1,28 @@
 use std::num::NonZero;
 
 use crate::{
-    common::instance::{GPUInstanceHandle, InstanceHandle},
+    common::instance::InstanceHandle,
     renderer::{
-        InstanceUploadJob,
-        bind_groups::{BindGroupProvider, BindGroupUploadResult},
+        GPUInstanceHandle, InstanceUploadJob,
+        bind_groups::BindGroupProvider,
         gpu_allocator::{
-            GPUAllocator, GPUUploadResult, VertexArenaError,
-            gpu_arena::GPUArena,
-            instance_arena::{InstanceArena, SharedInstanceArena},
+            GPUAllocator, GPUUploadResult, VertexArenaError, gpu_arena::GPUArena,
+            instance_arena::SharedInstanceArena,
         },
     },
     util::types::{LocalTransform, Mat4F32},
 };
-pub struct LocalTransformBindGroup {
+pub(in crate::renderer) struct LocalTransformBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
     lt_arena: GPUArena<LocalTransform>,
 }
 
 impl LocalTransformBindGroup {
-    pub fn get_first_buffer(&self) -> &wgpu::Buffer {
+    #[allow(unused)]
+    pub(super) fn get_first_buffer(&self) -> &wgpu::Buffer {
         self.lt_arena.get_first_buffer()
     }
-    pub fn write_lt_anim_data(
+    pub(in crate::renderer) fn write_lt_anim_data(
         &mut self,
         handle: &GPUInstanceHandle,
         lt_data: &[u8],
@@ -33,11 +33,11 @@ impl LocalTransformBindGroup {
         queue.write_buffer(buf, offset, lt_data);
     }
 
-    pub fn get_first_bg(&self) -> &wgpu::BindGroup {
+    pub(in crate::renderer) fn get_first_bg(&self) -> &wgpu::BindGroup {
         &self.bind_groups[0]
     }
 
-    pub fn upload_local_transforms<'frame>(
+    pub(super) fn upload_local_transforms<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
@@ -50,7 +50,7 @@ impl LocalTransformBindGroup {
         upload_result
     }
 
-    pub fn register_shared_binding(
+    pub(in crate::renderer) fn register_shared_binding(
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
@@ -59,7 +59,7 @@ impl LocalTransformBindGroup {
             .register_shared_binding(slot_index, new_handle)
     }
 
-    pub fn register_copy_binding(
+    pub(in crate::renderer) fn register_copy_binding(
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
@@ -112,7 +112,7 @@ impl BindGroupProvider for LocalTransformBindGroup {
         }
     }
 
-    fn get_bind_group(&self, handle: &InstanceHandle) -> &wgpu::BindGroup {
+    fn get_bind_group(&self, _handle: &InstanceHandle) -> &wgpu::BindGroup {
         // TODO: resolve based on alloc handle
         &self.bind_groups[0]
     }

@@ -4,11 +4,10 @@ use wgpu::{CurrentSurfaceTexture, RenderPass};
 
 use crate::{
     app::app_config::AppConfig,
-    common::instance::GPUInstanceHandle,
     renderer::{
-        DrawPacket, InstanceUploadJob, Instruction, PrototypeHandle, RenderCategory,
-        RenderConstant, RenderError, RenderUpdateDelta, RenderUpdateError, UploadMeshJob,
-        VertexArenaError, VertexArenaSelector,
+        DrawPacket, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob, Instruction,
+        PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderUpdateDelta,
+        RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
         bind_groups::BindGroupCollection,
         gpu_allocator::{GPUAllocator, GPUUploadResult, UploadIndexJob, gpu_arena::GPUArena},
         pipeline::PipelineCollection,
@@ -20,7 +19,7 @@ use crate::{
     world::{RenderKey, camera::Camera, instance_manager::RenderFrame, world::DrawSet},
 };
 
-pub(super) struct EngineRenderPass {
+struct EngineRenderPass {
     label: String,
     categories: Vec<RenderCategory>,
 }
@@ -65,12 +64,16 @@ struct VertexArenaCollection {
 }
 
 impl VertexArenaCollection {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             index_arena: GPUArena::<VIndex>::new(),
             static_arena: GPUArena::<PNUVertex>::new(),
             skinned_arena: GPUArena::<PNUJWVertex>::new(),
         }
+    }
+
+    fn unload(&mut self, alloc_handle: GPUAllocationHandle) {
+        //
     }
 }
 
@@ -82,8 +85,8 @@ impl RenderKey for GPUInstanceHandle {
     }
 
     fn from_key(key: u64) -> Self {
-        let instance = (key & 0xFFFF) as u32;
-        let p = ((key >> 32) & 0xFFFF) as u32;
+        let instance = (key & 0xFFFF_FFFF) as u32;
+        let p = ((key >> 32) & 0xFFFF_FFFF) as u32;
 
         let prototype = PrototypeHandle(p);
 
@@ -93,47 +96,41 @@ impl RenderKey for GPUInstanceHandle {
         }
     }
 }
-impl Deref for GPUInstanceHandle {
-    type Target = u32;
 
-    fn deref(&self) -> &Self::Target {
-        &self.instance_id
-    }
-}
-
-pub struct Renderer {
+pub(crate) struct Renderer {
     allocations: Vec<u32>,
     vertex_arenas: VertexArenaCollection,
     pub(super) bind_groups: BindGroupCollection,
-    pub pipelines: Option<PipelineCollection>,
+    pipelines: Option<PipelineCollection>,
     passes: Vec<EngineRenderPass>,
 }
 
 impl Renderer {
     #[cfg(test)]
-    pub fn get_prototype_count(&self) -> usize {
+    pub(crate) fn get_prototype_count(&self) -> usize {
         self.bind_groups.get_prototype_count()
     }
     #[cfg(test)]
-    pub fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
+    pub(crate) fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
         self.bind_groups.get_prototype_ref_count(handle)
     }
 
+    #[allow(unused)]
     #[cfg(test)]
-    pub fn get_lt_buffer(&self) -> &wgpu::Buffer {
+    pub(crate) fn get_lt_buffer(&self) -> &wgpu::Buffer {
         self.bind_groups.get_lt_buffer()
     }
     #[cfg(test)]
-    pub fn get_joint_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
+    pub(crate) fn get_joint_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
         self.bind_groups.get_joint_buffer()
     }
 
     #[cfg(test)]
-    pub fn get_instance_record_buffer(&self) -> &wgpu::Buffer {
+    pub(crate) fn get_instance_record_buffer(&self) -> &wgpu::Buffer {
         self.bind_groups.instance_data.get_first_record_buffer()
     }
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             allocations: Vec::new(),
             vertex_arenas: VertexArenaCollection::new(),
@@ -143,12 +140,12 @@ impl Renderer {
         }
     }
 
-    pub fn init(&mut self, config: &AppConfig) {
+    pub(crate) fn init(&mut self, config: &AppConfig) {
         let pipeline_collection = PipelineCollection::new(config);
         self.pipelines = Some(pipeline_collection);
     }
 
-    pub fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
+    pub(crate) fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
         self.passes.push(EngineRenderPass { label, categories });
     }
 
@@ -170,7 +167,7 @@ impl Renderer {
     pub(super) fn add_prototype_instance(&mut self, prototype: &PrototypeHandle) {
         self.bind_groups.add_prototype_instance(prototype);
     }
-    pub fn update(
+    pub(crate) fn update(
         &mut self,
         constants: Vec<RenderConstant>,
         ops: Vec<Instruction>,
@@ -180,7 +177,7 @@ impl Renderer {
         self.interpret(constants, ops, queue, device)
     }
 
-    pub fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {
+    pub(crate) fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {
         // offsets
         if !render_frame.indirection_list.is_empty() {
             self.bind_groups
@@ -224,8 +221,12 @@ impl Renderer {
         }
     }
 
-    pub(super) fn despawn(&mut self, handle: &GPUInstanceHandle) {
+    pub(super) fn despawn_instance(&mut self, handle: &GPUInstanceHandle) {
         self.bind_groups.despawn(handle);
+    }
+
+    pub(super) fn unload_asset(&mut self, alloc_handle: GPUAllocationHandle) {
+        self.vertex_arenas.unload(alloc_handle)
     }
 
     pub(super) fn upload_indices<'frame>(
@@ -243,15 +244,11 @@ impl Renderer {
         job: InstanceUploadJob<'frame, InstanceRecordData>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
-        let GPUUploadResult::BindGroupUploadResult {
-            buffer_offset,
-            alloc_meta_idx,
-        } = self
+    ) -> Result<GPUUploadResult, VertexArenaError> {
+        Ok(self
             .bind_groups
             .instance_data
-            .upload_instance_record(job, queue, device)?;
-        Ok(buffer_offset)
+            .upload_instance_record(job, queue, device)?)
     }
 
     pub(super) fn upload_local_transforms<'frame>(
@@ -259,7 +256,7 @@ impl Renderer {
         job: InstanceUploadJob<'frame, LocalTransform>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<GPUUploadResult, VertexArenaError> {
         self.bind_groups.upload_local_transforms(job, queue, device)
     }
 
@@ -269,12 +266,12 @@ impl Renderer {
         ibm_job: InstanceUploadJob<'frame, InverseBindMatrix>,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<GPUUploadResult, VertexArenaError> {
         self.bind_groups
             .upload_skin_data(joint_job, ibm_job, queue, device)
     }
 
-    pub fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
+    pub(crate) fn render_blank(&self, config: &AppConfig) -> Result<(), RenderError> {
         let texture = match config.surface.as_ref().unwrap().get_current_texture() {
             CurrentSurfaceTexture::Success(texture) => texture,
             _ => return Err(RenderError::BadSurfaceTexture),
@@ -313,7 +310,7 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         config: &AppConfig,
         camera: &Camera,

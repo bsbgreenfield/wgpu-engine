@@ -6,7 +6,8 @@ use std::{
 
 use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
-    common::instance::{GPUInstanceHandle, InstanceHandle},
+    common::instance::InstanceHandle,
+    renderer::GPUInstanceHandle,
     world::{
         entity_manager::entity_manager::EntityManager,
         instance_manager::archetypes::Archetype,

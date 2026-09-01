@@ -1,18 +1,16 @@
+use std::fmt::Debug;
 use std::range::Range;
-use std::{collections::HashMap, fmt::Debug};
 
-use crate::world::load_queue::AssetTransition;
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
-    asset_manager::{Asset, AssetLoadError, asset_manager::AssetManager},
-    common::{
-        entity::{EntityHandle, PrototypeHandle},
-        instance::{GPUInstanceHandle, InstanceHandle},
+    asset_manager::{
+        Asset, AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager,
     },
-    renderer::{GPUAllocationHandle, RenderUpdateDelta},
+    common::{entity::EntityHandle, instance::InstanceHandle},
+    renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
     util::types::{LocalTransform, Mat4F32},
     world::{
-        WorldUpdateError,
+        RenderKey, WorldUpdateError,
         camera::Camera,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
@@ -44,15 +42,27 @@ impl DrawSet {
     }
 }
 
-pub struct RenderView {
+pub(crate) struct RenderView {
     pub alloc_handle: GPUAllocationHandle,
     pub pnujw_draws: Option<DrawSet>,
     pub pnu_draws: Option<DrawSet>,
 }
 
-pub struct RenderGroup {
-    pub entity_handle: EntityHandle,
-    pub views: Vec<RenderView>,
+pub(crate) struct RenderGroup {
+    _entity_handle: EntityHandle,
+    views: Vec<RenderView>,
+}
+
+impl RenderGroup {
+    pub fn views(&self) -> &[RenderView] {
+        &self.views
+    }
+    pub(super) fn new(views: Vec<RenderView>, entity_handle: EntityHandle) -> Self {
+        Self {
+            _entity_handle: entity_handle,
+            views,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -132,11 +142,11 @@ impl InstanceUploadData {
 }
 
 #[derive(Clone)]
-pub enum WorldUpdateDelta {
+pub(crate) enum WorldUpdateDelta {
     NewEntitySpawn(NewInstanceData),
     EntityInstanceSpawn(CopiedInstanceData),
     AssetDidLoad(GPUAssetUploadJob),
-    AssetUnload(GPUAllocationHandle),
+    AssetUnload(AssetHandle, GPUAllocationHandle),
     InstanceDespawn(GPUInstanceHandle),
 }
 
@@ -147,7 +157,7 @@ impl<'frame> Debug for WorldUpdateDelta {
             WorldUpdateDelta::EntityInstanceSpawn(_) => f.write_str("EntityInstanceSpawn"),
             WorldUpdateDelta::AssetDidLoad(_) => f.write_str("AssetDidLoad"),
             WorldUpdateDelta::InstanceDespawn(handle) => write!(f, "despawn {:?}", handle),
-            WorldUpdateDelta::AssetUnload(alloc_handle) => {
+            WorldUpdateDelta::AssetUnload(_asset_handle, alloc_handle) => {
                 write!(f, "unload asset {:?}", alloc_handle)
             }
         }
@@ -161,7 +171,7 @@ pub struct World {
     pub asset_manager: AssetManager,
     pub instance_manager: InstanceManager,
     pub scene_manager: SceneManager,
-    pub deltas: Vec<WorldUpdateDelta>,
+    pub(crate) deltas: Vec<WorldUpdateDelta>,
 }
 
 impl World {
@@ -208,26 +218,17 @@ impl World {
         scene_id: SceneId,
         instance_data: Vec<Spawn<dyn Archetype>>,
     ) -> Result<Vec<InstanceUploadData>, WorldUpdateError> {
-        let mut by_scene: HashMap<SceneId, Vec<Spawn<dyn Archetype>>> = HashMap::new();
+        let upload_data = self.instance_manager.spawn_instances(
+            &self.entity_manager,
+            &self.asset_manager,
+            instance_data,
+        )?;
 
-        for spawn in instance_data {
-            by_scene.entry(scene_id).or_default().push(spawn);
+        for iud in upload_data.iter() {
+            self.scene_manager
+                .add_instance_handles(scene_id, iud.handles())?;
         }
-
-        let mut all_uploads = Vec::new();
-        for (scene_id, spawns) in by_scene {
-            let upload_data = self.instance_manager.spawn_instances(
-                &self.entity_manager,
-                &self.asset_manager,
-                spawns,
-            )?;
-            for iud in upload_data.iter() {
-                self.scene_manager
-                    .add_instance_handles(scene_id, iud.handles())?;
-            }
-            all_uploads.extend(upload_data);
-        }
-        Ok(all_uploads)
+        Ok(upload_data)
     }
 
     pub fn despawn_instance(
@@ -262,11 +263,12 @@ impl World {
                 let job: GPUAssetUploadJob =
                     self.asset_manager.get_upload_job_for(transition.handle)?;
                 self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
-            } else if transition.old == SceneLoadLevel::GPU && transition.new < SceneLoadLevel::GPU
-            {
+            } else if transition.old == SceneLoadLevel::GPU {
                 let alloc_handle = self.asset_manager.alloc_handle_of(&transition.handle)?;
-                self.deltas
-                    .push(WorldUpdateDelta::AssetUnload(alloc_handle));
+                self.deltas.push(WorldUpdateDelta::AssetUnload(
+                    transition.handle,
+                    alloc_handle,
+                ));
             }
             self.scene_manager.on_asset_level_changed(transition);
         }
@@ -296,40 +298,36 @@ impl World {
         Ok(())
     }
 
-    pub fn post_frame_update(&mut self, render_deltas: Vec<RenderUpdateDelta>) {
+    pub(crate) fn post_frame_update(&mut self, render_deltas: Vec<RenderUpdateDelta>) {
         for delta in render_deltas {
             match delta {
-                RenderUpdateDelta::AssetGPULoaded(asset_handle, allocation_handle) => {
+                RenderUpdateDelta::AssetGPULoaded { key, alloc_handle } => {
                     self.asset_manager
-                        .register_asset_gpu_residency(&asset_handle, allocation_handle.clone())
+                        .register_asset_gpu_residency(
+                            AssetHandle::from_key(key),
+                            alloc_handle.clone(),
+                        )
                         .expect("Asset not found");
-                    self.scene_manager.on_asset_level_changed(AssetTransition {
-                        handle: asset_handle,
-                        old: SceneLoadLevel::CPU,
-                        new: SceneLoadLevel::GPU,
-                    });
                 }
-                RenderUpdateDelta::EntityGPULoaded(_) => {
-                    // TODO wait to dequeue until GPU reports it has successfully loaded entity?
+                RenderUpdateDelta::AssetUnloaded {
+                    alloc_handle: _,
+                    key,
+                } => {
+                    let asset_handle = AssetHandle::from_key(key);
+                    self.asset_manager.register_asset_gpu_unloaded(asset_handle);
                 }
                 RenderUpdateDelta::EntitySpawned {
-                    instance_handle,
+                    instance_key,
                     gpu_instance_handle,
                     record_offset,
                 } => {
+                    let instance_handle = InstanceHandle::from_key(instance_key);
                     self.instance_manager.add_record_index(
                         &instance_handle,
                         record_offset,
                         gpu_instance_handle,
                     );
                 }
-                RenderUpdateDelta::ProtypeCreated {
-                    instance_handle,
-                    prototype,
-                } => self
-                    .instance_manager
-                    .register_prototype(instance_handle.entity_handle, prototype),
-
                 RenderUpdateDelta::InstanceDespawns(gpu_handles) => {
                     self.scene_manager.ack_despawns(gpu_handles);
                 }

@@ -1,8 +1,7 @@
 use crate::{
-    common::instance::{GPUInstanceHandle, InstanceHandle},
+    common::instance::InstanceHandle,
     renderer::{
-        InstanceUploadJob,
-        bind_groups::BindGroupUploadResult,
+        GPUInstanceHandle, InstanceUploadJob,
         gpu_allocator::{GPUUploadResult, VertexArenaError, gpu_arena::GPUArena},
     },
 };
@@ -13,7 +12,7 @@ use crate::{
     util::types::{GlobalTransform, InstanceOffset, InstanceRecordData},
 };
 
-pub struct InstanceDataBindGroup {
+pub(in crate::renderer) struct InstanceDataBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
     record_arena: GPUArena<InstanceRecordData>,
     offsets: GPUArena<InstanceOffset>,
@@ -21,6 +20,7 @@ pub struct InstanceDataBindGroup {
 }
 
 impl BindGroupProvider for InstanceDataBindGroup {
+    #[allow(unused)]
     fn get_bind_group(&self, alloc_handle: &InstanceHandle) -> &wgpu::BindGroup {
         self.bind_groups.first().expect("bind group does not exist")
     }
@@ -127,21 +127,21 @@ impl BindGroupProvider for InstanceDataBindGroup {
 
 impl InstanceDataBindGroup {
     #[cfg(test)]
-    pub fn get_first_record_buffer(&self) -> &wgpu::Buffer {
+    pub(in crate::renderer) fn get_first_record_buffer(&self) -> &wgpu::Buffer {
         self.record_arena.get_first_buffer()
     }
-    pub fn get_first_bg(&self) -> &wgpu::BindGroup {
+    pub(in crate::renderer) fn get_first_bg(&self) -> &wgpu::BindGroup {
         &self.bind_groups[0]
     }
     fn allocate_buffers(&mut self, device: &wgpu::Device) {
         self.offsets.add_buffer(device);
         self.global_transforms.add_buffer(device);
     }
-    pub fn write_gt_data(&self, data: &[u8], queue: &wgpu::Queue) {
+    pub(in crate::renderer) fn write_gt_data(&self, data: &[u8], queue: &wgpu::Queue) {
         let buf = self.global_transforms.get_first_buffer();
         queue.write_buffer(buf, 0, data);
     }
-    pub fn upload_instance_record<'frame>(
+    pub(in crate::renderer) fn upload_instance_record<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, InstanceRecordData>,
         queue: &wgpu::Queue,
@@ -153,7 +153,7 @@ impl InstanceDataBindGroup {
         }
         Ok(upload_result)
     }
-    pub fn upload_instance_offsets<'frame>(
+    pub(in crate::renderer) fn upload_instance_offsets<'frame>(
         &mut self,
         offset_data: &'frame [u32],
         queue: &wgpu::Queue,

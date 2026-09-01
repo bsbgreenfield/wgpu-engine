@@ -33,6 +33,7 @@ impl Default for SceneLoadLevel {
 impl From<&AssetResidency> for SceneLoadLevel {
     fn from(value: &AssetResidency) -> Self {
         match value {
+            AssetResidency::PendingUnloadGPU => SceneLoadLevel::GPU,
             AssetResidency::PendingGPU(_) => SceneLoadLevel::PendingGPU,
             AssetResidency::PendingCPU => SceneLoadLevel::PendingCPU,
             AssetResidency::Registered => SceneLoadLevel::NotLoaded,

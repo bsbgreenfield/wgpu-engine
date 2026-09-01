@@ -3,10 +3,8 @@ use std::collections::HashMap;
 use crate::{
     animation::EntityAnimations,
     asset_manager::asset_manager::AssetManager,
-    common::{
-        entity::{EntityHandle, PrototypeHandle},
-        instance::InstanceHandle,
-    },
+    common::{entity::EntityHandle, instance::InstanceHandle},
+    renderer::PrototypeHandle,
     world::{
         WorldUpdateError,
         entity_manager::{Renderables, entity_manager::EntityManager},
@@ -87,7 +85,7 @@ impl InstanceManager {
         (new_instance_data, additional)
     }
 
-    pub fn new_instance(
+    pub(super) fn new_instance(
         renderables: &mut Renderables,
         prototype: PrototypeHandle,
     ) -> (RenderGroup, NewInstanceData) {
@@ -136,10 +134,7 @@ impl InstanceManager {
         }
 
         (
-            RenderGroup {
-                views,
-                entity_handle: renderables.instance_handle.entity_handle,
-            },
+            RenderGroup::new(views, renderables.instance_handle.entity_handle),
             new_instance_data,
         )
     }
@@ -177,7 +172,7 @@ impl InstanceManager {
 
     fn group_has_joints(&self, entity_handle: &EntityHandle) -> bool {
         let group = &self.render_groups[self.sparse_entity_group[entity_handle.0 as usize]];
-        group.views.iter().any(|v| v.pnujw_draws.is_some())
+        group.views().iter().any(|v| v.pnujw_draws.is_some())
     }
 
     pub fn insert_archetypes(
@@ -191,7 +186,11 @@ impl InstanceManager {
             .collect()
     }
 
-    pub fn push_render_group(&mut self, render_group: RenderGroup, renderables: &Renderables) {
+    pub(super) fn push_render_group(
+        &mut self,
+        render_group: RenderGroup,
+        renderables: &Renderables,
+    ) {
         if self.sparse_entity_group.len() < renderables.instance_handle.entity_handle.0 as usize {
             self.sparse_entity_group.resize(
                 renderables.instance_handle.entity_handle.0 as usize,

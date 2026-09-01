@@ -22,7 +22,7 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
             if instance_range.is_empty() {
                 continue;
             }
-            for view in group.views.iter() {
+            for view in group.views().iter() {
                 if let Some(pnu) = &view.pnu_draws {
                     for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {
                         let entry = packet

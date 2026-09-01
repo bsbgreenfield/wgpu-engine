@@ -22,7 +22,7 @@ pub struct App<'a> {
     pub window: Option<Arc<Window>>,
     pub app_config: Option<AppConfig<'a>>,
     pub world: World,
-    pub renderer: Renderer,
+    pub(crate) renderer: Renderer,
     pub app_state: AppState,
     pub surface_ready: bool,
     pub render_packet: RenderPacket,
