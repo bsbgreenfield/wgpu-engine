@@ -9,11 +9,65 @@ use crate::{
             MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
-        scene::{Scene, SceneLoadLevel, builder::SceneBuilder, scene::Spawn},
+        scene::{Scene, SceneId, SceneLoadLevel, builder::SceneBuilder, scene::Spawn},
     },
 };
 
 impl Scene {
+    pub fn box_hierachy(
+        world: &mut crate::world::world::World,
+    ) -> Result<(), crate::world::WorldInitError> {
+        use cgmath::SquareMatrix;
+        let box_asset = world.register_asset::<GltfAsset>("box")?;
+        let box_entity = world.entity_manager.new_entity()?;
+
+        world.entity_manager.add_mesh_collection_for_entity(
+            &box_entity,
+            MeshCollectionDescriptor::new(box_asset, MeshAcessor::All),
+        );
+
+        // a parent box and a child box
+        SceneBuilder::new()
+            .add_entity(box_entity)
+            .add_child(SceneBuilder::new().add_entity(box_entity).create(world)?)
+            .create(world)?;
+
+        // add to the child
+        world.add_instances(
+            super::SceneId(0),
+            vec![Spawn {
+                entity: box_entity,
+                data: Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(5.0, 0., 0.))
+                        .into(),
+                }),
+            }],
+        )?;
+
+        // add to the parent
+        world.add_instances(
+            super::SceneId(1),
+            vec![Spawn {
+                entity: box_entity,
+                data: Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::identity().into(),
+                }),
+            }],
+        )?;
+
+        world.scene_manager.set_load_level(
+            SceneId(0),
+            SceneLoadLevel::GPU,
+            &world.asset_manager,
+        )?;
+        world.scene_manager.set_load_level(
+            SceneId(1),
+            SceneLoadLevel::GPU,
+            &world.asset_manager,
+        )?;
+        Ok(())
+    }
+
     pub fn buggy(
         world: &mut crate::world::world::World,
     ) -> Result<(), crate::world::WorldInitError> {

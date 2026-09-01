@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 use std::range::Range;
 
+use cgmath::vec3;
+
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{
@@ -13,7 +15,10 @@ use crate::{
         RenderKey, WorldUpdateError,
         camera::Camera,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
-        instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
+        instance_manager::{
+            archetypes::{APosition, Archetype},
+            instance_manager::InstanceManager,
+        },
         scene::{
             SceneId, SceneLoadLevel,
             manager::{SceneManager, SceneManagerError},
@@ -264,6 +269,7 @@ impl World {
                     self.asset_manager.get_upload_job_for(transition.handle)?;
                 self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
             } else if transition.old == SceneLoadLevel::GPU {
+                println!("here and {:?}", transition.old);
                 let alloc_handle = self.asset_manager.alloc_handle_of(&transition.handle)?;
                 self.deltas.push(WorldUpdateDelta::AssetUnload(
                     transition.handle,
@@ -293,12 +299,53 @@ impl World {
                 }
             }
         }
+        match commands.pop() {
+            Some(c) => match c {
+                AppCommand::Despawn => {
+                    self.scene_manager.set_load_level(
+                        SceneId(0),
+                        SceneLoadLevel::NotLoaded,
+                        &self.asset_manager,
+                    )?;
+                    self.scene_manager.set_load_level(
+                        SceneId(1),
+                        SceneLoadLevel::NotLoaded,
+                        &self.asset_manager,
+                    )?;
+                }
+
+                AppCommand::Spawn => {
+                    self.add_instances(
+                        SceneId(0),
+                        vec![Spawn {
+                            entity: EntityHandle(0),
+                            data: Box::new(APosition {
+                                position: cgmath::Matrix4::<f32>::from_translation(vec3(
+                                    0., 5., 0.,
+                                ))
+                                .into(),
+                            }),
+                        }],
+                    )?;
+                    self.scene_manager.set_load_level(
+                        SceneId(0),
+                        SceneLoadLevel::GPU,
+                        &self.asset_manager,
+                    )?;
+                }
+                _ => commands.push(c),
+            },
+            None => {}
+        }
         self.instance_manager.update(commands);
 
         Ok(())
     }
 
-    pub(crate) fn post_frame_update(&mut self, render_deltas: Vec<RenderUpdateDelta>) {
+    pub(crate) fn post_frame_update(
+        &mut self,
+        render_deltas: Vec<RenderUpdateDelta>,
+    ) -> Result<(), WorldUpdateError> {
         for delta in render_deltas {
             match delta {
                 RenderUpdateDelta::AssetGPULoaded { key, alloc_handle } => {
@@ -314,7 +361,8 @@ impl World {
                     key,
                 } => {
                     let asset_handle = AssetHandle::from_key(key);
-                    self.asset_manager.register_asset_gpu_unloaded(asset_handle);
+                    self.asset_manager
+                        .register_asset_gpu_unloaded(asset_handle)?;
                 }
                 RenderUpdateDelta::EntitySpawned {
                     instance_key,
@@ -328,10 +376,11 @@ impl World {
                         gpu_instance_handle,
                     );
                 }
-                RenderUpdateDelta::InstanceDespawns(gpu_handles) => {
-                    self.scene_manager.ack_despawns(gpu_handles);
+                RenderUpdateDelta::InstanceDespawn(gpu_handle) => {
+                    self.scene_manager.ack_despawn(gpu_handle);
                 }
             }
         }
+        Ok(())
     }
 }

@@ -138,15 +138,18 @@ pub(crate) enum AssetResidency {
     PendingCPU,
     CPU(usize),
     PendingGPU(usize),
-    PendingUnloadGPU,
+    PendingUnloadGPU(GPUAllocationHandle, usize),
     GPU(GPUAllocationHandle, usize),
 }
 
 impl AssetResidency {
     fn update_la_idx(&mut self, new_idx: usize) {
         match self {
-            Self::Registered | Self::PendingCPU | Self::PendingUnloadGPU => {}
-            Self::CPU(idx) | Self::PendingGPU(idx) | Self::GPU(_, idx) => *idx = new_idx,
+            Self::Registered | Self::PendingCPU => {}
+            Self::CPU(idx)
+            | Self::PendingGPU(idx)
+            | Self::GPU(_, idx)
+            | Self::PendingUnloadGPU(_, idx) => *idx = new_idx,
         }
     }
 }
@@ -163,7 +166,7 @@ impl PartialEq<SceneLoadLevel> for AssetResidency {
                     return true;
                 }
             }
-            AssetResidency::GPU(_, _) | AssetResidency::PendingUnloadGPU => {
+            AssetResidency::GPU(_, _) | AssetResidency::PendingUnloadGPU(..) => {
                 if *other == SceneLoadLevel::GPU {
                     return true;
                 }
@@ -192,7 +195,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
                 SceneLoadLevel::CPU | SceneLoadLevel::PendingGPU => return Some(Ordering::Equal),
                 SceneLoadLevel::GPU => return Some(Ordering::Less),
             },
-            AssetResidency::GPU(_, _) | AssetResidency::PendingUnloadGPU => match other {
+            AssetResidency::GPU(_, _) | AssetResidency::PendingUnloadGPU(..) => match other {
                 SceneLoadLevel::NotLoaded
                 | SceneLoadLevel::CPU
                 | SceneLoadLevel::PendingCPU

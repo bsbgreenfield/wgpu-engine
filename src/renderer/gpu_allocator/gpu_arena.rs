@@ -73,38 +73,6 @@ impl<T: SharedInstanceData> GPUArena<T> {
     }
 }
 
-impl GPUChunk<VIndex> {
-    fn new(device: &wgpu::Device) -> Self {
-        Self {
-            remaining_space: CHUNK_SIZE,
-            buffer: device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Index Buffer (u16)"),
-                size: CHUNK_SIZE as u64,
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }),
-            allocator: FreeListAllocator::new(MIMIMUM_INDEX_ALLOCATION_SIZE),
-            _t: PhantomData,
-        }
-    }
-}
-
-impl<T: ModelVertex> GPUChunk<T> {
-    fn new(device: &wgpu::Device) -> Self {
-        Self {
-            remaining_space: CHUNK_SIZE,
-            buffer: device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(format!("Vertex Buffer for {:?}", T::debug_str()).as_str()),
-                size: CHUNK_SIZE as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }),
-            allocator: FreeListAllocator::new(MIMIMUM_VERTEX_ALLOCATION_SIZE),
-            _t: PhantomData,
-        }
-    }
-}
-
 impl<'a, T: Pod> GPUUploadJob for InstanceUploadJob<'a, T> {
     type GPUHandle = GPUInstanceHandle;
     fn get_data(&self) -> &[u8] {
@@ -138,11 +106,13 @@ impl<'a> GPUUploadJob for UploadIndexJob<'a> {
 impl<T: StorageData> GPUUploadable for T {
     type UploadJob<'a> = InstanceUploadJob<'a, T>;
     type GPUHandle = GPUInstanceHandle;
+    const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::STORAGE
+        .union(wgpu::BufferUsages::COPY_DST)
+        .union(wgpu::BufferUsages::COPY_SRC);
+    const LABEL: &'static str = <T as StorageData>::LABEL;
+    const CHUNK_SIZE: u32 = <T as StorageData>::CHUNK_SIZE;
     fn arena_label() -> String {
         String::from("instance upload")
-    }
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        Self::get_chunk(device)
     }
 
     fn upload(
@@ -164,11 +134,11 @@ impl<T: StorageData> GPUUploadable for T {
 impl GPUUploadable for VIndex {
     type UploadJob<'a> = UploadIndexJob<'a>;
     type GPUHandle = GPUAllocationHandle;
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const LABEL: &'static str = "Vertex indices";
+    const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::INDEX.union(wgpu::BufferUsages::COPY_DST);
     fn arena_label() -> String {
         String::from("Index Arena")
-    }
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        GPUChunk::<Self>::new(device)
     }
 
     fn upload(
@@ -185,11 +155,12 @@ impl GPUUploadable for VIndex {
 impl GPUUploadable for PNUJWVertex {
     type GPUHandle = GPUAllocationHandle;
     type UploadJob<'a> = UploadMeshJob<'a, PNUJWVertex>;
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const LABEL: &'static str = "PNUJW";
+    const USAGE: wgpu::BufferUsages =
+        wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
     fn arena_label() -> String {
         String::from("PNUJW Arena")
-    }
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        GPUChunk::<Self>::new(device)
     }
     fn upload(
         arena: &mut GPUArena<Self>,
@@ -204,11 +175,12 @@ impl GPUUploadable for PNUJWVertex {
 impl GPUUploadable for PNUVertex {
     type GPUHandle = GPUAllocationHandle;
     type UploadJob<'a> = UploadMeshJob<'a, PNUVertex>;
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const LABEL: &'static str = "PNU";
+    const USAGE: wgpu::BufferUsages =
+        wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
     fn arena_label() -> String {
         String::from("PNU Arena")
-    }
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        GPUChunk::<Self>::new(device)
     }
     fn upload(
         arena: &mut GPUArena<Self>,

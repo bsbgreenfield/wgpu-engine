@@ -307,24 +307,17 @@ impl<'frame> Renderer {
                         let gpu_instance_handle =
                             GPUInstanceHandle::from_key(gpu_instance_handle_key.unwrap_key());
                         self.despawn_instance(&gpu_instance_handle);
-                        if let Some(delta) = res.pop()
-                            && let RenderUpdateDelta::InstanceDespawns(mut handles) = delta
-                        {
-                            handles.push(gpu_instance_handle);
-                        } else {
-                        }
-                        res.push(RenderUpdateDelta::InstanceDespawns(vec![
-                            gpu_instance_handle,
-                        ]));
+                        res.push(RenderUpdateDelta::InstanceDespawn(gpu_instance_handle));
                     }
                     Operations::DespawnAsset => {
+                        println!("DESPAWNING!!!!!!!!!");
                         let asset_key_idx = Self::get_constant_idx(&mut instr_peek);
                         let asset_key = constants[asset_key_idx].unwrap_key();
                         let gpu_alloc_handle_idx = Self::get_constant_idx(&mut instr_peek);
                         let gpu_alloc_handle_key = &constants[gpu_alloc_handle_idx];
                         let gpu_alloc_handle =
                             GPUAllocationHandle::from_key(gpu_alloc_handle_key.unwrap_key());
-                        self.unload_asset(gpu_alloc_handle.clone());
+                        self.unload_asset(gpu_alloc_handle.clone())?;
                         res.push(RenderUpdateDelta::AssetUnloaded {
                             key: asset_key,
                             alloc_handle: gpu_alloc_handle,

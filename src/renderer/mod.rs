@@ -42,8 +42,14 @@ impl RenderKey for PrototypeHandle {
 trait GPUUploadable: Debug + bytemuck::Pod {
     type GPUHandle: Debug + Clone + Hash + Eq;
     type UploadJob<'a>: GPUUploadJob<GPUHandle = Self::GPUHandle>;
+    const LABEL: &'static str;
+    const USAGE: wgpu::BufferUsages;
+    const CHUNK_SIZE: u32;
+    const SIZE: usize = size_of::<Self>();
     fn arena_label() -> String;
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self>;
+    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
+        GPUChunk::new(device, Self::CHUNK_SIZE, Self::LABEL, Self::USAGE)
+    }
     fn upload(
         arena: &mut GPUArena<Self>,
         handle: Self::GPUHandle,
@@ -167,7 +173,7 @@ pub(crate) enum RenderUpdateDelta {
         gpu_instance_handle: GPUInstanceHandle,
         record_offset: u32,
     },
-    InstanceDespawns(Vec<GPUInstanceHandle>),
+    InstanceDespawn(GPUInstanceHandle),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -444,5 +450,6 @@ bitflags! {
 }
 
 trait StorageData: bytemuck::Pod + std::fmt::Debug + Sized {
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self>;
+    const LABEL: &'static str;
+    const CHUNK_SIZE: u32;
 }

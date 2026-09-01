@@ -344,7 +344,9 @@ mod scene_tests {
                 gpu_handle
             })
             .collect();
-        manager.ack_despawns(gpu_handles);
+        for handle in gpu_handles {
+            manager.ack_despawn(handle);
+        }
 
         let requested = requests(&mut manager);
         assert_eq!(

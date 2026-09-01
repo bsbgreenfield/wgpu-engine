@@ -53,6 +53,7 @@ impl LoadQueue {
         let jobs: Vec<(AssetHandle, AssetLoadJob)> =
             self.jobs.iter().map(|(ah, aj)| (*ah, aj.clone())).collect();
         for (asset_handle, job) in jobs.iter() {
+            println!("JOB with base: {:?} and target: {:?}", job.base, job.target);
             let current = asset_manager.res_level_of(asset_handle)?;
             if current == job.target {
                 let (handle, _) = self
@@ -81,6 +82,7 @@ impl LoadQueue {
                     old: SceneLoadLevel::from(&current),
                     new: SceneLoadLevel::from(&after),
                 });
+                self.jobs.get_mut(asset_handle).unwrap().base = SceneLoadLevel::from(&after);
             }
         }
 

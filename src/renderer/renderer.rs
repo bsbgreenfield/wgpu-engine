@@ -1,3 +1,4 @@
+use core::hash;
 use std::ops::Deref;
 
 use wgpu::{CurrentSurfaceTexture, RenderPass};
@@ -72,8 +73,11 @@ impl VertexArenaCollection {
         }
     }
 
-    fn unload(&mut self, alloc_handle: GPUAllocationHandle) {
-        //
+    fn unload(&mut self, alloc_handle: GPUAllocationHandle) -> Result<(), VertexArenaError> {
+        self.index_arena.remove(&alloc_handle)?;
+        self.static_arena.remove(&alloc_handle)?;
+        self.skinned_arena.remove(&alloc_handle)?;
+        Ok(())
     }
 }
 
@@ -225,7 +229,10 @@ impl Renderer {
         self.bind_groups.despawn(handle);
     }
 
-    pub(super) fn unload_asset(&mut self, alloc_handle: GPUAllocationHandle) {
+    pub(super) fn unload_asset(
+        &mut self,
+        alloc_handle: GPUAllocationHandle,
+    ) -> Result<(), VertexArenaError> {
         self.vertex_arenas.unload(alloc_handle)
     }
 

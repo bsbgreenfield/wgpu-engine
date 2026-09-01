@@ -41,7 +41,7 @@ pub(crate) struct GPUChunk<T: bytemuck::Pod + Debug> {
     _t: PhantomData<T>,
 }
 
-impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
+impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
     fn gpu_alloc(
         &mut self,
         data: &[u8],
@@ -61,6 +61,20 @@ impl<T: bytemuck::Pod + Debug> GPUChunk<T> {
         let offset = self.allocator.offset_of(node_idx) as u32;
         queue.write_buffer(&self.buffer, offset.into(), data);
         Ok((node_idx, Range::from(offset..offset + (data.len() as u32))))
+    }
+
+    pub fn new(device: &wgpu::Device, size: u32, label: &str, usages: wgpu::BufferUsages) -> Self {
+        Self {
+            remaining_space: size,
+            buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: size as u64,
+                usage: usages,
+                mapped_at_creation: false,
+            }),
+            allocator: FreeListAllocator::new(T::CHUNK_SIZE, MIMIMUM_INDEX_ALLOCATION_SIZE),
+            _t: PhantomData,
+        }
     }
 }
 
@@ -186,121 +200,37 @@ pub(crate) struct UploadIndexJob<'frame> {
 }
 
 impl StorageData for LocalTransform {
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("local transform storage buffer"),
-            size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        GPUChunk {
-            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
-            buffer: buf,
-            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
-            _t: PhantomData,
-        }
-    }
+    const LABEL: &'static str = "Local Transform data";
+
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
 }
 impl StorageData for JointTransform {
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("joint transform storage buffer"),
-            size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        GPUChunk {
-            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
-            buffer: buf,
-            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
-            _t: PhantomData,
-        }
-    }
+    const LABEL: &'static str = "Joint Transform Data";
+
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
 }
 impl StorageData for InverseBindMatrix {
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("imb transform storage buffer"),
-            size: CHUNK_SIZE as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        GPUChunk {
-            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
-            buffer: buf,
-            allocator: FreeListAllocator::new(size_of::<LocalTransform>()),
-            _t: PhantomData,
-        }
-    }
+    const LABEL: &'static str = "IBM Data";
+
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
 }
 
 impl StorageData for GlobalTransform {
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("GT buffer"),
-            size: (CHUNK_SIZE / 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+    const LABEL: &'static str = " GlobalTransform data";
 
-        GPUChunk {
-            remaining_space: CHUNK_SIZE / 4,
-            buffer: buf,
-            allocator: FreeListAllocator::new(size_of::<GlobalTransform>()),
-            _t: PhantomData,
-        }
-    }
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
 }
 
 impl StorageData for InstanceRecordData {
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        let buf = if cfg!(test) {
-            device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("instance record storage buffer"),
-                size: CHUNK_SIZE as u64,
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            })
-        } else {
-            device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("instance record storage buffer"),
-                size: CHUNK_SIZE as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            })
-        };
+    const LABEL: &'static str = " Instance Record Data";
 
-        GPUChunk {
-            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
-            buffer: buf,
-            allocator: FreeListAllocator::new(size_of::<InstanceRecordData>()),
-            _t: PhantomData,
-        }
-    }
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
 }
 
 impl StorageData for InstanceOffset {
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        let buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("instance offset storage buffer"),
-            size: CHUNK_SIZE as u64 / 4,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+    const LABEL: &'static str = "Instance Offset data";
 
-        GPUChunk {
-            remaining_space: CHUNK_SIZE, // TODO: different sizes for diff types?
-            buffer: buf,
-            allocator: FreeListAllocator::new(size_of::<InstanceOffset>()),
-            _t: PhantomData,
-        }
-    }
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
 }
 
 // pub(crate): bound on `GPUUploadable::UploadJob`, which is pub(crate).

@@ -115,7 +115,7 @@ impl AssetManager {
                 self.registered_assets
                     .insert(handle, RegisteredAsset::Unloaded { data, _t });
             }
-            _ => panic!("asd"),
+            _ => panic!("not loaded"),
         }
 
         //        self.registered_assets.entry(*handle).and_modify(|ra| *ra = RegisteredAsset::Unloaded { data: , _t: () })
@@ -191,15 +191,17 @@ impl AssetManager {
                 residency,
                 data: _,
                 _t,
-            } => {
-                if let AssetResidency::GPU(alloc_handle, _) = residency {
+            } => match residency {
+                AssetResidency::GPU(alloc_handle, _)
+                | AssetResidency::PendingUnloadGPU(alloc_handle, _) => {
                     return Ok(alloc_handle.clone());
-                } else {
+                }
+                _ => {
                     return Err(AssetLoadError::AssetNotLoaded(
-                        "Asset is not GPU loaded".to_string(),
+                        "Asset is not GPU Loaded".to_string(),
                     ));
                 }
-            }
+            },
             RegisteredAsset::Unloaded { data, _t } => {
                 todo!()
             }
@@ -227,7 +229,7 @@ impl AssetManager {
         allocation_handle: GPUAllocationHandle,
     ) -> Result<(), AssetLoadError> {
         if let Some(registered_asset) = self.registered_assets.get_mut(&asset_handle) {
-            registered_asset.set_as_gpu_loaded(allocation_handle);
+            registered_asset.set_as_gpu_loaded(allocation_handle)?;
             return Ok(());
         } else {
             return Err(AssetLoadError::AssetNotFound);
@@ -238,13 +240,24 @@ impl AssetManager {
         &mut self,
         asset_handle: AssetHandle,
     ) -> Result<(), AssetLoadError> {
-        if let Some(registered_asset) = self.registered_assets.remove(&asset_handle) {
-            self.registered_assets
-                .insert(asset_handle, registered_asset.as_unloaded()?);
-            return Ok(());
+        if let Some(registered_asset) = self.registered_assets.get_mut(&asset_handle) {
+            if let RegisteredAsset::Loaded { residency, .. } = registered_asset {
+                let AssetResidency::PendingUnloadGPU(_alloc_handle, la_idx) = residency else {
+                    panic!("this asset was not pending gpu when you tried to unload it");
+                };
+                *residency = AssetResidency::CPU(*la_idx);
+            }
         } else {
             return Err(AssetLoadError::AssetNotFound);
         }
+        return Ok(());
+        //if let Some(registered_asset) = self.registered_assets.remove(&asset_handle) {
+        //    self.registered_assets
+        //        .insert(asset_handle, registered_asset.as_unloaded()?);
+        //    return Ok(());
+        //} else {
+        //    return Err(AssetLoadError::AssetNotFound);
+        //}
     }
 
     pub(crate) fn set_minimum_load_level(
@@ -263,7 +276,9 @@ impl AssetManager {
                 AssetResidency::GPU(alloc_handle, la_idx) => {
                     return match self.registered_assets.get_mut(asset_handle).unwrap() {
                         RegisteredAsset::Loaded { residency, .. } => {
-                            Ok(AssetResidency::PendingUnloadGPU)
+                            *residency =
+                                AssetResidency::PendingUnloadGPU(alloc_handle.clone(), la_idx);
+                            Ok(AssetResidency::PendingUnloadGPU(alloc_handle, la_idx))
                         }
                         RegisteredAsset::Unloaded { .. } => {
                             return Err(AssetLoadError::AssetNotLoaded(
@@ -274,8 +289,8 @@ impl AssetManager {
                     };
                 }
 
-                AssetResidency::PendingUnloadGPU => {
-                    return Ok(AssetResidency::PendingUnloadGPU);
+                AssetResidency::PendingUnloadGPU(alloc_handle, la_index) => {
+                    return Ok(AssetResidency::PendingUnloadGPU(alloc_handle, la_index));
                 }
                 _ => {
                     todo!()
@@ -293,7 +308,9 @@ impl AssetManager {
                     return Ok(AssetResidency::CPU(idx));
                 }
                 AssetResidency::GPU(_, _) => todo!("unload gpu?"),
-                AssetResidency::PendingUnloadGPU => return Ok(AssetResidency::PendingUnloadGPU),
+                AssetResidency::PendingUnloadGPU(alloc_handle, la_index) => {
+                    return Ok(AssetResidency::PendingUnloadGPU(alloc_handle, la_index));
+                }
             },
             SceneLoadLevel::GPU => match asset_res_level {
                 AssetResidency::Registered => {
@@ -323,7 +340,7 @@ impl AssetManager {
                 AssetResidency::GPU(allocation_handle, idx) => {
                     return Ok(AssetResidency::GPU(allocation_handle.clone(), idx));
                 }
-                AssetResidency::PendingUnloadGPU => {
+                AssetResidency::PendingUnloadGPU(_, _la_index) => {
                     todo!("cancel unload?")
                 }
             },

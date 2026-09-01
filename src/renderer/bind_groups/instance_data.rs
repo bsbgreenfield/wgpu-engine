@@ -119,9 +119,9 @@ impl BindGroupProvider for InstanceDataBindGroup {
         // reather than just decrementing a ref count
         // TODO: im pretty sure we dont need to "remove" gt or offsets,
         // because they are just overwritten. Make a new type for this?
-        // let _ = self.record_arena.remove(handle);
+        let _ = self.record_arena.remove(handle).expect("despawn failure");
         // let _ = self.global_transforms.remove(handle);
-        let _ = self.offsets.remove(handle);
+        //let _ = self.offsets.remove(handle);
     }
 }
 

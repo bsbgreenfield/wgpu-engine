@@ -73,19 +73,16 @@ impl SceneManager {
         }
     }
 
-    pub fn ack_despawns(&mut self, gpu_handles: Vec<GPUInstanceHandle>) {
-        for gpu_handle in gpu_handles {
-            let Some(instance) = self.inflight_despawns.remove(&gpu_handle) else {
-                continue;
-            };
-
-            for free_asset in self.dependency_graph.ack_despawn(instance) {
-                self.asset_release_queue.remove(&free_asset);
-                self.asset_requests.insert(
-                    free_asset,
-                    self.dependency_graph.required_asset_level(&free_asset),
-                );
-            }
+    pub fn ack_despawn(&mut self, gpu_handle: GPUInstanceHandle) {
+        let Some(instance) = self.inflight_despawns.remove(&gpu_handle) else {
+            return;
+        };
+        for free_asset in self.dependency_graph.ack_despawn(instance) {
+            self.asset_release_queue.remove(&free_asset);
+            self.asset_requests.insert(
+                free_asset,
+                self.dependency_graph.required_asset_level(&free_asset),
+            );
         }
     }
 
@@ -179,7 +176,7 @@ impl SceneManager {
                 scenes[scene_id.0].runtime.current_state = level;
                 ready.push(scene_id);
             }
-        } else {
+        } else if level < previous {
             // lowering: an asset only drops if every other holder wants less too
             for asset in assets {
                 let required = dependency_graph.required_asset_level(&asset);
@@ -187,6 +184,10 @@ impl SceneManager {
                 let residency = asset_manager
                     .res_level_of(&asset)
                     .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
+                println!(
+                    "required level = {:?} res level = {:?}",
+                    required, residency
+                );
                 // if the asset level drops from this action, then add to requested
                 if SceneLoadLevel::from(&residency) > required {
                     self.asset_release_queue.insert(asset);

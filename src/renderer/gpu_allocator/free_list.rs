@@ -91,11 +91,11 @@ impl FreeListAllocator {
     pub(super) fn offset_of(&self, node_id: usize) -> u64 {
         self.nodes[node_id].offset as u64
     }
-    pub(super) fn new(minimum_node_size: usize) -> Self {
+    pub(super) fn new(chunk_size: u32, minimum_node_size: usize) -> Self {
         Self {
             free_nodes: vec![],
-            nodes: vec![FreeListNode::new(CHUNK_SIZE, None, None, 0)],
-            chunk_size: CHUNK_SIZE,
+            nodes: vec![FreeListNode::new(chunk_size, None, None, 0)],
+            chunk_size: chunk_size,
             head: 0,
             minimum_node_size,
         }
@@ -190,14 +190,14 @@ mod free_list_tests {
 
     #[test]
     fn first_alloc_offset_is_zero() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let id = alloc.alloc_first(ALLOC).unwrap();
         assert_eq!(alloc.offset_of(id), 0);
     }
 
     #[test]
     fn resolve_returns_correct_range() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let id = alloc.alloc_first(ALLOC).unwrap();
         let range = alloc.resolve(id);
         assert_eq!(range.start, 0);
@@ -208,7 +208,7 @@ mod free_list_tests {
 
     #[test]
     fn second_alloc_starts_after_first() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         assert_ne!(
@@ -225,7 +225,7 @@ mod free_list_tests {
 
     #[test]
     fn three_allocs_are_contiguous() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let c = alloc.alloc_first(ALLOC).unwrap();
@@ -238,7 +238,7 @@ mod free_list_tests {
     /// overlaps between them.
     #[test]
     fn allocated_ranges_do_not_overlap() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let sizes = [ALLOC, ALLOC * 2, ALLOC];
         let ids: Vec<usize> = sizes
             .iter()
@@ -262,7 +262,7 @@ mod free_list_tests {
     /// A remainder larger than 2 KB must produce a new free node.
     #[test]
     fn large_remainder_creates_new_node() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let before = alloc.node_count();
         alloc.alloc_first(ALLOC).unwrap();
         assert_eq!(
@@ -276,7 +276,7 @@ mod free_list_tests {
     /// are left as unused padding in an existing node
     #[test]
     fn small_remainder_does_not_create_new_node() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let before = alloc.node_count();
         // Leave exactly 2048 bytes remaining — not strictly greater than the threshold.
         alloc.alloc_first(CHUNK_SIZE - 2048).unwrap();
@@ -289,7 +289,7 @@ mod free_list_tests {
 
     #[test]
     fn alloc_exceeding_chunk_size_fails() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let result = alloc.alloc_first(CHUNK_SIZE + 1);
         assert!(matches!(result, Err(FreeListAllocError::NoRoomLeft(_, _))));
     }
@@ -297,7 +297,7 @@ mod free_list_tests {
     /// Once all free space is consumed every further allocation must fail.
     #[test]
     fn alloc_after_filling_fails() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let half = CHUNK_SIZE / 2;
         alloc.alloc_first(half).unwrap();
         alloc.alloc_first(half).unwrap();
@@ -310,7 +310,7 @@ mod free_list_tests {
     /// The remainder created by an allocation must link back to its predecessor.
     #[test]
     fn alloc_sets_prev_on_remainder_node() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let id = alloc.alloc_first(ALLOC).unwrap();
         let remainder_idx = alloc.nodes[id]
             .next
@@ -327,7 +327,7 @@ mod free_list_tests {
     /// directions.
     #[test]
     fn sequential_allocs_form_prev_chain() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let c = alloc.alloc_first(ALLOC).unwrap();
@@ -342,7 +342,7 @@ mod free_list_tests {
     /// unoccupied without touching the neighbors.
     #[test]
     fn dealloc_marks_node_unoccupied() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let c = alloc.alloc_first(ALLOC).unwrap();
@@ -356,7 +356,7 @@ mod free_list_tests {
     /// node should keep its original size and no slot should be recycled.
     #[test]
     fn dealloc_with_occupied_neighbors_does_not_merge() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let _a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let _c = alloc.alloc_first(ALLOC).unwrap();
@@ -376,7 +376,7 @@ mod free_list_tests {
     /// Reallocating after a dealloc should reuse the freed offset.
     #[test]
     fn realloc_after_dealloc_reuses_offset() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let _b = alloc.alloc_first(ALLOC).unwrap();
         let offset_a = alloc.offset_of(a);
@@ -395,7 +395,7 @@ mod free_list_tests {
     /// just-freed node's space into it.
     #[test]
     fn dealloc_merges_with_free_prev() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let c = alloc.alloc_first(ALLOC).unwrap();
@@ -430,7 +430,7 @@ mod free_list_tests {
     /// into the just-freed node.
     #[test]
     fn dealloc_merges_with_free_next() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let c = alloc.alloc_first(ALLOC).unwrap();
@@ -466,7 +466,7 @@ mod free_list_tests {
     /// merge-with-both-neighbors path.
     #[test]
     fn dealloc_merges_with_both_neighbors() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let c = alloc.alloc_first(ALLOC).unwrap();
@@ -489,7 +489,7 @@ mod free_list_tests {
     /// node — verifying the next-chain remains walkable after a merge.
     #[test]
     fn allocs_after_merge_are_contiguous_with_remaining_nodes() {
-        let mut alloc = FreeListAllocator::new(2048);
+        let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let a = alloc.alloc_first(ALLOC).unwrap();
         let b = alloc.alloc_first(ALLOC).unwrap();
         let c = alloc.alloc_first(ALLOC).unwrap();

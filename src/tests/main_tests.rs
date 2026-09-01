@@ -117,7 +117,7 @@ mod integration_tests {
                     RenderUpdateDelta::EntitySpawned { .. },
                     RenderDeltaKind::EntitySpawn
                 ) | (
-                    RenderUpdateDelta::InstanceDespawns(_),
+                    RenderUpdateDelta::InstanceDespawn(_),
                     RenderDeltaKind::InstanceDespawns
                 ) | (
                     RenderUpdateDelta::AssetUnloaded { .. },

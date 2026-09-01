@@ -40,10 +40,10 @@ impl<H: Clone + Hash + Eq> AllocationTable<H> {
 
     pub(super) fn remove(&mut self, handle: &H) -> Result<Option<AllocMetaData>, VertexArenaError> {
         let res: Option<AllocMetaData>;
-        let idx = *self
-            .table
-            .get(handle)
-            .ok_or(VertexArenaError::AllocationSlotNotFound)?;
+        let Some(idx) = self.table.get(handle) else {
+            return Ok(None);
+        };
+        let idx = *idx;
         self.table.remove(handle);
         let meta = self
             .alloc_meta
@@ -52,11 +52,11 @@ impl<H: Clone + Hash + Eq> AllocationTable<H> {
         meta.ref_count -= 1;
         if meta.ref_count == 0 {
             let goner = self.alloc_meta[idx].clone();
+            self.free_list.push(idx);
             res = Some(goner);
         } else {
-            panic!("need to implement removing ALL instances of the meta data?")
+            return Ok(None);
         }
-        self.free_list.push(idx);
         Ok(res)
     }
     pub(super) fn dealloc(&mut self, handle: &H) -> Result<(), VertexArenaError> {
@@ -70,7 +70,6 @@ impl<H: Clone + Hash + Eq> AllocationTable<H> {
             .get_mut(idx)
             .ok_or(VertexArenaError::MetadataNotFound)?;
         meta.ref_count -= 1;
-        self.free_list.push(idx);
         Ok(())
     }
 

@@ -66,6 +66,7 @@ impl DependencyGraph {
             .assets
             .iter()
         {
+            println!("instance {:?} has been despawned", instance_handle);
             let d = self
                 .asset_demand
                 .get_mut(asset)
