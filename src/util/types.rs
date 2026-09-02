@@ -112,6 +112,8 @@ pub fn mat4_from_cgmath(value: cgmath::Matrix4<f32>) -> Mat4F32 {
     [x, y, z, w]
 }
 
+// ************************* MATERIAL *********************
+
 // ************************* PNUJ *************************
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]

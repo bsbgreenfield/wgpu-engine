@@ -140,7 +140,40 @@ impl Hash for GltfNode {
     }
 }
 
+struct GPUTexture {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+}
+
+struct GltfTexture {
+    gpu_texture: Option<GPUTexture>,
+    data: image::DynamicImage,
+}
+
+enum PBRMetallicRoughness {
+    HardCoded {
+        roughness: f32,
+        metallicness: f32,
+        base_color_factor: [f32; 4],
+    },
+    TextureBacked {
+        texture_index: usize,
+        tex_coords_index: usize,
+    },
+}
+struct GltfMaterial {
+    label: Option<String>,
+    pbr_metallic_roughness: PBRMetallicRoughness,
+}
+
+struct MaterialPalette {
+    textures: Vec<GltfTexture>,
+    materials: Vec<GltfMaterial>,
+}
+
 pub struct GltfAsset {
+    material_palette: MaterialPalette,
     node_tree: Vec<Arc<GltfNode>>,
     meshes: Vec<Mesh>,
     pnujw_vertices: Arc<[PNUJWVertex]>,

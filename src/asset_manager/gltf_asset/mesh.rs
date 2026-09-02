@@ -1,6 +1,7 @@
-use std::any::TypeId;
 use std::range::Range;
+use std::{any::TypeId, error::Error};
 
+use base64::Engine;
 use gltf::accessor::{DataType, Dimensions};
 
 use crate::{
@@ -34,12 +35,12 @@ impl Primitive {
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct GLTFDataAccessor {
-    buffer_index: u8,
-    byte_offset: u32,
-    count: u32,
-    stride: Option<u8>,
+    pub(super) buffer_index: u8,
+    pub(super) byte_offset: u32,
+    pub(super) count: u32,
+    pub(super) stride: Option<u8>,
     pub(super) byte_size: u8,
-    num_elements: u8,
+    pub(super) num_elements: u8,
 }
 
 #[derive(Debug)]
@@ -327,4 +328,10 @@ pub(super) fn copy_binary_data_from_gltf(
     );
 
     Ok(copy_dest)
+}
+pub fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    use base64::prelude::BASE64_STANDARD;
+    // Uses standard lib base64 via experimental feature or stable crate if you choose
+    let decoded = BASE64_STANDARD.decode(input)?; // Requires base64 crate
+    Ok(decoded)
 }

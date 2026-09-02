@@ -17,6 +17,8 @@ pub struct GPUAssetUploadJob {
     pub pnu_vertices: Option<Arc<[PNUVertex]>>,
     pub pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
     pub indices: Option<Arc<[VIndex]>>,
+    //pub textures: Option<Arc<[u8]>>,
+    //pub materials: Option<Arc<[GPUMaterialData]>>,
 }
 
 impl GPUAssetUploadJob {

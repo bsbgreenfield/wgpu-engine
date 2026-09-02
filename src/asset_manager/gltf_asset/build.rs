@@ -2,15 +2,20 @@ use std::collections::HashMap;
 use std::range::Range;
 use std::sync::Arc;
 
+use wgpu::Extent3d;
+
 use crate::animation::{
     AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
     InterpolationType,
 };
 use crate::asset_manager::gltf_asset::mesh::{
-    copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
+    base64_decode, copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
 };
 use crate::asset_manager::gltf_asset::util::collect_mesh_ids;
-use crate::asset_manager::gltf_asset::{GltfAnimation, GltfAsset, NodeTransforms, NodeType};
+use crate::asset_manager::gltf_asset::{
+    GltfAnimation, GltfAsset, GltfMaterial, GltfTexture, MaterialPalette, NodeTransforms, NodeType,
+    PBRMetallicRoughness,
+};
 use crate::asset_manager::{Asset, BinarySource, GltfValidationError, ModelBuilderError};
 use crate::util::types::{Mat4F32, ModelVertex, VIndex};
 use crate::{
@@ -281,6 +286,83 @@ fn get_ibms(
     Ok(ibms)
 }
 
+fn get_materials(
+    gltf: &gltf::Gltf,
+    binary_data: &Vec<u8>,
+    buffer_offsets: &Vec<usize>,
+) -> Result<MaterialPalette, ModelBuilderError> {
+    let mut textures: Vec<GltfTexture> = Vec::new();
+    let mut materials: Vec<GltfMaterial> = Vec::new();
+
+    use std::io::Cursor;
+    for texture in gltf.textures() {
+        let mut new_backing = Vec::<u8>::new();
+        let data: &[u8] = match texture.source().source() {
+            gltf::image::Source::View { view, mime_type } => {
+                let offset = buffer_offsets[view.buffer().index()];
+                let view_offset = view.offset();
+                let start = offset + view_offset;
+                let end = start + view.length();
+                &binary_data[start..end]
+            }
+            gltf::image::Source::Uri { uri, mime_type } => {
+                const PREFIX: &str = "data:application/gltf-buffer;";
+                if !uri.starts_with(PREFIX) {
+                    panic!("AHHHHHHHHHHHHHHHHHHHHA");
+                }
+                let comma_index = uri.find(',').expect("no comma");
+                let (meta, encoded_data) = uri[PREFIX.len()..].split_at(comma_index - PREFIX.len());
+                let encoded_data = &encoded_data[1..]; //skip comma
+
+                let decoded = match meta.trim() {
+                    "base64" => base64_decode(encoded_data).expect("cannot decode"),
+                    other => panic!("other"),
+                };
+                new_backing.extend(decoded);
+                &new_backing
+            }
+        };
+
+        let image = image::ImageReader::new(Cursor::new(data))
+            .with_guessed_format()
+            .expect("invalid image type")
+            .decode()
+            .expect("failed to decode image");
+
+        textures.push(GltfTexture {
+            data: image,
+            gpu_texture: None,
+        });
+    }
+
+    for material in gltf.materials() {
+        if let Some(tex) = material.pbr_metallic_roughness().base_color_texture() {
+            materials.push(GltfMaterial {
+                label: material.name().map(|n| n.to_string()),
+                pbr_metallic_roughness: PBRMetallicRoughness::TextureBacked {
+                    texture_index: tex.texture().index(),
+                    tex_coords_index: tex.tex_coord() as usize,
+                },
+            });
+        } else {
+            let pbr_data = material.pbr_metallic_roughness();
+            materials.push(GltfMaterial {
+                label: material.name().map(|n| n.to_string()),
+                pbr_metallic_roughness: PBRMetallicRoughness::HardCoded {
+                    roughness: pbr_data.roughness_factor(),
+                    metallicness: pbr_data.metallic_factor(),
+                    base_color_factor: pbr_data.base_color_factor(),
+                },
+            });
+        }
+    }
+
+    Ok(MaterialPalette {
+        textures,
+        materials,
+    })
+}
+
 fn build_all_models(
     binary_data: &Vec<u8>,
     index_ranges: &Vec<Range<usize>>,
@@ -355,6 +437,7 @@ impl GltfAsset {
         let binary_data = super::loader::load_binary_data_from_source(bin)
             .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
 
+        let material_palette = get_materials(&gltf, &binary_data, &buffer_offsets)?;
         let ibms = get_ibms(&gltf, &binary_data, &buffer_offsets)?;
         let primitive_data = get_primitive_data_map(&gltf, &node_tree)?;
         let index_range_vec = get_index_range_vec(&primitive_data, &buffer_offsets)?;
@@ -367,6 +450,7 @@ impl GltfAsset {
         let animations: Vec<Arc<GltfAnimation>> =
             get_animations(&gltf, &buffer_offsets, &binary_data, &node_tree)?;
         Ok(Box::new(GltfAsset {
+            material_palette,
             pnujw_vertices: Arc::from_iter(pnujw),
             pnu_vertices: Arc::from_iter(pnu),
             node_tree,

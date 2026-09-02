@@ -37,6 +37,10 @@ var<uniform> camera_uniform: CameraUniform;
 
 @group(1) @binding(0)
 var<storage, read> local_mesh_transforms: array<mat4x4<f32>>;
+@group(1) @binding(1)
+var t_diffuse: texture_2d<f32>;
+@group(1) @binding(2)
+var s_diffuse: sampler;
 
 
 @group(2) @binding(0)
