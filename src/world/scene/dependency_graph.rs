@@ -60,8 +60,8 @@ pub struct DependencyGraph {
 }
 
 impl DependencyGraph {
-    pub fn ack_despawn(&mut self, instance_handle: InstanceHandle) -> Vec<AssetHandle> {
-        let mut free_assets = Vec::<AssetHandle>::new();
+    pub fn ack_despawn(&mut self, instance_handle: InstanceHandle) {
+        //let mut free_assets = Vec::<AssetHandle>::new();
         for asset in self.entities[instance_handle.entity_handle.0 as usize]
             .assets
             .iter()
@@ -72,11 +72,11 @@ impl DependencyGraph {
                 .get_mut(asset)
                 .expect("asset is not registered");
             d.live_instance_count -= 1;
-            if d.live_instance_count == 0 {
-                free_assets.push(*asset);
-            }
+            // if d.live_instance_count == 0 {
+            //     free_assets.push(*asset);
+            // }
         }
-        free_assets
+        //free_assets
     }
     pub fn holders_of(&self, asset_handle: &AssetHandle) -> &[SceneId] {
         &self

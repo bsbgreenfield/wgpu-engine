@@ -8,7 +8,7 @@ use crate::{
     animation::EntityAnimationData,
     app::GPUAssetUploadJob,
     asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
-    renderer::{GPUAllocationHandle, Operations},
+    renderer::GPUAllocationHandle,
     util::types::{LocalTransform, Mat4F32},
     world::{
         RenderKey,
@@ -113,7 +113,7 @@ impl UnloadedAssetData {
             Self::Gltf(gltf, bin) => GltfAsset::load(gltf, bin),
             #[cfg(test)]
             Self::Mock => Ok(Box::new(
-                crate::asset_manager::asset_manager::AssetMocks::MockAsset,
+                crate::asset_manager::asset_manager::asset_mocks::MockAsset,
             )),
         }
     }

@@ -120,7 +120,6 @@ impl<'frame> Renderer {
                             global_allocation_id,
                         }));
                     }
-                    Operations::MoveEntity => todo!(),
                     Operations::EmitEntitySpawn => {
                         let bind_mask = GPUBindings::from_bits(Self::get_byte(&mut instr_peek))
                             .expect("should be a valid mask");

@@ -45,6 +45,7 @@ trait GPUUploadable: Debug + bytemuck::Pod {
     const LABEL: &'static str;
     const USAGE: wgpu::BufferUsages;
     const CHUNK_SIZE: u32;
+    const MIN_ALLOC_SIZE: u32;
     const SIZE: usize = size_of::<Self>();
     fn arena_label() -> String;
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
@@ -256,7 +257,6 @@ pub(crate) enum BufferType {
 pub(crate) enum Operations {
     CreatePrototype,
     AddAsset,
-    MoveEntity,
     SpawnEntityInstance,
     LocalTransformUpload,
     JointTransformUpload,
@@ -433,12 +433,6 @@ impl DrawItem {
     pub(crate) fn get_indices(&self) -> Option<Range<u32>> {
         self.indices.clone()
     }
-}
-
-#[derive(Hash, PartialEq, PartialOrd, Eq)]
-struct BufferChunks {
-    index: Option<usize>,
-    vertex: usize,
 }
 
 use bitflags::bitflags;

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    asset_manager::{AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager},
+    asset_manager::{AssetHandle, AssetLoadError, asset_manager::AssetManager},
     world::scene::SceneLoadLevel,
 };
 
@@ -67,15 +67,7 @@ impl LoadQueue {
                 });
                 continue;
             }
-            if matches!(
-                current,
-                AssetResidency::PendingCPU | AssetResidency::PendingGPU(_)
-            ) {
-                panic!("HERE");
-            }
-
             let after = asset_manager.set_minimum_load_level(asset_handle, job.target)?;
-            println!("BEFORE: {:?}, AFTER: {:?}", current, after);
             if after != current {
                 res.push(AssetTransition {
                     handle: *asset_handle,

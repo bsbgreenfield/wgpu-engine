@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use bytemuck::Pod;
 
 use crate::{
@@ -7,8 +5,7 @@ use crate::{
         GPUAllocationHandle, GPUInstanceHandle, GPUUploadable, InstanceUploadJob, StorageData,
         bind_groups::SharedInstanceData,
         gpu_allocator::{
-            AllocMetaData, CHUNK_SIZE, FreeListAllocator, GPUAllocator, GPUChunk, GPUUploadJob,
-            GPUUploadResult, MIMIMUM_INDEX_ALLOCATION_SIZE, MIMIMUM_VERTEX_ALLOCATION_SIZE,
+            AllocMetaData, CHUNK_SIZE, GPUAllocator, GPUChunk, GPUUploadJob, GPUUploadResult,
             UploadIndexJob, UploadMeshJob, VertexArenaError, allocation_table::AllocationTable,
         },
     },
@@ -110,6 +107,7 @@ impl<T: StorageData> GPUUploadable for T {
         .union(wgpu::BufferUsages::COPY_DST)
         .union(wgpu::BufferUsages::COPY_SRC);
     const LABEL: &'static str = <T as StorageData>::LABEL;
+    const MIN_ALLOC_SIZE: u32 = 1024;
     const CHUNK_SIZE: u32 = <T as StorageData>::CHUNK_SIZE;
     fn arena_label() -> String {
         String::from("instance upload")
@@ -135,6 +133,7 @@ impl GPUUploadable for VIndex {
     type UploadJob<'a> = UploadIndexJob<'a>;
     type GPUHandle = GPUAllocationHandle;
     const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const MIN_ALLOC_SIZE: u32 = 1024;
     const LABEL: &'static str = "Vertex indices";
     const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::INDEX.union(wgpu::BufferUsages::COPY_DST);
     fn arena_label() -> String {
@@ -156,6 +155,7 @@ impl GPUUploadable for PNUJWVertex {
     type GPUHandle = GPUAllocationHandle;
     type UploadJob<'a> = UploadMeshJob<'a, PNUJWVertex>;
     const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const MIN_ALLOC_SIZE: u32 = 2048;
     const LABEL: &'static str = "PNUJW";
     const USAGE: wgpu::BufferUsages =
         wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
@@ -174,6 +174,7 @@ impl GPUUploadable for PNUJWVertex {
 }
 impl GPUUploadable for PNUVertex {
     type GPUHandle = GPUAllocationHandle;
+    const MIN_ALLOC_SIZE: u32 = 2048;
     type UploadJob<'a> = UploadMeshJob<'a, PNUVertex>;
     const CHUNK_SIZE: u32 = CHUNK_SIZE;
     const LABEL: &'static str = "PNU";
@@ -235,8 +236,8 @@ impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
     fn resolve(&self, handle: &T::GPUHandle) -> (std::range::Range<u32>, &wgpu::Buffer) {
         let meta = self.alloc_table.resolve(&handle).unwrap();
         let mut range = self.chunks[meta.chunk_id].allocator.resolve(meta.node_id);
-        range.start = range.start / size_of::<T>() as u32;
-        range.end = range.end / size_of::<T>() as u32;
+        range.start = range.start / T::SIZE as u32;
+        range.end = range.end / T::SIZE as u32;
         (range, &self.chunks[meta.chunk_id].buffer)
     }
 

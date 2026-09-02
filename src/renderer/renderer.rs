@@ -1,6 +1,3 @@
-use core::hash;
-use std::ops::Deref;
-
 use wgpu::{CurrentSurfaceTexture, RenderPass};
 
 use crate::{

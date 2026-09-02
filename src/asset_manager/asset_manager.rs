@@ -53,20 +53,6 @@ impl<A: Asset + ?Sized> RegisteredAsset<A> {
             )));
         }
     }
-
-    fn as_unloaded(self) -> Result<Self, AssetLoadError> {
-        match self {
-            RegisteredAsset::Loaded {
-                residency: _,
-                data,
-                _t,
-            } => Ok(RegisteredAsset::Unloaded {
-                data,
-                _t: PhantomData,
-            }),
-            _ => panic!("already unloaded"),
-        }
-    }
 }
 
 pub struct AssetManager {
@@ -202,7 +188,7 @@ impl AssetManager {
                     ));
                 }
             },
-            RegisteredAsset::Unloaded { data, _t } => {
+            RegisteredAsset::Unloaded { data: _, _t } => {
                 todo!()
             }
         }
@@ -375,7 +361,7 @@ impl AssetManager {
 }
 
 #[cfg(test)]
-pub(super) mod AssetMocks {
+pub(super) mod asset_mocks {
     use std::marker::PhantomData;
 
     use crate::{
@@ -389,7 +375,7 @@ pub(super) mod AssetMocks {
     pub struct MockAsset;
     impl Asset for MockAsset {
         fn new(
-            dir_name: &str,
+            _dir_name: &str,
         ) -> Result<crate::asset_manager::UnloadedAssetData, crate::asset_manager::AssetLoadError>
         where
             Self: Sized,

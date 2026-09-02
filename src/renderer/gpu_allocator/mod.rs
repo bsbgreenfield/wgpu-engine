@@ -22,9 +22,6 @@ mod free_list;
 pub(super) mod gpu_arena;
 pub(super) mod instance_arena;
 
-static MIMIMUM_INDEX_ALLOCATION_SIZE: usize = 1024;
-static MIMIMUM_VERTEX_ALLOCATION_SIZE: usize = 2048;
-
 static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
 
 #[derive(Debug, Clone)]
@@ -72,7 +69,7 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
                 usage: usages,
                 mapped_at_creation: false,
             }),
-            allocator: FreeListAllocator::new(T::CHUNK_SIZE, MIMIMUM_INDEX_ALLOCATION_SIZE),
+            allocator: FreeListAllocator::new(T::CHUNK_SIZE, T::MIN_ALLOC_SIZE as usize),
             _t: PhantomData,
         }
     }

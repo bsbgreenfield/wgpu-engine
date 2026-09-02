@@ -5,9 +5,7 @@ use cgmath::vec3;
 
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
-    asset_manager::{
-        Asset, AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager,
-    },
+    asset_manager::{Asset, AssetHandle, AssetLoadError, asset_manager::AssetManager},
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
     util::types::{LocalTransform, Mat4F32},
@@ -54,7 +52,7 @@ pub(crate) struct RenderView {
 }
 
 pub(crate) struct RenderGroup {
-    _entity_handle: EntityHandle,
+    pub entity_handle: EntityHandle,
     views: Vec<RenderView>,
 }
 
@@ -64,7 +62,7 @@ impl RenderGroup {
     }
     pub(super) fn new(views: Vec<RenderView>, entity_handle: EntityHandle) -> Self {
         Self {
-            _entity_handle: entity_handle,
+            entity_handle: entity_handle,
             views,
         }
     }
