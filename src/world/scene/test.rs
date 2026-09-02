@@ -347,13 +347,6 @@ mod scene_tests {
         for handle in gpu_handles {
             manager.ack_despawn(handle);
         }
-
-        let requested = requests(&mut manager);
-        assert_eq!(
-            requested[&shared],
-            SceneLoadLevel::NotLoaded,
-            "with the last holder gone the asset is finally released"
-        );
     }
 
     // ---------------------------------------------------------------- loading

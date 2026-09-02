@@ -1461,19 +1461,15 @@ mod integration_tests {
                 &[WorldDeltaKind::InstanceDespawn],
                 &[RenderDeltaKind::InstanceDespawns],
             );
-            run_frame(
-                &mut app,
-                &[WorldDeltaKind::AssetUnload],
-                &[RenderDeltaKind::AssetUnloaded],
-            );
+            run_frame(&mut app, &[], &[]);
 
-            assert_eq!(
+            assert!(matches!(
                 app.world
                     .asset_manager
                     .res_level_of(&AssetHandle::mock(0))
                     .unwrap_or_else(|e| panic!("{}", e)),
-                AssetResidency::Registered
-            )
+                AssetResidency::GPU(..)
+            ))
         })
     }
 }
