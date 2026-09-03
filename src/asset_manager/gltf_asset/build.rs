@@ -13,8 +13,8 @@ use crate::asset_manager::gltf_asset::mesh::{
 };
 use crate::asset_manager::gltf_asset::util::collect_mesh_ids;
 use crate::asset_manager::gltf_asset::{
-    GltfAnimation, GltfAsset, GltfMaterial, GltfTexture, MaterialPalette, NodeTransforms, NodeType,
-    PBRMetallicRoughness,
+    AssetSources, GltfAnimation, GltfAsset, GltfMaterial, GltfTexture, MaterialPalette,
+    NodeTransforms, NodeType, PBRMetallicRoughness,
 };
 use crate::asset_manager::{Asset, BinarySource, GltfValidationError, ModelBuilderError};
 use crate::util::types::{Mat4F32, ModelVertex, PrimitiveVerticesData, VIndex};
@@ -131,16 +131,6 @@ fn get_animations(
         }));
     }
     Ok(animations)
-}
-
-fn get_buffer_offsets(gltf: &gltf::Gltf) -> Vec<usize> {
-    let mut buffer_offsets = Vec::<usize>::new();
-    let mut last_buffer_size = 0;
-    for buffer in gltf.buffers() {
-        buffer_offsets.push(last_buffer_size);
-        last_buffer_size += buffer.length();
-    }
-    buffer_offsets
 }
 
 fn get_skins(gltf: &gltf::Gltf) -> Vec<Vec<usize>> {
@@ -291,6 +281,10 @@ fn get_materials(
     binary_data: &Vec<u8>,
     buffer_offsets: &Vec<usize>,
 ) -> Result<MaterialPalette, ModelBuilderError> {
+    return Ok(MaterialPalette {
+        textures: vec![].into(),
+        materials: vec![].into(),
+    });
     let mut textures: Vec<GltfTexture> = Vec::new();
     let mut materials: Vec<GltfMaterial> = Vec::new();
 
@@ -418,13 +412,13 @@ fn build_all_models(
 impl GltfAsset {
     pub fn load(
         gltf: &gltf::Gltf,
-        bin: &BinarySource,
+        sources: &AssetSources,
     ) -> Result<Box<dyn Asset>, ModelBuilderError> {
-        let buffer_offsets = get_buffer_offsets(gltf);
+        let (binary_data, buffer_offsets) =
+            super::loader::load_binary_data_from_source(gltf, sources)
+                .unwrap_or_else(|e| panic!("{}", e));
         let skins = get_skins(gltf);
         let node_tree = build_node_trees(gltf, &skins)?;
-        let binary_data = super::loader::load_binary_data_from_source(bin)
-            .map_err(|_| ModelBuilderError::BinarySourceNotFound)?;
 
         let material_palette = get_materials(&gltf, &binary_data, &buffer_offsets)?;
         let ibms = get_ibms(&gltf, &binary_data, &buffer_offsets)?;

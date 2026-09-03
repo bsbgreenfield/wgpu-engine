@@ -7,7 +7,7 @@ use std::{
 use base64::Engine;
 use gltf::Gltf;
 
-use crate::asset_manager::gltf_asset::{BinarySource, GltfLoadError};
+use crate::asset_manager::gltf_asset::{AssetSources, BinarySource, GltfLoadError, TextureSource};
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use base64::prelude::BASE64_STANDARD;
@@ -36,27 +36,10 @@ fn decode_gltf_data_uri(uri: &str) -> Result<Vec<u8>, Box<dyn Error>> {
 
     Ok(decoded)
 }
-fn load_from_separate_data_files(
-    gltf_file: &PathBuf,
-    bin_file: PathBuf,
-) -> Result<(gltf::Gltf, BinarySource), GltfLoadError> {
-    let gtlf_res: gltf::Gltf =
-        Gltf::open(gltf_file).map_err(|e| GltfLoadError::GltfPackageError(e))?;
 
-    Ok((gtlf_res, BinarySource::BinFile(bin_file)))
-}
-
-fn load_from_single_gltf_file(
-    gltf_file: PathBuf,
-) -> Result<(gltf::Gltf, BinarySource), GltfLoadError> {
-    let gltf_res: gltf::Gltf =
-        Gltf::open(&gltf_file).map_err(|e| GltfLoadError::GltfPackageError(e))?;
-
-    Ok((gltf_res, BinarySource::GLTFBuffers(gltf_file)))
-}
 pub(super) fn load_gltf_from_resource(
     dir_name: &str,
-) -> Result<(gltf::Gltf, BinarySource), GltfLoadError> {
+) -> Result<(gltf::Gltf, AssetSources), GltfLoadError> {
     let dir_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("res")
         .join(dir_name);
@@ -66,14 +49,14 @@ pub(super) fn load_gltf_from_resource(
 
     let mut dot_gltf: Option<PathBuf> = None;
     let mut dot_glb: Option<PathBuf> = None;
-    let mut dot_bin: Option<PathBuf> = None;
+    let mut dot_bin: Vec<PathBuf> = vec![];
     let entries: ReadDir = read_dir(&dir_path).map_err(|e| GltfLoadError::IOErr(e.kind()))?;
 
     for maybe_entry in entries {
         let entry: DirEntry = maybe_entry.map_err(|_| GltfLoadError::InvalidFileError)?;
         match entry.path().extension().unwrap().to_str().unwrap() {
             "gltf" => dot_gltf = Some(entry.path()),
-            "bin" => dot_bin = Some(entry.path()),
+            "bin" => dot_bin.push(entry.path()),
             "glb" => dot_glb = Some(entry.path()),
             _ => {}
         }
@@ -82,40 +65,114 @@ pub(super) fn load_gltf_from_resource(
     if dot_glb.is_some() && dot_gltf.is_some() {
         return Err(GltfLoadError::MultipleFileTypes);
     }
-    if dot_gltf.is_some() && dot_bin.is_some() {
-        let result = load_from_separate_data_files(&dot_gltf.unwrap(), dot_bin.unwrap())?;
-        return Ok(result);
-    } else if dot_gltf.is_some() && dot_bin.is_none() {
-        let result = load_from_single_gltf_file(dot_gltf.unwrap())?;
-        return Ok(result);
+
+    if let Some(gltf_file) = dot_gltf {
+        let gltf_res: gltf::Gltf =
+            Gltf::open(&gltf_file).map_err(|e| GltfLoadError::GltfPackageError(e))?;
+
+        let binary_buffer_sources = get_binary_buffer_sources(&gltf_res, dir_name)?;
+        let texture_sources = get_textures(&gltf_res, &dot_bin)?;
+
+        return Ok((
+            gltf_res,
+            AssetSources {
+                binary_sources: binary_buffer_sources,
+                textures: texture_sources,
+            },
+        ));
     } else {
         return Err(GltfLoadError::Unimplemented);
     }
 }
-pub(super) fn load_binary_data_from_source(
-    source: &BinarySource,
-) -> Result<Vec<u8>, GltfLoadError> {
-    match source {
-        BinarySource::BinFile(path) => {
-            return std::fs::read(path).map_err(|e| GltfLoadError::IOErr(e.kind()));
-        }
-        BinarySource::GLTFBuffers(path) => {
-            let gltf = gltf::Gltf::open(&path).map_err(|e| GltfLoadError::GltfPackageError(e))?;
-            let mut bin_data = Vec::<u8>::new();
-            for buffer in gltf.buffers() {
-                let data = match buffer.source() {
-                    gltf::buffer::Source::Bin => return Err(GltfLoadError::GltfNeedsBinFile),
-                    gltf::buffer::Source::Uri(uri) => decode_gltf_data_uri(uri).map_err(|_| {
-                        GltfLoadError::BadFile(
-                            path.to_str().unwrap_or("Provided GLTF File").to_string(),
-                        )
-                    }),
-                };
-                bin_data.extend(data?);
+
+fn get_binary_buffer_sources(
+    gltf: &gltf::Gltf,
+    gltf_dir: &str,
+) -> Result<Vec<BinarySource>, GltfLoadError> {
+    let mut res: Vec<BinarySource> = Vec::with_capacity(gltf.buffers().len());
+    let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("res")
+        .join(gltf_dir);
+    for buffer in gltf.buffers() {
+        match buffer.source() {
+            gltf::buffer::Source::Bin => {
+                res.push(BinarySource::GLTFBuffers);
             }
-            return Ok(bin_data);
+            gltf::buffer::Source::Uri(uri) => {
+                res.push(BinarySource::BinFile(base_path.join(PathBuf::from(uri))));
+            }
         }
-        BinarySource::GLB(_) => todo!("haven't implemented glbs yet"),
-        BinarySource::Undefined => return Err(GltfLoadError::GltfNeedsBinFile),
     }
+    return Ok(res);
+}
+
+fn get_textures(
+    gltf_res: &gltf::Gltf,
+    bin_files: &[PathBuf],
+) -> Result<Vec<TextureSource>, GltfLoadError> {
+    let mut texture_sources = Vec::new();
+    for tex in gltf_res.textures() {
+        let texture_source: Result<TextureSource, GltfLoadError> = match tex.source().source() {
+            gltf::image::Source::View { view, mime_type } => match view.buffer().source() {
+                gltf::buffer::Source::Bin => {
+                    Ok(TextureSource::BinarySource(BinarySource::GLTFBuffers))
+                }
+                gltf::buffer::Source::Uri(file_path) => {
+                    let bin_match = bin_files
+                        .iter()
+                        .find(|bin_file_path| *bin_file_path == file_path)
+                        .ok_or(GltfLoadError::InvalidFileError)?;
+                    Ok(TextureSource::BinarySource(BinarySource::BinFile(
+                        bin_match.into(),
+                    )))
+                }
+            },
+            gltf::image::Source::Uri { uri, mime_type } => {
+                // TODO: allow inline uris
+                let dir_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("res")
+                    .join("textures")
+                    .join(uri);
+                if !dir_path.is_file() {
+                    return Err(GltfLoadError::InvalidFileError);
+                }
+                Ok(TextureSource::ExternalFile(dir_path))
+            }
+        };
+        texture_sources.push(texture_source?);
+    }
+    Ok(texture_sources)
+}
+
+pub(super) fn load_binary_data_from_source(
+    gltf: &gltf::Gltf,
+    sources: &AssetSources,
+) -> Result<(Vec<u8>, Vec<usize>), GltfLoadError> {
+    let mut res: Vec<u8> = Vec::new();
+    let mut buffer_offsets: Vec<usize> = Vec::new();
+    buffer_offsets.push(0);
+    for bin_source in sources.binary_sources.iter() {
+        match bin_source {
+            BinarySource::BinFile(path) => {
+                println!("{:?}", path);
+                let data = std::fs::read(path).map_err(|e| GltfLoadError::IOErr(e.kind()))?;
+                buffer_offsets.push(data.len());
+                res.extend(data);
+            }
+            BinarySource::GLTFBuffers => {
+                for bin_buffer in gltf.buffers() {
+                    let gltf::buffer::Source::Uri(uri) = bin_buffer.source() else {
+                        continue;
+                    };
+                    let data = decode_gltf_data_uri(uri)
+                        .map_err(|_| GltfLoadError::BadFile("provided gltf file".to_string()))?;
+                    buffer_offsets.push(data.len());
+                    res.extend(data);
+                }
+            }
+            BinarySource::GLB(_) => todo!("havent implemented glbs yet"),
+            BinarySource::Undefined => panic!("undefined source"),
+        }
+    }
+    Ok((res, buffer_offsets))
 }

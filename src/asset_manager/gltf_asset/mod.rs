@@ -20,12 +20,23 @@ mod mesh;
 mod upload;
 mod util;
 
+pub struct AssetSources {
+    pub binary_sources: Vec<BinarySource>,
+    pub textures: Vec<TextureSource>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TextureSource {
+    ExternalFile(PathBuf),
+    BinarySource(BinarySource),
+}
+
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub enum BinarySource {
     BinFile(PathBuf),
     GLB(PathBuf),
-    GLTFBuffers(PathBuf),
+    GLTFBuffers,
     Undefined,
 }
 
@@ -34,9 +45,9 @@ impl Asset for GltfAsset {
     where
         Self: Sized,
     {
-        let (gltf, bin) =
+        let (gltf, sources) =
             crate::asset_manager::gltf_asset::loader::load_gltf_from_resource(dir_name)?;
-        Ok(super::UnloadedAssetData::Gltf(gltf, bin))
+        Ok(super::UnloadedAssetData::Gltf { gltf, sources })
     }
 
     fn get_upload_job(
@@ -268,7 +279,7 @@ impl Display for GltfLoadError {
             Self::GltfNeedsBinFile => f.write_str("Gltf load failed due to a missing bin file for the associated gltf file"),
             Self::GltfPackageError(err) => Display::fmt(err, f),
             Self::BadFile(str) => f.write_str(str),
-            Self::ModelBuilderError(_) => f.write_str("Gltf load failed internally"),
+            Self::ModelBuilderError(e) => write!(f, "Gltf load failed internally: {}",e ),
             Self::Unimplemented => f.write_str("This type of gltf loading has not been implemented"),
         }
     }

@@ -7,7 +7,9 @@ use std::{
 use crate::{
     animation::EntityAnimationData,
     app::GPUAssetUploadJob,
-    asset_manager::gltf_asset::{BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
+    asset_manager::gltf_asset::{
+        AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfValidationError,
+    },
     renderer::GPUAllocationHandle,
     util::types::{LocalTransform, Mat4F32},
     world::{
@@ -93,14 +95,17 @@ impl RenderKey for AssetHandle {
 }
 
 pub enum UnloadedAssetData {
-    Gltf(gltf::Gltf, BinarySource),
+    Gltf {
+        sources: AssetSources,
+        gltf: gltf::Gltf,
+    },
     #[cfg(test)]
     Mock,
 }
 impl Debug for UnloadedAssetData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnloadedAssetData::Gltf(_, _) => write!(f, "Gltf Asset",),
+            UnloadedAssetData::Gltf { .. } => write!(f, "Gltf Asset",),
             #[cfg(test)]
             UnloadedAssetData::Mock => write!(f, "mock"),
         }
@@ -110,7 +115,7 @@ impl Debug for UnloadedAssetData {
 impl UnloadedAssetData {
     fn load(&self) -> Result<Box<dyn Asset>, ModelBuilderError> {
         match self {
-            Self::Gltf(gltf, bin) => GltfAsset::load(gltf, bin),
+            Self::Gltf { sources, gltf } => GltfAsset::load(gltf, sources),
             #[cfg(test)]
             Self::Mock => Ok(Box::new(
                 crate::asset_manager::asset_manager::asset_mocks::MockAsset,
