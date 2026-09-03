@@ -200,6 +200,9 @@ pub trait BytecodeGenerator<'frame> {
             constants.push(RenderConstant::DataRef(index_data));
             Self::emit_const_last(constants, instructions);
         }
+        if let Some(textures) = &asset_upload_job.textures {
+            instructions.push(Instruction::Op(Operations::TextureUpload));
+        }
         instructions.push(Instruction::Op(Operations::EmitAssetUpload));
     }
 }

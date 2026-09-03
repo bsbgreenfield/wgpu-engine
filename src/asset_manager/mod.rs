@@ -12,7 +12,7 @@ use crate::{
     util::types::{LocalTransform, Mat4F32},
     world::{
         RenderKey,
-        entity_manager::components::{AnimationAccessor, MeshAcessor},
+        entity_manager::components::{AnimationAccessor, MaterialAccessor, MeshAcessor},
         scene::SceneLoadLevel,
     },
 };
@@ -244,6 +244,12 @@ pub trait ProvidesAnimationData: Asset {
         animation_accessor: &AnimationAccessor,
         mesh_accessor: &MeshAcessor,
     ) -> EntityAnimationData;
+}
+
+pub struct EntityMaterials;
+
+pub trait ProvidesMaterialData: Asset {
+    fn material_data<'a>(&self, material_accessor: &'a MaterialAccessor) -> EntityMaterials;
 }
 
 pub struct LoadedAsset<'a> {

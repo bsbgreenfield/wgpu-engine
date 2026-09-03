@@ -387,7 +387,7 @@ pub(super) mod asset_mocks {
             &self,
             asset_handle: crate::asset_manager::AssetHandle,
         ) -> Result<crate::app::GPUAssetUploadJob, crate::asset_manager::AssetLoadError> {
-            GPUAssetUploadJob::new(asset_handle, None, None, None)
+            GPUAssetUploadJob::new(asset_handle, None, None, None, None, None)
         }
 
         fn as_mesh_provider(&self) -> Option<&dyn crate::asset_manager::ProvidesMeshData> {

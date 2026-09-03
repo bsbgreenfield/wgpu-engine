@@ -6,10 +6,11 @@ use crate::{
         bind_groups::SharedInstanceData,
         gpu_allocator::{
             AllocMetaData, CHUNK_SIZE, GPUAllocator, GPUChunk, GPUUploadJob, GPUUploadResult,
-            UploadIndexJob, UploadMeshJob, VertexArenaError, allocation_table::AllocationTable,
+            UploadIndexJob, UploadMaterialJob, UploadMeshJob, VertexArenaError,
+            allocation_table::AllocationTable,
         },
     },
-    util::types::{ModelVertex, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{GPUMaterialData, GPUTextureData, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
 };
 
 // pub(crate): parameter type of `GPUUploadable::upload`, which is pub(crate).
@@ -77,6 +78,15 @@ impl<'a, T: Pod> GPUUploadJob for InstanceUploadJob<'a, T> {
     }
     fn get_handle(&self) -> GPUInstanceHandle {
         self.gpu_instance_handle
+    }
+}
+impl<'a> GPUUploadJob for UploadMaterialJob<'a> {
+    type GPUHandle = GPUAllocationHandle;
+    fn get_data(&self) -> &[u8] {
+        self.data
+    }
+    fn get_handle(&self) -> Self::GPUHandle {
+        self.alloc_handle.clone()
     }
 }
 
@@ -191,6 +201,34 @@ impl GPUUploadable for PNUVertex {
     ) -> GPUUploadResult {
         arena.alloc_table.allocate(handle, chunk_id, node_id);
         return GPUUploadResult::VertexDataUploadSuccess;
+    }
+}
+impl GPUUploadable for GPUMaterialData {
+    type GPUHandle = GPUAllocationHandle;
+
+    type UploadJob<'a> = UploadMaterialJob<'a>;
+
+    const LABEL: &'static str = "Material Data";
+
+    const USAGE: wgpu::BufferUsages =
+        wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_DST);
+
+    const CHUNK_SIZE: u32 = CHUNK_SIZE / 4;
+
+    const MIN_ALLOC_SIZE: u32 = 0;
+
+    fn arena_label() -> String {
+        String::from("Material Data Arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena.alloc_table.allocate(handle, chunk_id, node_id);
+        return GPUUploadResult::MaterialUploadSucess;
     }
 }
 

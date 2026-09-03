@@ -5,7 +5,8 @@ use cgmath::SquareMatrix;
 use crate::{
     animation::{Animation, EntityAnimationData},
     asset_manager::{
-        AssetLoadError, MeshRenderables, ProvidesAnimationData, ProvidesMeshData,
+        AssetLoadError, MeshRenderables, ProvidesAnimationData, ProvidesMaterialData,
+        ProvidesMeshData,
         gltf_asset::{
             GltfAsset,
             util::{
@@ -203,5 +204,14 @@ impl ProvidesAnimationData for GltfAsset {
             joint_transforms,
             inverse_bind_matrices,
         }
+    }
+}
+
+impl ProvidesMaterialData for GltfAsset {
+    fn material_data<'a>(
+        &self,
+        material_accessor: &'a crate::world::entity_manager::components::MaterialAccessor,
+    ) -> crate::asset_manager::EntityMaterials {
+        todo!()
     }
 }

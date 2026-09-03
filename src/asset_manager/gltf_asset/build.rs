@@ -17,7 +17,7 @@ use crate::asset_manager::gltf_asset::{
     PBRMetallicRoughness,
 };
 use crate::asset_manager::{Asset, BinarySource, GltfValidationError, ModelBuilderError};
-use crate::util::types::{Mat4F32, ModelVertex, VIndex};
+use crate::util::types::{Mat4F32, ModelVertex, PrimitiveVerticesData, VIndex};
 use crate::{
     asset_manager::{
         gltf_asset::{
@@ -308,7 +308,7 @@ fn get_materials(
             gltf::image::Source::Uri { uri, mime_type } => {
                 const PREFIX: &str = "data:application/gltf-buffer;";
                 if !uri.starts_with(PREFIX) {
-                    panic!("AHHHHHHHHHHHHHHHHHHHHA");
+                    println!("{}", uri);
                 }
                 let comma_index = uri.find(',').expect("no comma");
                 let (meta, encoded_data) = uri[PREFIX.len()..].split_at(comma_index - PREFIX.len());
@@ -329,37 +329,26 @@ fn get_materials(
             .decode()
             .expect("failed to decode image");
 
-        textures.push(GltfTexture {
-            data: image,
-            gpu_texture: None,
-        });
+        println!("HEIGHT: {} WIDTH: {}", image.height(), image.width());
+        textures.push(GltfTexture { data: image });
     }
 
     for material in gltf.materials() {
-        if let Some(tex) = material.pbr_metallic_roughness().base_color_texture() {
-            materials.push(GltfMaterial {
-                label: material.name().map(|n| n.to_string()),
-                pbr_metallic_roughness: PBRMetallicRoughness::TextureBacked {
-                    texture_index: tex.texture().index(),
-                    tex_coords_index: tex.tex_coord() as usize,
-                },
-            });
-        } else {
-            let pbr_data = material.pbr_metallic_roughness();
-            materials.push(GltfMaterial {
-                label: material.name().map(|n| n.to_string()),
-                pbr_metallic_roughness: PBRMetallicRoughness::HardCoded {
-                    roughness: pbr_data.roughness_factor(),
-                    metallicness: pbr_data.metallic_factor(),
-                    base_color_factor: pbr_data.base_color_factor(),
-                },
-            });
-        }
+        let pbr_data = material.pbr_metallic_roughness();
+        materials.push(GltfMaterial {
+            label: material.name().map(|n| n.to_string()),
+            pbr_metallic_roughness: PBRMetallicRoughness {
+                roughness: pbr_data.roughness_factor(),
+                metallicness: pbr_data.metallic_factor(),
+                base_color_factor: pbr_data.base_color_factor(),
+                texture_idx: pbr_data.base_color_texture().map(|t| t.texture().index()),
+            },
+        });
     }
 
     Ok(MaterialPalette {
-        textures,
-        materials,
+        textures: textures.into(),
+        materials: materials.into(),
     })
 }
 
@@ -388,7 +377,7 @@ fn build_all_models(
                 assert_eq!(primitive_data.indices.as_ref().unwrap().byte_size, 2);
             }
             // binary data per vertex attribute
-            let primitive_vertex_data =
+            let primitive_vertex_data: PrimitiveVerticesData =
                 Primitive::get_primitive_vertex_data(buffer_offsets, primitive_data, &binary_data)?;
 
             let maybe_index_range =

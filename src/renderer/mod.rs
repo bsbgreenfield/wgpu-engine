@@ -266,6 +266,7 @@ pub(crate) enum Operations {
     PNUUpload,
     PNUJWUpload,
     IndexUpload,
+    TextureUpload,
     EmitAssetUpload,
     EmitEntitySpawn,
     DespawnInstance,

@@ -11,7 +11,7 @@ use crate::{
     asset_manager::{
         Asset, AssetHandle, AssetLoadError, ModelBuilderError, gltf_asset::mesh::Mesh,
     },
-    util::types::{Mat4F32, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{GPUMaterialData, GPUTextureData, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
 };
 mod animation;
 mod build;
@@ -43,11 +43,52 @@ impl Asset for GltfAsset {
         &self,
         asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob, AssetLoadError> {
+        let textures: Option<Arc<[GPUTextureData]>> = if !self.material_palette.textures.is_empty()
+        {
+            let texture_pixels = self
+                .material_palette
+                .textures
+                .iter()
+                .map(|t| GPUTextureData {
+                    pixels: t.data.clone().into_rgba8().into_raw().into(),
+                    height: t.data.height(),
+                    width: t.data.width(),
+                    srgb: false,
+                });
+            Some(texture_pixels.collect())
+        } else {
+            None
+        };
+        let materials: Option<Arc<[GPUMaterialData]>> =
+            if !self.material_palette.materials.is_empty() {
+                let material_data = self
+                    .material_palette
+                    .materials
+                    .iter()
+                    .map(|m| {
+                        let pbr = &m.pbr_metallic_roughness;
+                        Some(GPUMaterialData {
+                            roughness: pbr.roughness,
+                            metallic: pbr.metallicness,
+                            base_color_factors: pbr.base_color_factor,
+                            tex_modifier: pbr.texture_idx.map_or(u32::MAX, |i| i as u32), // TODO:
+                                                                                          // have
+                                                                                          // zero be
+                                                                                          // white?
+                        })
+                    })
+                    .collect();
+                material_data
+            } else {
+                None
+            };
         GPUAssetUploadJob::new(
             asset_handle,
             Some(self.pnu_vertices.clone()),
             Some(self.pnujw_vertices.clone()),
             self.indices.as_ref().map(|i| i.clone()),
+            textures,
+            materials,
         )
     }
 
@@ -140,27 +181,19 @@ impl Hash for GltfNode {
     }
 }
 
-struct GPUTexture {
-    texture: wgpu::Texture,
-    view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
-}
-
 struct GltfTexture {
-    gpu_texture: Option<GPUTexture>,
     data: image::DynamicImage,
 }
 
-enum PBRMetallicRoughness {
-    HardCoded {
-        roughness: f32,
-        metallicness: f32,
-        base_color_factor: [f32; 4],
-    },
-    TextureBacked {
-        texture_index: usize,
-        tex_coords_index: usize,
-    },
+struct TexturePixels<const IMAGE_SIZE: usize> {
+    pixels: [u8; IMAGE_SIZE],
+}
+
+struct PBRMetallicRoughness {
+    roughness: f32,
+    metallicness: f32,
+    base_color_factor: [f32; 4],
+    texture_idx: Option<usize>,
 }
 struct GltfMaterial {
     label: Option<String>,
@@ -168,8 +201,8 @@ struct GltfMaterial {
 }
 
 struct MaterialPalette {
-    textures: Vec<GltfTexture>,
-    materials: Vec<GltfMaterial>,
+    textures: Arc<[GltfTexture]>,
+    materials: Arc<[GltfMaterial]>,
 }
 
 pub struct GltfAsset {

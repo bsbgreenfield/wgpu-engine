@@ -3,7 +3,7 @@ use std::{fmt::Display, sync::Arc};
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError},
     renderer::{RenderError, RenderUpdateError},
-    util::types::{PNUJWVertex, PNUVertex, VIndex},
+    util::types::{GPUMaterialData, GPUTextureData, PNUJWVertex, PNUVertex, VIndex},
     world::WorldUpdateError,
 };
 
@@ -17,8 +17,8 @@ pub struct GPUAssetUploadJob {
     pub pnu_vertices: Option<Arc<[PNUVertex]>>,
     pub pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
     pub indices: Option<Arc<[VIndex]>>,
-    //pub textures: Option<Arc<[u8]>>,
-    //pub materials: Option<Arc<[GPUMaterialData]>>,
+    pub textures: Option<Arc<[GPUTextureData]>>,
+    pub materials: Option<Arc<[GPUMaterialData]>>,
 }
 
 impl GPUAssetUploadJob {
@@ -27,11 +27,15 @@ impl GPUAssetUploadJob {
         pnu_vertices: Option<Arc<[PNUVertex]>>,
         pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
         indices: Option<Arc<[VIndex]>>,
+        textures: Option<Arc<[GPUTextureData]>>,
+        materials: Option<Arc<[GPUMaterialData]>>,
     ) -> Result<Self, AssetLoadError> {
         if pnu_vertices.is_none() && pnujw_vertices.is_none() {
             return Err(AssetLoadError::NoVertexData);
         }
         Ok(Self {
+            materials,
+            textures,
             asset_handle,
             pnu_vertices,
             pnujw_vertices,

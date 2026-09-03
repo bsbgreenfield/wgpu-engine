@@ -2,7 +2,9 @@ use std::{fmt::Debug, marker::PhantomData};
 
 use crate::{
     animation::EntityAnimationData,
-    asset_manager::{Asset, AssetHandle, ProvidesAnimationData, ProvidesMeshData},
+    asset_manager::{
+        Asset, AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -171,4 +173,13 @@ impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
     fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output {
         asset.entity_animation(&self.animation_accessor, &self.mesh_accessor)
     }
+}
+pub enum MaterialAccessor {
+    All,
+    Index(usize),
+}
+
+pub struct MaterialComponent<T: ProvidesMaterialData + ?Sized> {
+    pub resource_backing: ResourceBacking<T>,
+    pub material_accessor: MaterialAccessor,
 }

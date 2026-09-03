@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::Deref};
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 pub type Mat4F32 = [[f32; 4]; 4];
 pub const MAT4_IDENTITY: Mat4F32 = [
@@ -112,7 +112,25 @@ pub fn mat4_from_cgmath(value: cgmath::Matrix4<f32>) -> Mat4F32 {
     [x, y, z, w]
 }
 
+// ************************* TEXTURE *********************
+
+#[derive(Debug)]
+pub struct GPUTextureData {
+    pub height: u32,
+    pub width: u32,
+    pub srgb: bool,
+    pub pixels: Arc<[u8]>,
+}
+
 // ************************* MATERIAL *********************
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GPUMaterialData {
+    pub base_color_factors: [f32; 4],
+    pub roughness: f32,
+    pub metallic: f32,
+    pub tex_modifier: u32,
+}
 
 // ************************* PNUJ *************************
 #[repr(C)]
