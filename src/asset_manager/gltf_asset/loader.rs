@@ -1,13 +1,18 @@
 use std::{
     error::Error,
     fs::{DirEntry, ReadDir, read_dir},
+    io::Cursor,
     path::PathBuf,
 };
 
 use base64::Engine;
 use gltf::Gltf;
+use image::DynamicImage;
 
-use crate::asset_manager::gltf_asset::{AssetSources, BinarySource, GltfLoadError, TextureSource};
+use crate::asset_manager::{
+    BinaryData,
+    gltf_asset::{AssetSources, BinarySource, GltfLoadError, TextureSource},
+};
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use base64::prelude::BASE64_STANDARD;
@@ -147,7 +152,7 @@ fn get_textures(
 pub(super) fn load_binary_data_from_source(
     gltf: &gltf::Gltf,
     sources: &AssetSources,
-) -> Result<(Vec<u8>, Vec<usize>), GltfLoadError> {
+) -> Result<BinaryData, GltfLoadError> {
     let mut res: Vec<u8> = Vec::new();
     let mut buffer_offsets: Vec<usize> = Vec::new();
     buffer_offsets.push(0);
@@ -174,5 +179,8 @@ pub(super) fn load_binary_data_from_source(
             BinarySource::Undefined => panic!("undefined source"),
         }
     }
-    Ok((res, buffer_offsets))
+    Ok(BinaryData {
+        buffer_offsets,
+        data: res,
+    })
 }

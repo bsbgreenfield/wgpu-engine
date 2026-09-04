@@ -40,6 +40,16 @@ pub enum BinarySource {
     Undefined,
 }
 
+impl PartialEq for BinarySource {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::BinFile(l0), Self::BinFile(r0)) => l0 == r0,
+            (Self::GLB(l0), Self::GLB(r0)) => l0 == r0,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
 impl Asset for GltfAsset {
     fn new(dir_name: &str) -> Result<super::UnloadedAssetData, AssetLoadError>
     where
@@ -54,51 +64,33 @@ impl Asset for GltfAsset {
         &self,
         asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob, AssetLoadError> {
-        let textures: Option<Arc<[GPUTextureData]>> = if !self.material_palette.textures.is_empty()
-        {
-            let texture_pixels = self
+        let materials: Option<Arc<[GPUMaterialData]>> = if !self.material_palette.is_empty() {
+            let material_data = self
                 .material_palette
-                .textures
                 .iter()
-                .map(|t| GPUTextureData {
-                    pixels: t.data.clone().into_rgba8().into_raw().into(),
-                    height: t.data.height(),
-                    width: t.data.width(),
-                    srgb: false,
-                });
-            Some(texture_pixels.collect())
+                .map(|m| {
+                    let pbr = &m.pbr_metallic_roughness;
+                    Some(GPUMaterialData {
+                        roughness: pbr.roughness,
+                        metallic: pbr.metallicness,
+                        base_color_factors: pbr.base_color_factor,
+                        tex_modifier: pbr.texture_idx.map_or(u32::MAX, |i| i as u32), // TODO:
+                                                                                      // have
+                                                                                      // zero be
+                                                                                      // white?
+                    })
+                })
+                .collect();
+            material_data
         } else {
             None
         };
-        let materials: Option<Arc<[GPUMaterialData]>> =
-            if !self.material_palette.materials.is_empty() {
-                let material_data = self
-                    .material_palette
-                    .materials
-                    .iter()
-                    .map(|m| {
-                        let pbr = &m.pbr_metallic_roughness;
-                        Some(GPUMaterialData {
-                            roughness: pbr.roughness,
-                            metallic: pbr.metallicness,
-                            base_color_factors: pbr.base_color_factor,
-                            tex_modifier: pbr.texture_idx.map_or(u32::MAX, |i| i as u32), // TODO:
-                                                                                          // have
-                                                                                          // zero be
-                                                                                          // white?
-                        })
-                    })
-                    .collect();
-                material_data
-            } else {
-                None
-            };
         GPUAssetUploadJob::new(
             asset_handle,
             Some(self.pnu_vertices.clone()),
             Some(self.pnujw_vertices.clone()),
             self.indices.as_ref().map(|i| i.clone()),
-            textures,
+            None,
             materials,
         )
     }
@@ -217,7 +209,7 @@ struct MaterialPalette {
 }
 
 pub struct GltfAsset {
-    material_palette: MaterialPalette,
+    material_palette: Arc<[GltfMaterial]>,
     node_tree: Vec<Arc<GltfNode>>,
     meshes: Vec<Mesh>,
     pnujw_vertices: Arc<[PNUJWVertex]>,

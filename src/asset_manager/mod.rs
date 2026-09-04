@@ -4,14 +4,17 @@ use std::{
     range::Range,
 };
 
+use image::DynamicImage;
+
 use crate::{
     animation::EntityAnimationData,
     app::GPUAssetUploadJob,
-    asset_manager::gltf_asset::{
-        AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfValidationError,
+    asset_manager::{
+        asset_manager::{TextureKey, TextureRegistry},
+        gltf_asset::{AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
     },
     renderer::GPUAllocationHandle,
-    util::types::{LocalTransform, Mat4F32},
+    util::types::{GPUTextureData, LocalTransform, Mat4F32},
     world::{
         RenderKey,
         entity_manager::components::{AnimationAccessor, MaterialAccessor, MeshAcessor},
@@ -22,6 +25,7 @@ use crate::{
 pub mod asset_manager;
 pub mod gltf_asset;
 mod range_splicer;
+mod texture;
 #[derive(Debug)]
 pub enum AssetLoadError {
     Gltf(GltfLoadError),
@@ -112,10 +116,57 @@ impl Debug for UnloadedAssetData {
     }
 }
 
+struct BinaryData {
+    buffer_offsets: Vec<usize>,
+    data: Vec<u8>,
+}
+
 impl UnloadedAssetData {
-    fn load(&self) -> Result<Box<dyn Asset>, ModelBuilderError> {
+    fn load_binary(&self) -> Result<BinaryData, AssetLoadError> {
         match self {
-            Self::Gltf { sources, gltf } => GltfAsset::load(gltf, sources),
+            UnloadedAssetData::Gltf { sources, gltf } => {
+                return GltfAsset::load_binary_data(gltf, sources)
+                    .map_err(|e| AssetLoadError::Gltf(e));
+            }
+            #[cfg(test)]
+            UnloadedAssetData::Mock => todo!(),
+        }
+    }
+
+    fn intern_textures(
+        &self,
+        asset_handle: &AssetHandle,
+        bin: &BinaryData,
+        texture_registry: &mut TextureRegistry,
+    ) -> Result<Vec<usize>, AssetLoadError> {
+        match self {
+            Self::Gltf { sources, gltf } => {
+                let res = sources
+                    .textures
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, src)| match src {
+                        gltf_asset::TextureSource::ExternalFile(path_buf) => Ok(texture_registry
+                            .intern(TextureKey::File(path_buf.clone()), || {
+                                texture::load_texture_from_file(path_buf).unwrap()
+                            })),
+                        gltf_asset::TextureSource::BinarySource(binary_source) => {
+                            Ok(texture_registry
+                                .intern(TextureKey::Embedded(*asset_handle, idx), || {
+                                    texture::decode_embedded(gltf, bin, idx).unwrap()
+                                }))
+                        }
+                    });
+                res.collect()
+            }
+            #[cfg(test)]
+            UnloadedAssetData::Mock => todo!(),
+        }
+    }
+
+    fn load(&self, bin: &BinaryData) -> Result<Box<dyn Asset>, ModelBuilderError> {
+        match self {
+            Self::Gltf { sources, gltf } => GltfAsset::load(gltf, bin),
             #[cfg(test)]
             Self::Mock => Ok(Box::new(
                 crate::asset_manager::asset_manager::asset_mocks::MockAsset,

@@ -177,6 +177,8 @@ pub(crate) enum RenderUpdateDelta {
     InstanceDespawn(GPUInstanceHandle),
 }
 
+pub struct GPUTextureHandle(u32);
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct GPUInstanceHandle {
     pub(crate) prototype: PrototypeHandle,
