@@ -70,6 +70,7 @@ pub struct MeshCollectionDescriptor {
     pub resource_backing: ResourceBacking<dyn ProvidesMeshData>,
     pub mesh_accessor: MeshAcessor,
     pub animation: Option<AnimationComponent<dyn ProvidesAnimationData>>,
+    pub materials: Option<MaterialComponent<dyn ProvidesMaterialData>>,
 }
 
 impl MeshCollectionDescriptor {
@@ -81,6 +82,7 @@ impl MeshCollectionDescriptor {
             mesh_accessor,
             resource_backing: resource.erase(),
             animation: None,
+            materials: None,
         }
     }
 
@@ -94,6 +96,16 @@ impl MeshCollectionDescriptor {
             rigid_animation_mode: desc.rigid_animation_mode,
             skinned_animation_mode: desc.skinned_animation_mode,
             mesh_accessor: self.mesh_accessor.clone(),
+        });
+        self
+    }
+
+    pub fn with_embedded_material<T: ProvidesMaterialData + ProvidesMaterialData + 'static>(
+        mut self,
+    ) -> Self {
+        self.materials = Some(MaterialComponent {
+            resource_backing: self.resource_backing.clone().erase(),
+            material_accessor: MaterialAccessor::All,
         });
         self
     }
@@ -174,6 +186,8 @@ impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
         asset.entity_animation(&self.animation_accessor, &self.mesh_accessor)
     }
 }
+
+#[derive(Debug)]
 pub enum MaterialAccessor {
     All,
     Index(usize),
@@ -182,4 +196,31 @@ pub enum MaterialAccessor {
 pub struct MaterialComponent<T: ProvidesMaterialData + ?Sized> {
     pub resource_backing: ResourceBacking<T>,
     pub material_accessor: MaterialAccessor,
+}
+
+impl<T: ProvidesMaterialData + ?Sized> Debug for MaterialComponent<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MaterialComponent")
+            .field("Material Accessor", &self.material_accessor)
+            .finish()
+    }
+}
+
+impl<M: ProvidesMaterialData + ?Sized> Component for MaterialComponent<M> {
+    type AssetType = M;
+
+    type Output = Vec<usize>;
+
+    type Erased = MaterialComponent<dyn ProvidesMaterialData>;
+
+    fn erase(self) -> Self::Erased {
+        MaterialComponent {
+            resource_backing: self.resource_backing.erase(),
+            material_accessor: self.material_accessor,
+        }
+    }
+
+    fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output {
+        todo!()
+    }
 }

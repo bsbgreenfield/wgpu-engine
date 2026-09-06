@@ -63,6 +63,7 @@ mod scene_tests {
                     resource_backing: ResourceBacking::<dyn ProvidesMeshData>::new(asset),
                     mesh_accessor: MeshAcessor::All,
                     animation: None,
+                    materials: None,
                 },
             );
             entity

@@ -4,7 +4,7 @@ use crate::{
     common::instance::InstanceHandle,
     renderer::{
         GPUInstanceHandle, InstanceUploadJob,
-        bind_groups::BindGroupProvider,
+        bind_groups::{BGBufferType, BindGroupProvider},
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, VertexArenaError, gpu_arena::GPUArena,
             instance_arena::SharedInstanceArena,
@@ -45,7 +45,7 @@ impl LocalTransformBindGroup {
     ) -> Result<GPUUploadResult, VertexArenaError> {
         let upload_result = self.lt_arena.upload(job, queue, device);
         if self.bind_groups.is_empty() {
-            self.add_bind_group(device);
+            self.add_bind_group(device, BGBufferType::LocalTransform);
         }
         upload_result
     }
@@ -72,7 +72,7 @@ impl LocalTransformBindGroup {
 }
 
 impl BindGroupProvider for LocalTransformBindGroup {
-    fn add_bind_group(&mut self, device: &wgpu::Device) {
+    fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType) {
         let bgl = Self::get_bind_group_layout(device);
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lt bind group"),
@@ -91,34 +91,16 @@ impl BindGroupProvider for LocalTransformBindGroup {
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("LT bind group layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZero::<u64>::new(size_of::<Mat4F32>() as u64),
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
+                count: None,
+            }],
         })
     }
 

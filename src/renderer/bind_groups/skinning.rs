@@ -6,7 +6,7 @@ use crate::{
     common::instance::InstanceHandle,
     renderer::{
         GPUInstanceHandle, InstanceUploadJob,
-        bind_groups::BindGroupProvider,
+        bind_groups::{BGBufferType, BindGroupProvider},
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, VertexArenaError, gpu_arena::GPUArena,
             instance_arena::SharedInstanceArena,
@@ -55,7 +55,7 @@ impl SkinningBindGroup {
         let jt_result = self.joint_arena.upload(joint_job, queue, device)?;
         let _ibm_offset = self.ibm_arena.upload(ibm_job, queue, device)?;
         if self.bind_groups.is_empty() {
-            self.add_bind_group(device);
+            self.add_bind_group(device, BGBufferType::JointData);
         }
         Ok(jt_result)
     }
@@ -109,7 +109,7 @@ impl SkinningBindGroup {
     }
 }
 impl BindGroupProvider for SkinningBindGroup {
-    fn add_bind_group(&mut self, device: &wgpu::Device) {
+    fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType) {
         let bgl = Self::get_bind_group_layout(device);
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Skinning Bind Group"),

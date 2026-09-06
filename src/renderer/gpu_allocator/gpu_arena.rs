@@ -10,7 +10,7 @@ use crate::{
             allocation_table::AllocationTable,
         },
     },
-    util::types::{GPUMaterialData, GPUTextureData, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{GPUMaterialData, ModelVertex, PNUJWVertex, PNUVertex, VIndex},
 };
 
 // pub(crate): parameter type of `GPUUploadable::upload`, which is pub(crate).
@@ -20,7 +20,6 @@ pub(crate) struct GPUArena<T: GPUUploadable> {
     chunks: Vec<GPUChunk<T>>,
     alloc_table: AllocationTable<T::GPUHandle>,
     label: Option<String>,
-    bind_group_layout: Option<wgpu::BindGroupLayout>,
 }
 
 impl<T: GPUUploadable> GPUArena<T> {
@@ -241,7 +240,6 @@ impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
             chunks: vec![],
             alloc_table: AllocationTable::new(),
             label: Some(T::arena_label()),
-            bind_group_layout: None,
         }
     }
 

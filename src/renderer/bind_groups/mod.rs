@@ -6,7 +6,7 @@ use crate::{
         BufferType, GPUInstanceHandle, InstanceUploadJob, PrototypeHandle, StorageData,
         bind_groups::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
-            skinning::SkinningBindGroup,
+            materials::MaterialBindGroup, skinning::SkinningBindGroup,
         },
         gpu_allocator::{GPUUploadResult, VertexArenaError},
     },
@@ -15,12 +15,24 @@ use crate::{
 
 pub(super) mod instance_data;
 pub(super) mod local_transforms;
+pub(super) mod materials;
 pub(super) mod skinning;
+
+pub(super) enum BGBufferType {
+    LocalTransform,
+    GlobalTransform,
+    InstanceRecordData,
+    JointData,
+    Texture64,
+    Texture128,
+    Texture256,
+    Texture1024,
+}
 
 pub(super) trait BindGroupProvider {
     fn get_bind_group(&self, alloc_handle: &InstanceHandle) -> &wgpu::BindGroup;
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
-    fn add_bind_group(&mut self, device: &wgpu::Device);
+    fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType);
     fn new() -> Self;
     fn despawn(&mut self, handle: &GPUInstanceHandle);
 }
@@ -40,6 +52,7 @@ pub(super) struct BindGroupCollection {
     pub(super) local_transforms: LocalTransformBindGroup,
     pub(super) skinning: SkinningBindGroup,
     pub(super) instance_data: InstanceDataBindGroup,
+    pub(super) material_bind_group: MaterialBindGroup,
 }
 
 impl BindGroupCollection {
@@ -160,6 +173,7 @@ impl BindGroupCollection {
             local_transforms: LocalTransformBindGroup::new(),
             skinning: SkinningBindGroup::new(),
             instance_data: InstanceDataBindGroup::new(),
+            material_bind_group: MaterialBindGroup::new(),
         }
     }
     pub(super) fn despawn(&mut self, handle: &GPUInstanceHandle) {

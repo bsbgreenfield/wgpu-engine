@@ -8,10 +8,11 @@ use std::error::Error;
 
 use crate::renderer::GPUAllocationHandle;
 use crate::renderer::GPUInstanceHandle;
+use crate::renderer::GPUTextureHandle;
 use crate::renderer::GPUUploadable;
 use crate::renderer::StorageData;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
-use crate::util::types::GPUMaterialData;
+use crate::util::types::GPUTextureData;
 use crate::util::types::ModelVertex;
 use crate::util::types::{
     GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
@@ -22,6 +23,7 @@ mod allocation_table;
 mod free_list;
 pub(super) mod gpu_arena;
 pub(super) mod instance_arena;
+pub(super) mod texture_arena;
 
 static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
 
@@ -84,6 +86,7 @@ pub(crate) enum GPUUploadResult {
     },
     VertexDataUploadSuccess,
     MaterialUploadSucess,
+    TextureUploadSuccess,
 }
 pub(super) trait GPUAllocator<T: GPUUploadable> {
     type AllocationError: Error;
@@ -178,6 +181,11 @@ impl Error for VertexArenaError {}
 pub(crate) struct UploadMaterialJob<'frame> {
     data: &'frame [u8],
     alloc_handle: GPUAllocationHandle,
+}
+
+pub(crate) struct UploadTextureJob {
+    data: GPUTextureData,
+    texture_handle: GPUTextureHandle,
 }
 
 // pub(crate): `GPUUploadable::UploadJob` for PNU/PNUJW vertex uploads.

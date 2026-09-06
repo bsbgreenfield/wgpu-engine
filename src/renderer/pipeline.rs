@@ -4,7 +4,8 @@ use crate::{
         RenderCategory,
         bind_groups::{
             BindGroupProvider, instance_data::InstanceDataBindGroup,
-            local_transforms::LocalTransformBindGroup, skinning::SkinningBindGroup,
+            local_transforms::LocalTransformBindGroup, materials::MaterialBindGroup,
+            skinning::SkinningBindGroup,
         },
     },
     util::types::{ModelVertex, PNUJWVertex, PNUVertex},

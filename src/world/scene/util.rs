@@ -143,6 +143,7 @@ impl Scene {
                 mesh_accessor: MeshAcessor::All,
                 resource_backing: box_asset.erase(),
                 animation: None,
+                materials: None,
             },
         ); // mesh
         //
@@ -180,6 +181,7 @@ impl Scene {
                 mesh_accessor: MeshAcessor::All,
                 resource_backing: box_asset.erase(),
                 animation: None,
+                materials: None,
             },
         ); // mesh
 
@@ -223,6 +225,7 @@ impl Scene {
                 resource_backing: fox_asset.erase(),
                 animation: None,
                 mesh_accessor: MeshAcessor::All,
+                materials: None,
             },
         ); // mesh
 

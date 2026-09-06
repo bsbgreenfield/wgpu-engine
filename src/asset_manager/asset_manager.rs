@@ -147,6 +147,9 @@ impl TextureRegistry {
                 .expect("texture wasnt properly registered");
             match &registered_texture.residency {
                 TextureResidency::CPUStaged => {
+                    todo!("shouldnt happen?");
+                }
+                TextureResidency::PendingGPU => {
                     uploadable_texture_data.push(
                         registered_texture
                             .data
@@ -154,7 +157,6 @@ impl TextureRegistry {
                             .expect("if its cpu staged, there must be data here"),
                     );
                 }
-                TextureResidency::PendingGPU => todo!(),
                 TextureResidency::GPU(gputexture_handle) => todo!(),
                 TextureResidency::PendingUnloadGPU(gputexture_handle) => todo!(),
             }

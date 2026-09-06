@@ -354,21 +354,23 @@ impl Renderer {
                             let pipeline = &pipeline_collection.opaque_static;
                             render_pass.set_pipeline(&pipeline.pipeline);
                             for draw_entry in draw_packet.pnu.iter() {
+                                // resolve vertex
                                 let (vertex_alloc_range, v_buffer) =
                                     self.vertex_arenas.static_arena.resolve(draw_entry.0);
-
                                 render_pass.set_vertex_buffer(0, v_buffer.slice(..));
+
+                                // resolve index
+                                let (index_alloc_range, i_buffer) =
+                                    self.vertex_arenas.index_arena.resolve(draw_entry.0);
+                                render_pass.set_index_buffer(
+                                    i_buffer.slice(..),
+                                    wgpu::IndexFormat::Uint16,
+                                );
 
                                 for draw in draw_entry.1.iter() {
                                     render_pass
                                         .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
                                     if let Some(indices) = &draw.indices {
-                                        let (index_alloc_range, i_buffer) =
-                                            self.vertex_arenas.index_arena.resolve(draw_entry.0);
-                                        render_pass.set_index_buffer(
-                                            i_buffer.slice(..),
-                                            wgpu::IndexFormat::Uint16,
-                                        );
                                         render_pass.draw_indexed(
                                             DrawSet::within(indices, &index_alloc_range).into(),
                                             DrawSet::within(&draw.primitives, &vertex_alloc_range)

@@ -1,0 +1,204 @@
+use std::{collections::HashMap, fmt::Display};
+
+use wgpu::TextureFormat;
+
+use crate::{
+    renderer::{
+        GPUTextureHandle,
+        bind_groups::BGBufferType,
+        gpu_allocator::{GPUUploadResult, UploadTextureJob, allocation_table::AllocationTable},
+    },
+    util::types::GPUTextureData,
+};
+
+#[derive(Debug)]
+enum TextureAllocationError {
+    TextureWriteFailed,
+    NoLayersLeft,
+}
+
+impl Display for TextureAllocationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TextureAllocationError::TextureWriteFailed => {
+                write!(f, "Texture could not be allocated")
+            }
+            TextureAllocationError::NoLayersLeft => write!(f, "This chunk is full"),
+        }
+    }
+}
+
+impl std::error::Error for TextureAllocationError {}
+
+const NUM_LAYERS: u32 = 16;
+struct TextureAllocator {
+    free_layers: Vec<usize>,
+}
+
+impl TextureAllocator {
+    fn new() -> Self {
+        let fl = Vec::from_iter(0..NUM_LAYERS);
+        assert!(fl.first() == Some(&0) && fl.last() == Some(&16));
+        Self {
+            free_layers: Vec::from_iter(0..NUM_LAYERS as usize),
+        }
+    }
+}
+
+struct TextureChunk {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    allocator: TextureAllocator,
+    dimension: u32,
+}
+
+impl TextureChunk {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat, dimension: u32) -> Self {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(format!("Texture chunk for dimension: {dimension}").as_str()),
+            size: wgpu::Extent3d {
+                width: dimension,
+                height: dimension,
+                depth_or_array_layers: NUM_LAYERS,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[TextureFormat::Rgba8Unorm, TextureFormat::Rgba8UnormSrgb],
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
+        Self {
+            texture,
+            view,
+            allocator: TextureAllocator::new(),
+            dimension,
+        }
+    }
+
+    fn gpu_alloc(
+        &mut self,
+        gpu_texture: GPUTextureData,
+        queue: &wgpu::Queue,
+    ) -> Result<usize, TextureAllocationError> {
+        let layer = self
+            .allocator
+            .free_layers
+            .pop()
+            .ok_or(TextureAllocationError::NoLayersLeft)?;
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer as u32,
+                },
+                aspect: wgpu::TextureAspect::default(),
+            },
+            gpu_texture.pixels.as_ref(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * gpu_texture.width),
+                rows_per_image: Some(gpu_texture.height),
+            },
+            wgpu::Extent3d {
+                width: gpu_texture.width,
+                height: gpu_texture.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(layer)
+    }
+}
+
+pub struct TextureArena {
+    chunks: [Option<TextureChunk>; 4],
+    alloc_table: AllocationTable<GPUTextureHandle>,
+}
+
+impl UploadTextureJob {
+    fn new_chunk(&self, device: &wgpu::Device) -> TextureChunk {
+        TextureChunk::new(device, TextureFormat::Rgba8Unorm, self.data.height)
+    }
+}
+
+impl TextureArena {
+    pub fn new() -> Self {
+        Self {
+            chunks: [None, None, None, None],
+            alloc_table: AllocationTable::new(),
+        }
+    }
+    const fn idx_from_dimension(dimension: u32) -> usize {
+        match dimension {
+            64 => 0,
+            128 => 1,
+            256 => 2,
+            1024 => 3,
+            _ => panic!(),
+        }
+    }
+    pub fn upload(
+        &mut self,
+        job: UploadTextureJob,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> GPUUploadResult {
+        let chunk_idx = Self::idx_from_dimension(job.data.height);
+        let maybe_chunk = &mut self.chunks[chunk_idx];
+        let chunk = if maybe_chunk.is_some() {
+            maybe_chunk.as_mut().unwrap()
+        } else {
+            maybe_chunk.insert(job.new_chunk(device))
+        };
+
+        match chunk.gpu_alloc(job.data, queue) {
+            Ok(layer) => {
+                self.alloc_table
+                    .allocate(job.texture_handle, chunk_idx, layer);
+                return GPUUploadResult::TextureUploadSuccess;
+            }
+            Err(_) => {
+                panic!("texture upload fail")
+            }
+        }
+    }
+
+    pub fn get_texture_ref(&self, ty: BGBufferType) -> &wgpu::TextureView {
+        match ty {
+            BGBufferType::Texture64 => {
+                &self.chunks[Self::idx_from_dimension(64)]
+                    .as_ref()
+                    .expect("should be initialized")
+                    .view
+            }
+            BGBufferType::Texture128 => {
+                &self.chunks[Self::idx_from_dimension(128)]
+                    .as_ref()
+                    .expect("should be initialized")
+                    .view
+            }
+            BGBufferType::Texture256 => {
+                &self.chunks[Self::idx_from_dimension(256)]
+                    .as_ref()
+                    .expect("should be initialized")
+                    .view
+            }
+            BGBufferType::Texture1024 => {
+                &self.chunks[Self::idx_from_dimension(1024)]
+                    .as_ref()
+                    .expect("should be initialized")
+                    .view
+            }
+            _ => panic!("must be a texture type"),
+        }
+    }
+}
