@@ -198,7 +198,7 @@ struct PBRMetallicRoughness {
     base_color_factor: [f32; 4],
     texture_idx: Option<usize>,
 }
-struct GltfMaterial {
+pub struct GltfMaterial {
     label: Option<String>,
     pbr_metallic_roughness: PBRMetallicRoughness,
 }

@@ -260,7 +260,8 @@ impl Scene {
                 accessor: AnimationAccessor::All,
                 rigid_animation_mode: AnimationMode::Shared,
                 skinned_animation_mode: AnimationMode::Independent,
-            });
+            })
+            .with_embedded_materials::<GltfAsset>();
 
         world
             .entity_manager

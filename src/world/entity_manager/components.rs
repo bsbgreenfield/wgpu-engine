@@ -1,9 +1,10 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 use crate::{
     animation::EntityAnimationData,
     asset_manager::{
         Asset, AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
+        gltf_asset::GltfMaterial,
     },
 };
 
@@ -100,7 +101,7 @@ impl MeshCollectionDescriptor {
         self
     }
 
-    pub fn with_embedded_material<T: ProvidesMaterialData + ProvidesMaterialData + 'static>(
+    pub fn with_embedded_materials<T: ProvidesMaterialData + ProvidesMaterialData + 'static>(
         mut self,
     ) -> Self {
         self.materials = Some(MaterialComponent {
@@ -209,7 +210,7 @@ impl<T: ProvidesMaterialData + ?Sized> Debug for MaterialComponent<T> {
 impl<M: ProvidesMaterialData + ?Sized> Component for MaterialComponent<M> {
     type AssetType = M;
 
-    type Output = Vec<usize>;
+    type Output = Arc<[GltfMaterial]>;
 
     type Erased = MaterialComponent<dyn ProvidesMaterialData>;
 
@@ -221,6 +222,6 @@ impl<M: ProvidesMaterialData + ?Sized> Component for MaterialComponent<M> {
     }
 
     fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output {
-        todo!()
+        asset.material_data(&self.material_accessor)
     }
 }

@@ -2,7 +2,8 @@ use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
 
 use crate::{
     asset_manager::{
-        AssetHandle, ProvidesAnimationData, ProvidesMeshData, asset_manager::AssetManager,
+        AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
+        asset_manager::AssetManager,
     },
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::PrototypeHandle,
@@ -10,8 +11,8 @@ use crate::{
         entity_manager::{
             EntityManagerError, Renderables,
             components::{
-                AnimationComponent, AnimationMode, Component, MeshCollectionComponent,
-                MeshCollectionDescriptor,
+                AnimationComponent, AnimationMode, Component, MaterialComponent,
+                MeshCollectionComponent, MeshCollectionDescriptor,
             },
         },
         world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},
@@ -21,6 +22,7 @@ use crate::{
 pub struct EntityManager {
     available_ids: Vec<std::range::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent<dyn ProvidesMeshData>, 100>,
+    materials: SparseSet<MaterialComponent<dyn ProvidesMaterialData>, 100>,
     animations: SparseSet<AnimationComponent<dyn ProvidesAnimationData>, 100>,
 }
 
@@ -100,6 +102,13 @@ impl EntityManager {
             renderables.animations = Some(entity_animations);
         }
 
+        if let Some(materials_component) = self.materials.get(instance_handle.entity_handle.0 as usize)
+        {
+            let asset = asset_manager.get_loaded_asset(&materials_component.resource_backing.asset_handle);
+
+            let material_data = materials_component.get_output_data(asset.as_ma)
+        }
+
         Ok(renderables)
     }
 
@@ -132,6 +141,7 @@ impl EntityManager {
             available_ids: vec![Range::from(0..10000).into()],
             mesh_collections: SparseSet::new(),
             animations: SparseSet::new(),
+            materials: SparseSet::new(),
         }
     }
 
@@ -158,6 +168,17 @@ impl EntityManager {
         A: ProvidesAnimationData,
     {
         self.animations.insert(entity.0 as usize, animation.erase());
+    }
+
+    pub fn add_material_for_entity<M>(
+        &mut self,
+        entity_handle: &EntityHandle,
+        material_component: MaterialComponent<M>,
+    ) where
+        M: ProvidesMaterialData,
+    {
+        self.materials
+            .insert(entity_handle.0 as usize, material_component.erase());
     }
 }
 

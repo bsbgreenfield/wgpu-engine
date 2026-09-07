@@ -2,6 +2,7 @@ use std::{
     fmt::{Debug, Display},
     ops::Deref,
     range::Range,
+    sync::Arc,
 };
 
 use image::DynamicImage;
@@ -11,7 +12,9 @@ use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
         asset_manager::{TextureKey, TextureRegistry},
-        gltf_asset::{AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfValidationError},
+        gltf_asset::{
+            AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfMaterial, GltfValidationError,
+        },
     },
     renderer::GPUAllocationHandle,
     util::types::{GPUTextureData, LocalTransform, Mat4F32},
@@ -187,6 +190,7 @@ pub trait Asset {
 
     fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
+    fn as_materials_provider(&self) -> Option<&dyn ProvidesMaterialData>;
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AssetResidency {
@@ -302,10 +306,8 @@ pub trait ProvidesAnimationData: Asset {
     ) -> EntityAnimationData;
 }
 
-pub struct EntityMaterials;
-
 pub trait ProvidesMaterialData: Asset {
-    fn material_data<'a>(&self, material_accessor: &'a MaterialAccessor) -> EntityMaterials;
+    fn material_data<'a>(&self, material_accessor: &'a MaterialAccessor) -> Arc<[GltfMaterial]>;
 }
 
 pub struct LoadedAsset<'a> {

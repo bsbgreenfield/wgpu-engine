@@ -8,7 +8,7 @@ use crate::{
         AssetLoadError, MeshRenderables, ProvidesAnimationData, ProvidesMaterialData,
         ProvidesMeshData,
         gltf_asset::{
-            GltfAsset,
+            GltfAsset, GltfMaterial,
             util::{
                 collect_mesh_instances, collect_mesh_instances_with_jts, get_root_node,
                 skin_offset_of,
@@ -211,7 +211,12 @@ impl ProvidesMaterialData for GltfAsset {
     fn material_data<'a>(
         &self,
         material_accessor: &'a crate::world::entity_manager::components::MaterialAccessor,
-    ) -> crate::asset_manager::EntityMaterials {
-        todo!()
+    ) -> Arc<[GltfMaterial]> {
+        match material_accessor {
+            crate::world::entity_manager::components::MaterialAccessor::All => {
+                self.material_palette.clone()
+            }
+            crate::world::entity_manager::components::MaterialAccessor::Index(_) => todo!(),
+        }
     }
 }
