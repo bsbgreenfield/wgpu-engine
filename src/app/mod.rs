@@ -18,12 +18,16 @@ pub enum GPUAssetUploadJob {
         pnu_vertices: Option<Arc<[PNUVertex]>>,
         pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
         indices: Option<Arc<[VIndex]>>,
+        materials: Option<Vec<GPUMaterialData>>,
     },
     MaterialData {
         asset_handle: AssetHandle,
         material_data: GPUMaterialData,
     },
-    TextureData {},
+    TextureData {
+        asset_handle: AssetHandle,
+        data: GPUTextureData,
+    },
 }
 
 impl GPUAssetUploadJob {
@@ -32,6 +36,7 @@ impl GPUAssetUploadJob {
         pnu_vertices: Option<Arc<[PNUVertex]>>,
         pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
         indices: Option<Arc<[VIndex]>>,
+        materials: Option<Vec<GPUMaterialData>>,
     ) -> Result<Self, AssetLoadError> {
         if pnu_vertices.is_none() && pnujw_vertices.is_none() {
             return Err(AssetLoadError::NoVertexData);
@@ -41,6 +46,7 @@ impl GPUAssetUploadJob {
             pnu_vertices,
             pnujw_vertices,
             indices,
+            materials,
         })
     }
 }

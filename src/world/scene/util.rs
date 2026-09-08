@@ -1,12 +1,15 @@
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
 use crate::{
-    asset_manager::gltf_asset::GltfAsset,
+    asset_manager::{
+        gltf_asset::{GltfAsset, TextureSource},
+        texture::TextureAsset,
+    },
     common::entity::EntityHandle,
     world::{
         entity_manager::components::{
-            AnimationAccessor, AnimationComponentDescriptor, AnimationMode, MeshAcessor,
-            MeshCollectionDescriptor,
+            AnimationMode, ComponentAccessor, ComponentDescriptor, EmbeddedComponent,
+            MaterialComponentDescriptor, MaterialTextureSource, MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
         scene::{Scene, SceneId, SceneLoadLevel, builder::SceneBuilder, scene::Spawn},
@@ -23,7 +26,7 @@ impl Scene {
 
         world.entity_manager.add_mesh_collection_for_entity(
             &box_entity,
-            MeshCollectionDescriptor::new(box_asset, MeshAcessor::All),
+            MeshCollectionDescriptor::new(box_asset.into(), ComponentAccessor::All),
         );
 
         // a parent box and a child box
@@ -75,7 +78,7 @@ impl Scene {
         let buggy_entity = world.entity_manager.new_entity()?;
         world.entity_manager.add_mesh_collection_for_entity(
             &buggy_entity,
-            MeshCollectionDescriptor::new(buggy_asset, MeshAcessor::All),
+            MeshCollectionDescriptor::new(buggy_asset.into(), ComponentAccessor::All),
         );
 
         let mut builder = SceneBuilder::new();
@@ -86,14 +89,12 @@ impl Scene {
 
         world.entity_manager.add_mesh_collection_for_entity(
             &brain_entity,
-            MeshCollectionDescriptor::new(brain_asset.clone(), MeshAcessor::All).with_animation(
-                AnimationComponentDescriptor {
-                    resource_backing: brain_asset,
-                    accessor: AnimationAccessor::All,
+            MeshCollectionDescriptor::new(brain_asset.clone().into(), ComponentAccessor::All)
+                .with_embedded_component(EmbeddedComponent::Animation {
+                    accessor: ComponentAccessor::All,
                     rigid_animation_mode: AnimationMode::Shared,
                     skinned_animation_mode: AnimationMode::Shared,
-                },
-            ),
+                }),
         );
         builder = builder.add_entity(brain_entity);
         let scene_id = builder.create(world)?;
@@ -140,8 +141,8 @@ impl Scene {
         world.entity_manager.add_mesh_collection_for_entity(
             &box_entity,
             MeshCollectionDescriptor {
-                mesh_accessor: MeshAcessor::All,
-                resource_backing: box_asset.erase(),
+                mesh_accessor: ComponentAccessor::All,
+                resource_backing: box_asset.into(),
                 animation: None,
                 materials: None,
             },
@@ -178,7 +179,7 @@ impl Scene {
         world.entity_manager.add_mesh_collection_for_entity(
             &box_entity,
             MeshCollectionDescriptor {
-                mesh_accessor: MeshAcessor::All,
+                mesh_accessor: ComponentAccessor::All,
                 resource_backing: box_asset.erase(),
                 animation: None,
                 materials: None,
@@ -224,7 +225,7 @@ impl Scene {
             MeshCollectionDescriptor {
                 resource_backing: fox_asset.erase(),
                 animation: None,
-                mesh_accessor: MeshAcessor::All,
+                mesh_accessor: ComponentAccessor::All,
                 materials: None,
             },
         ); // mesh
@@ -251,17 +252,18 @@ impl Scene {
         world: &mut crate::world::world::World,
     ) -> Result<(), crate::world::WorldInitError> {
         let fox_asset = world.register_asset::<GltfAsset>("fox")?; // asset
-
+        let fox_texture = world.register_asset::<TextureAsset>("Texture.png")?;
         let fox_entity = world.entity_manager.new_entity()?;
 
-        let mcc = MeshCollectionDescriptor::new(fox_asset.clone(), MeshAcessor::All)
-            .with_animation(AnimationComponentDescriptor {
-                resource_backing: fox_asset,
-                accessor: AnimationAccessor::All,
+        let mcc = MeshCollectionDescriptor::new(fox_asset.clone().into(), ComponentAccessor::All)
+            .with_embedded_component(EmbeddedComponent::Animation {
+                accessor: ComponentAccessor::All,
                 rigid_animation_mode: AnimationMode::Shared,
                 skinned_animation_mode: AnimationMode::Independent,
             })
-            .with_embedded_materials::<GltfAsset>();
+            .with_material(MaterialComponentDescriptor::Embedded {
+                texture: Some(MaterialTextureSource::External(fox_texture.into())),
+            });
 
         world
             .entity_manager
@@ -301,11 +303,11 @@ impl Scene {
 
         world.entity_manager.add_mesh_collection_for_entity(
             &box_entity,
-            MeshCollectionDescriptor::new(box_asset, MeshAcessor::All),
+            MeshCollectionDescriptor::new(box_asset.into(), ComponentAccessor::All),
         ); // mesh
         world.entity_manager.add_mesh_collection_for_entity(
             &fox_entity,
-            MeshCollectionDescriptor::new(fox_asset, MeshAcessor::All),
+            MeshCollectionDescriptor::new(fox_asset.into(), ComponentAccessor::All),
         ); // mesh
         let builder = SceneBuilder::new();
         let id = builder
@@ -350,14 +352,12 @@ impl Scene {
         let box_anim_entity = world.entity_manager.new_entity()?;
         world.entity_manager.add_mesh_collection_for_entity(
             &box_anim_entity,
-            MeshCollectionDescriptor::new(box_anim_asset.clone(), MeshAcessor::All).with_animation(
-                AnimationComponentDescriptor {
-                    accessor: AnimationAccessor::All,
-                    resource_backing: box_anim_asset,
+            MeshCollectionDescriptor::new(box_anim_asset.clone().into(), ComponentAccessor::All)
+                .with_embedded_component(EmbeddedComponent::Animation {
+                    accessor: ComponentAccessor::All,
                     rigid_animation_mode: AnimationMode::Shared,
                     skinned_animation_mode: AnimationMode::Shared,
-                },
-            ),
+                }),
         );
 
         let id = SceneBuilder::new()
@@ -389,10 +389,9 @@ impl Scene {
     ) -> Result<(), crate::world::WorldInitError> {
         let fox_asset = world.register_asset::<GltfAsset>("fox")?;
         let fox_entity = world.entity_manager.new_entity()?;
-        let mcc = MeshCollectionDescriptor::new(fox_asset.clone(), MeshAcessor::All)
-            .with_animation(AnimationComponentDescriptor {
-                resource_backing: fox_asset,
-                accessor: AnimationAccessor::All,
+        let mcc = MeshCollectionDescriptor::new(fox_asset.clone().into(), ComponentAccessor::All)
+            .with_embedded_component(EmbeddedComponent::Animation {
+                accessor: ComponentAccessor::All,
                 rigid_animation_mode: AnimationMode::Independent,
                 skinned_animation_mode: AnimationMode::Independent,
             });

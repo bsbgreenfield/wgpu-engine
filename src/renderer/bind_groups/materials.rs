@@ -1,7 +1,11 @@
 use crate::{
     renderer::{
+        GPUAllocationHandle,
         bind_groups::{BGBufferType, BindGroupProvider},
-        gpu_allocator::{GPUAllocator, gpu_arena::GPUArena, texture_arena::TextureArena},
+        gpu_allocator::{
+            GPUAllocator, GPUUploadResult, UploadMaterialJob, UploadTextureJob, VertexArenaError,
+            gpu_arena::GPUArena, texture_arena::TextureArena,
+        },
     },
     util::types::GPUMaterialData,
 };
@@ -11,6 +15,34 @@ pub(in crate::renderer) struct MaterialBindGroup {
     samplers: Vec<wgpu::Sampler>,
     material_arena: GPUArena<GPUMaterialData>,
     texture_arena: TextureArena,
+}
+
+impl MaterialBindGroup {
+    pub(in crate::renderer) fn upload_materials(
+        &mut self,
+        job: UploadMaterialJob,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<GPUUploadResult, VertexArenaError> {
+        self.material_arena.upload(job, queue, device)
+    }
+
+    pub(in crate::renderer) fn upload_texture(
+        &mut self,
+        job: UploadTextureJob,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<GPUUploadResult, VertexArenaError> {
+        Ok(self.texture_arena.upload(job, queue, device))
+    }
+
+    pub(in crate::renderer) fn unload(
+        &mut self,
+        alloc_handle: &GPUAllocationHandle,
+    ) -> Result<(), VertexArenaError> {
+        // TODO:
+        Ok(())
+    }
 }
 
 impl BindGroupProvider for MaterialBindGroup {

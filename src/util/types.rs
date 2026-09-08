@@ -114,7 +114,7 @@ pub fn mat4_from_cgmath(value: cgmath::Matrix4<f32>) -> Mat4F32 {
 
 // ************************* TEXTURE *********************
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GPUTextureData {
     pub height: u32,
     pub width: u32,

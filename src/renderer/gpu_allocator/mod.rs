@@ -179,13 +179,13 @@ impl Display for VertexArenaError {
 impl Error for VertexArenaError {}
 
 pub(crate) struct UploadMaterialJob<'frame> {
-    data: &'frame [u8],
-    alloc_handle: GPUAllocationHandle,
+    pub(super) data: &'frame [u8],
+    pub(super) alloc_handle: GPUAllocationHandle,
 }
 
-pub(crate) struct UploadTextureJob {
-    data: GPUTextureData,
-    texture_handle: GPUTextureHandle,
+pub(crate) struct UploadTextureJob<'frame> {
+    pub(super) data: &'frame GPUTextureData,
+    pub(super) texture_handle: GPUAllocationHandle,
 }
 
 // pub(crate): `GPUUploadable::UploadJob` for PNU/PNUJW vertex uploads.

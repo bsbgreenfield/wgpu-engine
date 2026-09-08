@@ -1,9 +1,13 @@
-use std::{io::Cursor, path::PathBuf};
+use std::{cell::Cell, error::Error, io::Cursor, path::PathBuf};
 
-use image::ImageReader;
+use image::{DynamicImage, ImageReader};
 
 use crate::{
-    asset_manager::{BinaryData, gltf_asset::GltfLoadError},
+    app::GPUAssetUploadJob,
+    asset_manager::{
+        Asset, AssetSource, BinaryData, ModelBuilderError, ProvidesTextureData,
+        gltf_asset::GltfLoadError,
+    },
     util::types::GPUTextureData,
 };
 
@@ -23,7 +27,17 @@ pub fn load_texture_from_file(path: &PathBuf) -> Result<GPUTextureData, GltfLoad
     })
 }
 
-pub fn decode_embedded(
+fn load_image_from_file(path: &PathBuf) -> Result<DynamicImage, Box<dyn Error>> {
+    let data = std::fs::read(path)?;
+    let image = image::ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .expect("invalid image type")
+        .decode()
+        .expect("failed to decode image");
+    Ok(image)
+}
+
+pub(super) fn decode_embedded(
     gltf: &gltf::Gltf,
     bin: &BinaryData,
     idx: usize,
@@ -46,4 +60,75 @@ pub fn decode_embedded(
         srgb: false,
         pixels: image.to_rgba8().into_raw().into(),
     })
+}
+
+pub struct TextureAsset {
+    data: Cell<Option<DynamicImage>>,
+}
+
+impl ProvidesTextureData for TextureAsset {
+    fn texture_data(
+        &self,
+        texture_accessor: &crate::world::entity_manager::components::ComponentAccessor,
+    ) -> DynamicImage {
+        self.data.take().unwrap()
+    }
+}
+
+impl AssetSource for TextureAsset {
+    fn new(dir_name: &str) -> Result<super::UnloadedAssetData, super::AssetLoadError>
+    where
+        Self: Sized,
+    {
+        let dir_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("res")
+            .join("textures")
+            .join(dir_name);
+        return Ok(super::UnloadedAssetData::Texture(dir_path));
+    }
+}
+impl Asset for TextureAsset {
+    fn get_upload_job(
+        &self,
+        asset_handle: super::AssetHandle,
+    ) -> Result<crate::app::GPUAssetUploadJob, super::AssetLoadError> {
+        let image = self.data.take().unwrap();
+
+        Ok(GPUAssetUploadJob::TextureData {
+            asset_handle,
+            data: GPUTextureData {
+                height: image.height(),
+                width: image.width(),
+                srgb: false,
+                pixels: image.to_rgba8().into_raw().into(),
+            },
+        })
+    }
+
+    fn as_mesh_provider(&self) -> Option<&dyn super::ProvidesMeshData> {
+        None
+    }
+
+    fn as_animation_provider(&self) -> Option<&dyn super::ProvidesAnimationData> {
+        None
+    }
+
+    fn as_materials_provider(&self) -> Option<&dyn super::ProvidesMaterialData> {
+        None
+    }
+
+    fn intern_payload(&self, job: &mut crate::app::GPUAssetUploadJob) {
+        todo!()
+    }
+    fn as_texture_provider(&self) -> Option<&dyn super::ProvidesTextureData> {
+        Some(self)
+    }
+}
+impl TextureAsset {
+    pub fn load(path: &PathBuf) -> Result<Box<dyn Asset>, ModelBuilderError> {
+        let data = load_image_from_file(path).expect("texture laod failed");
+        Ok(Box::new(TextureAsset {
+            data: Cell::new(Some(data)),
+        }))
+    }
 }

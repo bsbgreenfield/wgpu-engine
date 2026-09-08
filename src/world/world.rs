@@ -263,11 +263,9 @@ impl World {
             .poll_jobs(&mut self.asset_manager)?
         {
             if matches!(transition.new, SceneLoadLevel::PendingGPU) {
-                let jobs: Vec<GPUAssetUploadJob> =
-                    self.asset_manager.get_upload_jobs_for(transition.handle)?;
-                for job in jobs {
-                    self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
-                }
+                let job: GPUAssetUploadJob =
+                    self.asset_manager.get_upload_job_for(transition.handle)?;
+                self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
             } else if transition.old == SceneLoadLevel::GPU {
                 println!("here and {:?}", transition.old);
                 let alloc_handle = self.asset_manager.alloc_handle_of(&transition.handle)?;
@@ -356,6 +354,10 @@ impl World {
                         )
                         .expect("Asset not found");
                 }
+                RenderUpdateDelta::TextureGPULoaded { key, alloc_handle } => self
+                    .asset_manager
+                    .register_asset_gpu_residency(AssetHandle::from_key(key), alloc_handle.clone())
+                    .expect("texture asset not found"),
                 RenderUpdateDelta::AssetUnloaded {
                     alloc_handle: _,
                     key,

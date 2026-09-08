@@ -3,7 +3,7 @@ use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
 use crate::{
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
-        asset_manager::AssetManager,
+        ProvidesTextureData, asset_manager::AssetManager,
     },
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::PrototypeHandle,
@@ -11,8 +11,8 @@ use crate::{
         entity_manager::{
             EntityManagerError, Renderables,
             components::{
-                AnimationComponent, AnimationMode, Component, MaterialComponent,
-                MeshCollectionComponent, MeshCollectionDescriptor,
+                AnimationComponent, AnimationMode, Component, MaterialPalleteComponent,
+                MeshCollectionComponent, MeshCollectionDescriptor, TextureComponent,
             },
         },
         world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},
@@ -22,7 +22,7 @@ use crate::{
 pub struct EntityManager {
     available_ids: Vec<std::range::Range<u32>>,
     mesh_collections: SparseSet<MeshCollectionComponent<dyn ProvidesMeshData>, 100>,
-    materials: SparseSet<MaterialComponent<dyn ProvidesMaterialData>, 100>,
+    materials: SparseSet<MaterialPalleteComponent<dyn ProvidesMaterialData>, 100>,
     animations: SparseSet<AnimationComponent<dyn ProvidesAnimationData>, 100>,
 }
 
@@ -74,7 +74,7 @@ impl EntityManager {
             instance_handle: instance_handle.clone(),
             mesh_renderables: Vec::new(),
             animations: None,
-            materials: None,
+            materials: Vec::new(),
         };
 
         if let Some(mesh_collection) = self
@@ -106,12 +106,26 @@ impl EntityManager {
         if let Some(materials_component) =
             self.materials.get(instance_handle.entity_handle.0 as usize)
         {
-            let asset =
-                asset_manager.get_loaded_asset(&materials_component.resource_backing.asset_handle);
+            // let asset =
+            //     asset_manager.get_loaded_asset(&materials_component.resource_backing.asset_handle);
 
-            let material_data =
-                materials_component.get_output_data(asset.as_materials_provider().unwrap());
-            renderables.materials = Some(material_data)
+            // let material_data =
+            //materials_component.get_output_data(asset.as_materials_provider().unwrap());
+            for (idx, maybe_texture) in materials_component.textures.iter().enumerate() {
+                match maybe_texture {
+                    Some(texture_source) => match texture_source {
+                        super::components::MaterialTextureSource::External(resource_backing) => {
+                            let asset =
+                                asset_manager.get_loaded_asset(&resource_backing.asset_handle);
+                            renderables
+                                .materials
+                                .push(Some(asset.alloc_handle().clone()));
+                        }
+                        super::components::MaterialTextureSource::Embedded => todo!(),
+                    },
+                    None => renderables.materials.push(None),
+                }
+            }
         }
 
         Ok(renderables)
@@ -122,6 +136,23 @@ impl EntityManager {
         if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
         {
             result.insert(mesh_collection_component.resource_backing.asset_handle);
+        }
+        if let Some(material_component) = self.materials.get(entity_handle.0 as usize) {
+            for resource_backing in material_component.resource_backings.iter() {
+                result.insert(resource_backing.asset_handle);
+            }
+            for maybe_texture in material_component.textures.iter() {
+                if let Some(texture_source) = maybe_texture {
+                    match texture_source {
+                        super::components::MaterialTextureSource::External(texture_backing) => {
+                            result.insert(texture_backing.asset_handle);
+                        }
+                        super::components::MaterialTextureSource::Embedded => {
+                            todo!()
+                        }
+                    }
+                }
+            }
         }
         return result;
     }
@@ -163,6 +194,9 @@ impl EntityManager {
         if let Some(animation) = descriptor.animation {
             self.animations.insert(entity.0 as usize, animation.erase());
         }
+        if let Some(material) = descriptor.materials {
+            self.materials.insert(entity.0 as usize, material.erase());
+        }
     }
 
     pub fn add_animation_for_entity<A>(
@@ -178,7 +212,7 @@ impl EntityManager {
     pub fn add_material_for_entity<M>(
         &mut self,
         entity_handle: &EntityHandle,
-        material_component: MaterialComponent<M>,
+        material_component: MaterialPalleteComponent<M>,
     ) where
         M: ProvidesMaterialData,
     {

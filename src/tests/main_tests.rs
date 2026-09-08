@@ -9,6 +9,9 @@ mod integration_tests {
         app::{app::App, app_config::AppConfig, app_state::AppState},
         common::{entity::EntityHandle, instance::InstanceHandle},
         renderer::{DrawItem, Instruction, PrototypeHandle, RenderConstant, RenderUpdateDelta},
+        tests::main_tests::integration_tests::{
+            RenderDeltaKind::TextureGPULoaded, WorldDeltaKind::AssetDidLoad,
+        },
         util::types::{InstanceRecordData, LocalTransform, Mat4F32},
         world::{
             bytecode_gen::BytecodeGenerator,
@@ -54,6 +57,7 @@ mod integration_tests {
         AssetUnloaded,
         EntitySpawn,
         InstanceDespawns,
+        TextureGPULoaded,
     }
 
     fn get_bytecode<'a>(
@@ -107,6 +111,7 @@ mod integration_tests {
             actual,
             expected
         );
+        println!("actual: {:?}, expected: {:?}", actual, expected);
         for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
             let matches = matches!(
                 (a, e),
@@ -122,6 +127,9 @@ mod integration_tests {
                 ) | (
                     RenderUpdateDelta::AssetUnloaded { .. },
                     RenderDeltaKind::AssetUnloaded
+                ) | (
+                    RenderUpdateDelta::TextureGPULoaded { .. },
+                    RenderDeltaKind::TextureGPULoaded
                 )
             );
             assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
@@ -640,8 +648,8 @@ mod integration_tests {
 
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::AssetDidLoad],
-                &[RenderDeltaKind::AssetGPULoaded],
+                &[WorldDeltaKind::AssetDidLoad, AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded, TextureGPULoaded],
             );
 
             run_frame(

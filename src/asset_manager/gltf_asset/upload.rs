@@ -5,8 +5,8 @@ use cgmath::SquareMatrix;
 use crate::{
     animation::{Animation, EntityAnimationData},
     asset_manager::{
-        AssetLoadError, MeshRenderables, ProvidesAnimationData, ProvidesMaterialData,
-        ProvidesMeshData,
+        AssetLoadError, MaterialRenderables, MeshRenderables, ProvidesAnimationData,
+        ProvidesMaterialData, ProvidesMeshData,
         gltf_asset::{
             GltfAsset, GltfMaterial,
             util::{
@@ -16,7 +16,7 @@ use crate::{
         },
     },
     util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
-    world::entity_manager::components::{AnimationAccessor, MeshAcessor},
+    world::entity_manager::components::ComponentAccessor,
 };
 
 pub(super) struct MeshInstance {
@@ -26,7 +26,7 @@ pub(super) struct MeshInstance {
 }
 
 impl ProvidesMeshData for GltfAsset {
-    fn render_mesh_data<'a>(&self, mesh_accesor: &'a MeshAcessor) -> MeshRenderables {
+    fn render_mesh_data<'a>(&self, mesh_accesor: &'a ComponentAccessor) -> MeshRenderables {
         let mut jts: Vec<Vec<Mat4F32>> = self
             .skins
             .iter()
@@ -37,7 +37,7 @@ impl ProvidesMeshData for GltfAsset {
             })
             .collect();
         let mesh_instances: Vec<MeshInstance> = match mesh_accesor {
-            MeshAcessor::All => self
+            ComponentAccessor::All => self
                 .node_tree
                 .iter()
                 .flat_map(|node| {
@@ -48,7 +48,7 @@ impl ProvidesMeshData for GltfAsset {
                     )
                 })
                 .collect(),
-            MeshAcessor::GltfRootNode(root) => {
+            ComponentAccessor::Index(root) => {
                 match get_root_node(&self.node_tree, *root as usize) {
                     Some(root_node) => {
                         collect_mesh_instances(root_node, cgmath::Matrix4::<f32>::identity())
@@ -58,6 +58,7 @@ impl ProvidesMeshData for GltfAsset {
                     }
                 }
             }
+            ComponentAccessor::Indices(_) => todo!(),
         };
         let mut pnu_ranges = Vec::new();
         let mut pnu_mesh_map = Vec::new();
@@ -129,8 +130,8 @@ impl ProvidesMeshData for GltfAsset {
 impl ProvidesAnimationData for GltfAsset {
     fn entity_animation<'a>(
         &self,
-        animation_accessor: &AnimationAccessor,
-        mesh_accesor: &MeshAcessor,
+        animation_accessor: &ComponentAccessor,
+        mesh_accesor: &ComponentAccessor,
     ) -> crate::animation::EntityAnimationData {
         let mut jts: Vec<Vec<Mat4F32>> = self
             .skins
@@ -142,7 +143,7 @@ impl ProvidesAnimationData for GltfAsset {
             })
             .collect();
         let mesh_instances: Vec<MeshInstance> = match mesh_accesor {
-            MeshAcessor::All => self
+            ComponentAccessor::All => self
                 .node_tree
                 .iter()
                 .flat_map(|node| {
@@ -153,7 +154,7 @@ impl ProvidesAnimationData for GltfAsset {
                     )
                 })
                 .collect(),
-            MeshAcessor::GltfRootNode(root) => {
+            ComponentAccessor::Index(root) => {
                 match get_root_node(&self.node_tree, *root as usize) {
                     Some(root_node) => collect_mesh_instances_with_jts(
                         root_node,
@@ -163,6 +164,7 @@ impl ProvidesAnimationData for GltfAsset {
                     None => panic!(),
                 }
             }
+            ComponentAccessor::Indices(_) => todo!(),
         };
 
         let joint_transforms: Vec<Mat4F32> = if jts.is_empty() {
@@ -186,14 +188,15 @@ impl ProvidesAnimationData for GltfAsset {
             mesh_indices.push(mesh_instance.mesh_id);
         }
         let anim_refs: Vec<Arc<dyn Animation>> = match animation_accessor {
-            AnimationAccessor::All => self
+            ComponentAccessor::All => self
                 .animations
                 .iter()
                 .map(|a| a.clone() as Arc<dyn Animation>)
                 .collect(),
-            AnimationAccessor::Index(idx) => {
+            ComponentAccessor::Index(idx) => {
                 vec![self.animations[*idx].clone() as Arc<dyn Animation>]
             }
+            ComponentAccessor::Indices(_) => todo!(),
         };
 
         EntityAnimationData {
@@ -210,13 +213,17 @@ impl ProvidesAnimationData for GltfAsset {
 impl ProvidesMaterialData for GltfAsset {
     fn material_data<'a>(
         &self,
-        material_accessor: &'a crate::world::entity_manager::components::MaterialAccessor,
-    ) -> Vec<GltfMaterial> {
+        material_accessor: &'a crate::world::entity_manager::components::ComponentAccessor,
+    ) -> Vec<MaterialRenderables> {
         match material_accessor {
-            crate::world::entity_manager::components::MaterialAccessor::All => {
-                self.material_palette.clone().to_vec()
-            }
-            crate::world::entity_manager::components::MaterialAccessor::Index(_) => todo!(),
+            crate::world::entity_manager::components::ComponentAccessor::All => self
+                .material_palette
+                .iter()
+                .enumerate()
+                .map(|(idx, gltf_material)| MaterialRenderables { texture_idx: idx })
+                .collect(),
+            crate::world::entity_manager::components::ComponentAccessor::Indices(_) => todo!(),
+            ComponentAccessor::Index(_) => todo!(),
         }
     }
 }

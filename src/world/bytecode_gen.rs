@@ -7,7 +7,7 @@ use crate::{
         BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction, Operations,
         RenderConstant,
     },
-    util::types::{PNUJWVertex, PNUVertex, VIndex},
+    util::types::{GPUMaterialData, PNUJWVertex, PNUVertex, VIndex},
     world::{
         RenderKey,
         world::{
@@ -187,7 +187,11 @@ pub trait BytecodeGenerator<'frame> {
                 pnu_vertices,
                 pnujw_vertices,
                 indices,
+                materials,
             } => {
+                instructions.push(Instruction::Op(Operations::AddAsset));
+                constants.push(RenderConstant::Key(asset_handle.as_key()));
+                Self::emit_const_last(constants, instructions);
                 if let Some(pnu) = &pnu_vertices {
                     instructions.push(Instruction::Op(Operations::PNUUpload));
                     let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(&pnu);
@@ -206,16 +210,25 @@ pub trait BytecodeGenerator<'frame> {
                     constants.push(RenderConstant::DataRef(index_data));
                     Self::emit_const_last(constants, instructions);
                 }
-                instructions.push(Instruction::Op(Operations::AddAsset));
+                if let Some(material_data) = materials {
+                    instructions.push(Instruction::Op(Operations::MaterialUpload));
+                    let material_data = bytemuck::cast_slice::<GPUMaterialData, u8>(material_data);
+                    constants.push(RenderConstant::DataRef(material_data));
+                    Self::emit_const_last(constants, instructions);
+                }
+                instructions.push(Instruction::Op(Operations::EmitAssetUpload));
+            }
+            GPUAssetUploadJob::MaterialData { .. } => todo!(),
+            GPUAssetUploadJob::TextureData {
+                asset_handle,
+                data: gpu_texture_data,
+            } => {
+                instructions.push(Instruction::Op(Operations::TextureUpload));
                 constants.push(RenderConstant::Key(asset_handle.as_key()));
                 Self::emit_const_last(constants, instructions);
+                constants.push(RenderConstant::Texture(gpu_texture_data));
+                Self::emit_const_last(constants, instructions);
             }
-            GPUAssetUploadJob::MaterialData {} => todo!(),
-            GPUAssetUploadJob::TextureData {} => todo!(),
         }
-        //if let Some(textures) = &asset_upload_job.textures {
-        //    instructions.push(Instruction::Op(Operations::TextureUpload));
-        //}
-        instructions.push(Instruction::Op(Operations::EmitAssetUpload));
     }
 }

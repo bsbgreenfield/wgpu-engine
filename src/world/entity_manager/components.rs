@@ -1,18 +1,15 @@
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData};
+
+use image::DynamicImage;
 
 use crate::{
     animation::EntityAnimationData,
     asset_manager::{
-        Asset, AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
-        gltf_asset::GltfMaterial,
+        Asset, AssetHandle, MaterialRenderables, ProvidesAnimationData, ProvidesMaterialData,
+        ProvidesMeshData, ProvidesTextureData, gltf_asset::GltfMaterial,
     },
+    util::types::GPUTextureData,
 };
-
-#[derive(Debug, Clone)]
-pub enum MeshAcessor {
-    GltfRootNode(u32),
-    All,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnimationMode {
@@ -21,9 +18,52 @@ pub enum AnimationMode {
     None,
 }
 
+pub enum EmbeddedComponent {
+    Animation {
+        accessor: ComponentAccessor,
+        rigid_animation_mode: AnimationMode,
+        skinned_animation_mode: AnimationMode,
+    },
+    Material {
+        accessor: ComponentAccessor,
+    },
+    Texture {
+        //
+    },
+}
+
 pub struct ResourceBacking<A: Asset + ?Sized> {
     pub asset_handle: AssetHandle,
     _t: PhantomData<A>,
+}
+
+impl<A: ProvidesMeshData + 'static> From<ResourceBacking<A>>
+    for ResourceBacking<dyn ProvidesMeshData>
+{
+    fn from(value: ResourceBacking<A>) -> Self {
+        ResourceBacking::new(value.asset_handle)
+    }
+}
+impl<A: ProvidesAnimationData + 'static> From<ResourceBacking<A>>
+    for ResourceBacking<dyn ProvidesAnimationData>
+{
+    fn from(value: ResourceBacking<A>) -> Self {
+        ResourceBacking::new(value.asset_handle)
+    }
+}
+impl<A: ProvidesMaterialData + 'static> From<ResourceBacking<A>>
+    for ResourceBacking<dyn ProvidesMaterialData>
+{
+    fn from(value: ResourceBacking<A>) -> Self {
+        ResourceBacking::new(value.asset_handle)
+    }
+}
+impl<A: ProvidesTextureData + 'static> From<ResourceBacking<A>>
+    for ResourceBacking<dyn ProvidesTextureData>
+{
+    fn from(value: ResourceBacking<A>) -> Self {
+        ResourceBacking::new(value.asset_handle)
+    }
 }
 
 impl<A: Asset + ?Sized> Debug for ResourceBacking<A> {
@@ -60,54 +100,98 @@ impl<A: Asset + ?Sized> ResourceBacking<A> {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum ComponentAccessor {
+    All,
+    Indices(Vec<usize>),
+    Index(usize),
+}
+
+pub trait ComponentDescriptor: Sized {
+    type AssetType: Asset + ?Sized;
+    fn with_embedded_component(self, component: EmbeddedComponent) -> Self;
+    fn new(resource_backing: ResourceBacking<Self::AssetType>, accessor: ComponentAccessor)
+    -> Self;
+}
+
+impl ComponentDescriptor for MeshCollectionDescriptor {
+    type AssetType = dyn ProvidesMeshData;
+
+    fn with_embedded_component(mut self, component: EmbeddedComponent) -> Self {
+        match component {
+            EmbeddedComponent::Animation {
+                accessor,
+                rigid_animation_mode,
+                skinned_animation_mode,
+            } => {
+                self.animation = Some(AnimationComponent {
+                    resource_backing: self.resource_backing.clone().erase(),
+                    animation_accessor: accessor,
+                    mesh_accessor: self.mesh_accessor.clone(),
+                    rigid_animation_mode,
+                    skinned_animation_mode,
+                });
+                self
+            }
+            EmbeddedComponent::Material { accessor } => {
+                // TODO: remove?
+                self
+            }
+            EmbeddedComponent::Texture {} => todo!(),
+        }
+    }
+
+    fn new(
+        resource_backing: ResourceBacking<dyn ProvidesMeshData>,
+        accessor: ComponentAccessor,
+    ) -> Self {
+        Self {
+            resource_backing: resource_backing.into(),
+            mesh_accessor: accessor,
+            animation: None,
+            materials: None,
+        }
+    }
+}
 #[derive(Debug)]
 pub struct MeshCollectionComponent<A: ProvidesMeshData + ?Sized> {
     pub resource_backing: ResourceBacking<A>,
-    pub mesh_accessor: MeshAcessor,
+    pub mesh_accessor: ComponentAccessor,
 }
 
 #[derive(Debug)]
 pub struct MeshCollectionDescriptor {
     pub resource_backing: ResourceBacking<dyn ProvidesMeshData>,
-    pub mesh_accessor: MeshAcessor,
+    pub mesh_accessor: ComponentAccessor,
     pub animation: Option<AnimationComponent<dyn ProvidesAnimationData>>,
-    pub materials: Option<MaterialComponent<dyn ProvidesMaterialData>>,
+    pub materials: Option<MaterialPalleteComponent<dyn ProvidesMaterialData>>,
 }
 
 impl MeshCollectionDescriptor {
-    pub fn new<T: ProvidesMeshData>(
-        resource: ResourceBacking<T>,
-        mesh_accessor: MeshAcessor,
-    ) -> Self {
-        Self {
-            mesh_accessor,
-            resource_backing: resource.erase(),
-            animation: None,
-            materials: None,
+    pub fn with_material(mut self, material_descriptor: MaterialComponentDescriptor) -> Self {
+        let (resource, texture_source): (
+            ResourceBacking<dyn ProvidesMaterialData>,
+            Option<MaterialTextureSource>,
+        ) = match material_descriptor {
+            MaterialComponentDescriptor::Embedded { texture } => {
+                (self.resource_backing.clone().erase(), texture.map(|t| t))
+            }
+            MaterialComponentDescriptor::External {
+                resource_backing,
+                texture,
+            } => todo!(),
+        };
+        if let Some(material_palette) = &mut self.materials {
+            material_palette.resource_backings.push(resource);
+            material_palette.textures.push(texture_source);
+        } else {
+            self.materials = Some(MaterialPalleteComponent {
+                resource_backings: vec![resource],
+                material_accessor: ComponentAccessor::All,
+                textures: vec![texture_source],
+            })
         }
-    }
-
-    pub fn with_animation<T: ProvidesAnimationData + 'static>(
-        mut self,
-        desc: AnimationComponentDescriptor<T>,
-    ) -> Self {
-        self.animation = Some(AnimationComponent {
-            resource_backing: desc.resource_backing.erase(),
-            animation_accessor: desc.accessor,
-            rigid_animation_mode: desc.rigid_animation_mode,
-            skinned_animation_mode: desc.skinned_animation_mode,
-            mesh_accessor: self.mesh_accessor.clone(),
-        });
-        self
-    }
-
-    pub fn with_embedded_materials<T: ProvidesMaterialData + ProvidesMaterialData + 'static>(
-        mut self,
-    ) -> Self {
-        self.materials = Some(MaterialComponent {
-            resource_backing: self.resource_backing.clone().erase(),
-            material_accessor: MaterialAccessor::All,
-        });
         self
     }
 }
@@ -137,19 +221,12 @@ impl<A: ProvidesMeshData + ?Sized> Component for MeshCollectionComponent<A> {
     }
 }
 
-#[derive(Debug)]
-pub enum AnimationAccessor {
-    All,
-    Index(usize),
-}
-
 pub struct AnimationComponent<T: ProvidesAnimationData + ?Sized> {
     pub resource_backing: ResourceBacking<T>,
-    pub animation_accessor: AnimationAccessor,
+    pub animation_accessor: ComponentAccessor,
     pub rigid_animation_mode: AnimationMode,
     pub skinned_animation_mode: AnimationMode,
-
-    pub mesh_accessor: MeshAcessor,
+    pub mesh_accessor: ComponentAccessor,
 }
 
 impl<T: ProvidesAnimationData + ?Sized> Debug for AnimationComponent<T> {
@@ -163,7 +240,7 @@ impl<T: ProvidesAnimationData + ?Sized> Debug for AnimationComponent<T> {
 
 pub struct AnimationComponentDescriptor<A: ProvidesAnimationData + ?Sized> {
     pub resource_backing: ResourceBacking<A>,
-    pub accessor: AnimationAccessor,
+    pub accessor: ComponentAccessor,
     pub rigid_animation_mode: AnimationMode,
     pub skinned_animation_mode: AnimationMode,
 }
@@ -187,19 +264,28 @@ impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
         asset.entity_animation(&self.animation_accessor, &self.mesh_accessor)
     }
 }
-
-#[derive(Debug)]
-pub enum MaterialAccessor {
-    All,
-    Index(usize),
+pub enum MaterialTextureSource {
+    External(ResourceBacking<dyn ProvidesTextureData>),
+    Embedded,
 }
 
-pub struct MaterialComponent<T: ProvidesMaterialData + ?Sized> {
-    pub resource_backing: ResourceBacking<T>,
-    pub material_accessor: MaterialAccessor,
+pub struct MaterialPalleteComponent<T: ProvidesMaterialData + ?Sized> {
+    pub resource_backings: Vec<ResourceBacking<T>>,
+    pub material_accessor: ComponentAccessor,
+    pub textures: Vec<Option<MaterialTextureSource>>,
 }
 
-impl<T: ProvidesMaterialData + ?Sized> Debug for MaterialComponent<T> {
+pub enum MaterialComponentDescriptor {
+    Embedded {
+        texture: Option<MaterialTextureSource>,
+    },
+    External {
+        resource_backing: ResourceBacking<dyn ProvidesMaterialData>,
+        texture: Option<MaterialTextureSource>,
+    },
+}
+
+impl<T: ProvidesMaterialData + ?Sized> Debug for MaterialPalleteComponent<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MaterialComponent")
             .field("Material Accessor", &self.material_accessor)
@@ -207,21 +293,55 @@ impl<T: ProvidesMaterialData + ?Sized> Debug for MaterialComponent<T> {
     }
 }
 
-impl<M: ProvidesMaterialData + ?Sized> Component for MaterialComponent<M> {
+impl<M: ProvidesMaterialData + ?Sized> Component for MaterialPalleteComponent<M> {
     type AssetType = M;
 
-    type Output = Vec<GltfMaterial>;
+    type Output = Vec<MaterialRenderables>;
 
-    type Erased = MaterialComponent<dyn ProvidesMaterialData>;
+    type Erased = MaterialPalleteComponent<dyn ProvidesMaterialData>;
 
     fn erase(self) -> Self::Erased {
-        MaterialComponent {
-            resource_backing: self.resource_backing.erase(),
+        MaterialPalleteComponent {
+            resource_backings: self
+                .resource_backings
+                .iter()
+                .map(|rb| rb.clone().erase())
+                .collect(),
             material_accessor: self.material_accessor,
+            textures: self.textures,
         }
     }
 
     fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output {
         asset.material_data(&self.material_accessor)
+    }
+}
+
+pub struct TextureComponent<T: ProvidesTextureData + ?Sized> {
+    pub resource_backing: ResourceBacking<T>,
+}
+
+impl<T: ProvidesTextureData + ?Sized> Debug for TextureComponent<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextureComponent").finish()
+    }
+}
+
+impl<T: ProvidesTextureData + ?Sized> Component for TextureComponent<T> {
+    type AssetType = T;
+
+    type Output = DynamicImage;
+
+    type Erased = TextureComponent<dyn ProvidesTextureData>;
+
+    fn erase(self) -> Self::Erased {
+        TextureComponent {
+            resource_backing: self.resource_backing.erase(),
+        }
+    }
+
+    fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output {
+        //TODO: do we need a component accessor here?
+        asset.texture_data(&ComponentAccessor::All)
     }
 }

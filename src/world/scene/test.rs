@@ -10,7 +10,7 @@ mod scene_tests {
         renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle},
         world::{
             entity_manager::{
-                components::{MeshAcessor, MeshCollectionDescriptor, ResourceBacking},
+                components::{ComponentAccessor, MeshCollectionDescriptor, ResourceBacking},
                 entity_manager::EntityManager,
             },
             instance_manager::archetypes::{APosition, Archetype, ArchetypeId},
@@ -61,7 +61,7 @@ mod scene_tests {
                 &entity,
                 MeshCollectionDescriptor {
                     resource_backing: ResourceBacking::<dyn ProvidesMeshData>::new(asset),
-                    mesh_accessor: MeshAcessor::All,
+                    mesh_accessor: ComponentAccessor::All,
                     animation: None,
                     materials: None,
                 },

@@ -4,7 +4,7 @@ use wgpu::TextureFormat;
 
 use crate::{
     renderer::{
-        GPUTextureHandle,
+        GPUAllocationHandle, GPUTextureHandle,
         bind_groups::BGBufferType,
         gpu_allocator::{GPUUploadResult, UploadTextureJob, allocation_table::AllocationTable},
     },
@@ -112,7 +112,7 @@ impl TextureChunk {
 
     fn gpu_alloc(
         &mut self,
-        gpu_texture: GPUTextureData,
+        gpu_texture: &GPUTextureData,
         queue: &wgpu::Queue,
     ) -> Result<usize, TextureAllocationError> {
         let layer = self
@@ -149,10 +149,10 @@ impl TextureChunk {
 
 pub struct TextureArena {
     chunks: [Option<TextureChunk>; 5],
-    alloc_table: AllocationTable<GPUTextureHandle>,
+    alloc_table: AllocationTable<GPUAllocationHandle>,
 }
 
-impl UploadTextureJob {
+impl<'frame> UploadTextureJob<'frame> {
     fn new_chunk(&self, device: &wgpu::Device) -> TextureChunk {
         TextureChunk::new(device, TextureFormat::Rgba8Unorm, self.data.height)
     }

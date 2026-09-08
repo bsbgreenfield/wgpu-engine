@@ -18,7 +18,7 @@ impl From<gltf::Material<'_>> for MaterialAsset {
             base_color_factors: pbr_mr.base_color_factor(),
             roughness: pbr_mr.roughness_factor(),
             metallic: pbr_mr.metallic_factor(),
-            tex_modifier: todo!(),
+            tex_modifier: u32::MAX,
         }
     }
 }
@@ -26,12 +26,35 @@ impl From<gltf::Material<'_>> for MaterialAsset {
 impl ProvidesMaterialData for MaterialAsset {
     fn material_data<'a>(
         &self,
-        material_accessor: &'a crate::world::entity_manager::components::MaterialAccessor,
-    ) -> Vec<super::gltf_asset::GltfMaterial> {
+        material_accessor: &'a crate::world::entity_manager::components::ComponentAccessor,
+    ) -> Vec<super::MaterialRenderables> {
         todo!()
     }
 }
 impl Asset for MaterialAsset {
+    fn intern_payload(&self, job: &mut GPUAssetUploadJob) -> () {
+        let payload = GPUMaterialData {
+            base_color_factors: self.base_color_factors,
+            roughness: self.roughness,
+            metallic: self.metallic,
+            tex_modifier: self.tex_modifier,
+            _pad: 0,
+        };
+        match job {
+            GPUAssetUploadJob::ModelData { materials, .. } => {
+                if let Some(material_payloads) = materials {
+                    material_payloads.push(payload);
+                } else {
+                    materials.insert(vec![payload]);
+                }
+            }
+            GPUAssetUploadJob::MaterialData {
+                asset_handle,
+                material_data,
+            } => todo!(),
+            GPUAssetUploadJob::TextureData { .. } => todo!(),
+        }
+    }
     fn get_upload_job(
         &self,
         asset_handle: super::AssetHandle,
@@ -58,5 +81,9 @@ impl Asset for MaterialAsset {
 
     fn as_materials_provider(&self) -> Option<&dyn super::ProvidesMaterialData> {
         Some(self)
+    }
+    fn as_texture_provider(&self) -> Option<&dyn super::ProvidesTextureData> {
+        //TODO: can proide a texture?
+        None
     }
 }

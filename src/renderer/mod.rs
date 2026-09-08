@@ -9,6 +9,7 @@ use crate::common::instance::InstanceHandle;
 use crate::renderer::RenderConstant::DataRef;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
 use crate::renderer::gpu_allocator::{GPUUploadJob, GPUUploadResult};
+use crate::util::types::GPUTextureData;
 use crate::{
     renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
     util::types::{GlobalTransform, ModelVertex},
@@ -169,6 +170,10 @@ pub(crate) enum RenderUpdateDelta {
         key: u64,
         alloc_handle: GPUAllocationHandle,
     },
+    TextureGPULoaded {
+        key: u64,
+        alloc_handle: GPUAllocationHandle,
+    },
     EntitySpawned {
         instance_key: u64,
         gpu_instance_handle: GPUInstanceHandle,
@@ -270,6 +275,7 @@ pub(crate) enum Operations {
     PNUJWUpload,
     IndexUpload,
     TextureUpload,
+    MaterialUpload,
     EmitAssetUpload,
     EmitEntitySpawn,
     DespawnInstance,
@@ -281,6 +287,7 @@ pub(crate) enum Operations {
 #[derive(Debug)]
 pub(crate) enum RenderConstant<'frame> {
     DataRef(&'frame [u8]),
+    Texture(&'frame GPUTextureData),
     Key(u64),
 }
 
@@ -326,6 +333,7 @@ impl From<RenderConstant<'_>> for StackValue {
         match value {
             DataRef(_) => panic!("cannot push binary data onto the stack"),
             RenderConstant::Key(key) => StackValue::Key(key),
+            RenderConstant::Texture(gputexture_data) => todo!(),
         }
     }
 }
@@ -334,6 +342,7 @@ impl<'frame> Clone for RenderConstant<'frame> {
     fn clone(&self) -> Self {
         match self {
             Self::Key(key) => Self::Key(*key),
+            Self::Texture(_) => panic!("canot copy texture"),
             Self::DataRef(_) => panic!("cannot clone ref data (maybe make it an arc)"),
         }
     }
@@ -351,6 +360,13 @@ impl<'frame> RenderConstant<'frame> {
         match self {
             Self::DataRef(data_ref) => data_ref,
             _ => panic!("invalid bytecode, expected data, found {:?}", self),
+        }
+    }
+
+    fn unwrap_texture_data(&self) -> &GPUTextureData {
+        match self {
+            Self::Texture(data) => *data,
+            _ => panic!("inalid bytecode, expected texture, found {:?}", self),
         }
     }
 }

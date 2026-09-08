@@ -6,7 +6,7 @@ use crate::{
         BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, InstanceUploadJob,
         Instruction, Operations, PrototypeHandle, RenderConstant, RenderUpdateDelta,
         RenderUpdateError, StackValue, UploadMeshJob, VertexArenaSelector,
-        gpu_allocator::{GPUUploadResult, UploadIndexJob},
+        gpu_allocator::{GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob},
         renderer::Renderer,
     },
     util::types::{InstanceRecordData, PNUJWVertex, PNUVertex},
@@ -65,6 +65,21 @@ impl<'frame> Renderer {
                         stack.push(val.into());
                     }
 
+                    Operations::MaterialUpload => {
+                        let gac = stack.pop().expect("should be gac").as_alloc();
+                        let material_data = constants
+                            [Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data_ref();
+                        self.upload_materials(
+                            UploadMaterialJob {
+                                data: material_data,
+                                alloc_handle: gac.clone(),
+                            },
+                            queue,
+                            device,
+                        )?;
+                        stack.push(StackValue::Alloc(gac));
+                    }
                     Operations::PNUUpload => {
                         let alloc_handle = stack.pop().expect("should be gac").as_alloc();
                         let pnu = constants[Self::get_constant_idx(&mut instr_peek) as usize]
@@ -108,6 +123,26 @@ impl<'frame> Renderer {
                         res.push(RenderUpdateDelta::AssetGPULoaded {
                             key: asset_key,
                             alloc_handle: alloc_handle,
+                        });
+                    }
+                    Operations::TextureUpload => {
+                        let asset_key_idx = Self::get_constant_idx(&mut instr_peek);
+                        let asset_key = constants[asset_key_idx].unwrap_key();
+                        let global_allocation_id = self.get_global_alloc_id();
+                        let gac = GPUAllocationHandle {
+                            global_allocation_id,
+                        };
+                        let texture_data_idx = Self::get_constant_idx(&mut instr_peek);
+                        let data = constants[texture_data_idx].unwrap_texture_data();
+
+                        let job = UploadTextureJob {
+                            data,
+                            texture_handle: gac.clone(),
+                        };
+                        self.upload_texture(job, queue, device)?;
+                        res.push(RenderUpdateDelta::TextureGPULoaded {
+                            key: asset_key,
+                            alloc_handle: gac,
                         });
                     }
                     Operations::AddAsset => {
@@ -321,9 +356,6 @@ impl<'frame> Renderer {
                             key: asset_key,
                             alloc_handle: gpu_alloc_handle,
                         })
-                    }
-                    Operations::TextureUpload => {
-                        todo!()
                     }
                 },
                 Instruction::Byte(_byte) => {}

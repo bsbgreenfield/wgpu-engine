@@ -1,8 +1,13 @@
 use std::{
     fmt::{Debug, Display},
+    fs::write,
     ops::Deref,
+    path::PathBuf,
     range::Range,
+    sync::Arc,
 };
+
+use image::DynamicImage;
 
 use crate::{
     animation::EntityAnimationData,
@@ -13,21 +18,18 @@ use crate::{
             AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfMaterial, GltfValidationError,
         },
         material::MaterialAsset,
+        texture::TextureAsset,
     },
     renderer::GPUAllocationHandle,
-    util::types::{LocalTransform, Mat4F32},
-    world::{
-        RenderKey,
-        entity_manager::components::{AnimationAccessor, MaterialAccessor, MeshAcessor},
-        scene::SceneLoadLevel,
-    },
+    util::types::{GPUMaterialData, LocalTransform, Mat4F32},
+    world::{RenderKey, entity_manager::components::ComponentAccessor, scene::SceneLoadLevel},
 };
 
 pub mod asset_manager;
 pub mod gltf_asset;
 pub mod material;
 mod range_splicer;
-mod texture;
+pub mod texture;
 #[derive(Debug)]
 pub enum AssetLoadError {
     Gltf(GltfLoadError),
@@ -64,6 +66,10 @@ impl Display for AssetLoadError {
             Self::InstanceUploadFailure(str) => f.write_str(str.as_str()),
         }
     }
+}
+
+pub struct MaterialRenderables {
+    pub texture_idx: usize,
 }
 
 impl std::error::Error for AssetLoadError {}
@@ -105,6 +111,8 @@ pub enum UnloadedAssetData {
         sources: AssetSources,
         gltf: gltf::Gltf,
     },
+    Texture(PathBuf),
+
     #[cfg(test)]
     Mock,
 }
@@ -112,6 +120,7 @@ impl Debug for UnloadedAssetData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnloadedAssetData::Gltf { .. } => write!(f, "Gltf Asset"),
+            UnloadedAssetData::Texture(path) => write!(f, "Texture in path {:?}", path),
             #[cfg(test)]
             UnloadedAssetData::Mock => write!(f, "mock"),
         }
@@ -130,6 +139,10 @@ impl UnloadedAssetData {
                 return GltfAsset::load_binary_data(gltf, sources)
                     .map_err(|e| AssetLoadError::Gltf(e));
             }
+            UnloadedAssetData::Texture(_) => Ok(BinaryData {
+                buffer_offsets: vec![],
+                data: vec![],
+            }),
             #[cfg(test)]
             UnloadedAssetData::Mock => todo!(),
         }
@@ -147,46 +160,48 @@ impl UnloadedAssetData {
                     res.push(MaterialAsset::from(material));
                 }
             }
+            UnloadedAssetData::Texture(_) => {}
             #[cfg(test)]
             UnloadedAssetData::Mock => todo!(),
         }
         res
     }
 
-    fn intern_textures(
-        &self,
-        asset_handle: &AssetHandle,
-        bin: &BinaryData,
-        texture_registry: &mut TextureRegistry,
-    ) -> Result<Vec<usize>, AssetLoadError> {
-        match self {
-            Self::Gltf { sources, gltf } => {
-                let res = sources
-                    .textures
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, src)| match src {
-                        gltf_asset::TextureSource::ExternalFile(path_buf) => Ok(texture_registry
-                            .intern(TextureKey::File(path_buf.clone()), || {
-                                texture::load_texture_from_file(path_buf).unwrap()
-                            })),
-                        gltf_asset::TextureSource::BinarySource(binary_source) => {
-                            Ok(texture_registry
-                                .intern(TextureKey::Embedded(*asset_handle, idx), || {
-                                    texture::decode_embedded(gltf, bin, idx).unwrap()
-                                }))
-                        }
-                    });
-                res.collect()
-            }
-            #[cfg(test)]
-            UnloadedAssetData::Mock => todo!(),
-        }
-    }
+    // fn intern_textures(
+    //     &self,
+    //     asset_handle: &AssetHandle,
+    //     bin: &BinaryData,
+    //     texture_registry: &mut TextureRegistry,
+    // ) -> Result<Vec<usize>, AssetLoadError> {
+    //     match self {
+    //         Self::Gltf { sources, gltf } => {
+    //             let res = sources
+    //                 .textures
+    //                 .iter()
+    //                 .enumerate()
+    //                 .map(|(idx, src)| match src {
+    //                     gltf_asset::TextureSource::ExternalFile(path_buf) => Ok(texture_registry
+    //                         .intern(TextureKey::File(path_buf.clone()), || {
+    //                             texture::load_texture_from_file(path_buf).unwrap()
+    //                         })),
+    //                     gltf_asset::TextureSource::BinarySource(binary_source) => {
+    //                         Ok(texture_registry
+    //                             .intern(TextureKey::Embedded(*asset_handle, idx), || {
+    //                                 texture::decode_embedded(gltf, bin, idx).unwrap()
+    //                             }))
+    //                     }
+    //                 });
+    //             res.collect()
+    //         }
+    //         #[cfg(test)]
+    //         UnloadedAssetData::Mock => todo!(),
+    //     }
+    // }
 
     fn load(&self, bin: &BinaryData) -> Result<Box<dyn Asset>, ModelBuilderError> {
         match self {
             Self::Gltf { sources, gltf } => GltfAsset::load(gltf, bin),
+            Self::Texture(path) => TextureAsset::load(path),
             #[cfg(test)]
             Self::Mock => Ok(Box::new(
                 crate::asset_manager::asset_manager::asset_mocks::MockAsset,
@@ -201,6 +216,10 @@ pub trait AssetSource {
         Self: Sized;
 }
 
+pub enum InternPayload {
+    MaterialPayload(Arc<[GPUMaterialData]>),
+}
+
 pub trait Asset {
     fn get_upload_job(
         &self,
@@ -210,6 +229,8 @@ pub trait Asset {
     fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
     fn as_materials_provider(&self) -> Option<&dyn ProvidesMaterialData>;
+    fn as_texture_provider(&self) -> Option<&dyn ProvidesTextureData>;
+    fn intern_payload(&self, job: &mut GPUAssetUploadJob);
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AssetResidency {
@@ -314,19 +335,26 @@ impl From<GltfValidationError> for ModelBuilderError {
 }
 
 pub trait ProvidesMeshData: Asset {
-    fn render_mesh_data<'a>(&self, mesh_accessor: &'a MeshAcessor) -> MeshRenderables;
+    fn render_mesh_data<'a>(&self, mesh_accessor: &'a ComponentAccessor) -> MeshRenderables;
 }
 
 pub trait ProvidesAnimationData: Asset {
     fn entity_animation<'a>(
         &self,
-        animation_accessor: &AnimationAccessor,
-        mesh_accessor: &MeshAcessor,
+        animation_accessor: &ComponentAccessor,
+        mesh_accessor: &ComponentAccessor,
     ) -> EntityAnimationData;
 }
 
 pub trait ProvidesMaterialData: Asset {
-    fn material_data<'a>(&self, material_accessor: &'a MaterialAccessor) -> Vec<GltfMaterial>;
+    fn material_data<'a>(
+        &self,
+        material_accessor: &'a ComponentAccessor,
+    ) -> Vec<MaterialRenderables>;
+}
+
+pub trait ProvidesTextureData: Asset {
+    fn texture_data(&self, texture_accessor: &ComponentAccessor) -> DynamicImage;
 }
 
 pub struct LoadedAsset<'a> {

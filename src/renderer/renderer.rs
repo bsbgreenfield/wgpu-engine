@@ -7,7 +7,10 @@ use crate::{
         PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderUpdateDelta,
         RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
         bind_groups::BindGroupCollection,
-        gpu_allocator::{GPUAllocator, GPUUploadResult, UploadIndexJob, gpu_arena::GPUArena},
+        gpu_allocator::{
+            GPUAllocator, GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
+            gpu_arena::GPUArena,
+        },
         pipeline::PipelineCollection,
     },
     util::types::{
@@ -231,6 +234,30 @@ impl Renderer {
         alloc_handle: GPUAllocationHandle,
     ) -> Result<(), VertexArenaError> {
         self.vertex_arenas.unload(alloc_handle)
+    }
+
+    pub(super) fn upload_texture<'frame>(
+        &mut self,
+        job: UploadTextureJob,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<(), VertexArenaError> {
+        self.bind_groups
+            .material_bind_group
+            .upload_texture(job, queue, device)?;
+        Ok(())
+    }
+
+    pub(super) fn upload_materials<'frame>(
+        &mut self,
+        job: UploadMaterialJob,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<(), VertexArenaError> {
+        self.bind_groups
+            .material_bind_group
+            .upload_materials(job, queue, device)?;
+        Ok(())
     }
 
     pub(super) fn upload_indices<'frame>(

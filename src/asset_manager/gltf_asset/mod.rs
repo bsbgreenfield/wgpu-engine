@@ -62,37 +62,19 @@ impl AssetSource for GltfAsset {
 }
 
 impl Asset for GltfAsset {
+    fn intern_payload(&self, job: &mut GPUAssetUploadJob) {
+        panic!("gltf asset cannot be interned at this time")
+    }
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,
     ) -> Result<GPUAssetUploadJob, AssetLoadError> {
-        let materials: Option<Arc<[GPUMaterialData]>> = if !self.material_palette.is_empty() {
-            let material_data = self
-                .material_palette
-                .iter()
-                .map(|m| {
-                    let pbr = &m.pbr_metallic_roughness;
-                    Some(GPUMaterialData {
-                        roughness: pbr.roughness,
-                        metallic: pbr.metallicness,
-                        base_color_factors: pbr.base_color_factor,
-                        _pad: 0,
-                        tex_modifier: pbr.texture_idx.map_or(u32::MAX, |i| i as u32), // TODO:
-                                                                                      // have
-                                                                                      // zero be
-                                                                                      // white?
-                    })
-                })
-                .collect();
-            material_data
-        } else {
-            None
-        };
         GPUAssetUploadJob::new_model_upload(
             asset_handle,
             Some(self.pnu_vertices.clone()),
             Some(self.pnujw_vertices.clone()),
             self.indices.as_ref().map(|i| i.clone()),
+            None,
         )
     }
 
@@ -105,6 +87,9 @@ impl Asset for GltfAsset {
     }
     fn as_materials_provider(&self) -> Option<&dyn super::ProvidesMaterialData> {
         Some(self)
+    }
+    fn as_texture_provider(&self) -> Option<&dyn super::ProvidesTextureData> {
+        None
     }
 }
 
