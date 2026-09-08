@@ -74,6 +74,7 @@ impl Asset for GltfAsset {
                         roughness: pbr.roughness,
                         metallic: pbr.metallicness,
                         base_color_factors: pbr.base_color_factor,
+                        _pad: 0,
                         tex_modifier: pbr.texture_idx.map_or(u32::MAX, |i| i as u32), // TODO:
                                                                                       // have
                                                                                       // zero be
@@ -100,6 +101,9 @@ impl Asset for GltfAsset {
     }
 
     fn as_animation_provider(&self) -> Option<&dyn super::ProvidesAnimationData> {
+        Some(self)
+    }
+    fn as_materials_provider(&self) -> Option<&dyn super::ProvidesMaterialData> {
         Some(self)
     }
 }
@@ -192,12 +196,14 @@ struct TexturePixels<const IMAGE_SIZE: usize> {
     pixels: [u8; IMAGE_SIZE],
 }
 
+#[derive(Debug, Clone)]
 struct PBRMetallicRoughness {
     roughness: f32,
     metallicness: f32,
     base_color_factor: [f32; 4],
     texture_idx: Option<usize>,
 }
+#[derive(Clone)]
 pub struct GltfMaterial {
     label: Option<String>,
     pbr_metallic_roughness: PBRMetallicRoughness,

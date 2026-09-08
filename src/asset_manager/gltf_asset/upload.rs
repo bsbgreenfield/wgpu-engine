@@ -211,10 +211,10 @@ impl ProvidesMaterialData for GltfAsset {
     fn material_data<'a>(
         &self,
         material_accessor: &'a crate::world::entity_manager::components::MaterialAccessor,
-    ) -> Arc<[GltfMaterial]> {
+    ) -> Vec<GltfMaterial> {
         match material_accessor {
             crate::world::entity_manager::components::MaterialAccessor::All => {
-                self.material_palette.clone()
+                self.material_palette.clone().to_vec()
             }
             crate::world::entity_manager::components::MaterialAccessor::Index(_) => todo!(),
         }

@@ -1,8 +1,10 @@
 use std::{error::Error, fmt::Display};
 
 use crate::{
-    animation::EntityAnimationData, asset_manager::MeshRenderables,
-    common::instance::InstanceHandle, renderer::GPUAllocationHandle,
+    animation::EntityAnimationData,
+    asset_manager::{MeshRenderables, gltf_asset::GltfMaterial},
+    common::instance::InstanceHandle,
+    renderer::GPUAllocationHandle,
 };
 
 pub mod components;
@@ -26,5 +28,6 @@ pub(crate) struct Renderables {
     pub instance_handle: InstanceHandle,
     pub(crate) mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimationData>,
+    pub materials: Option<Vec<GltfMaterial>>,
 }
 impl Error for EntityManagerError {}

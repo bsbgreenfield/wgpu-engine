@@ -130,6 +130,7 @@ pub struct GPUMaterialData {
     pub roughness: f32,
     pub metallic: f32,
     pub tex_modifier: u32,
+    pub _pad: u32,
 }
 
 // ************************* PNUJ *************************

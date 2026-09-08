@@ -210,7 +210,7 @@ impl<T: ProvidesMaterialData + ?Sized> Debug for MaterialComponent<T> {
 impl<M: ProvidesMaterialData + ?Sized> Component for MaterialComponent<M> {
     type AssetType = M;
 
-    type Output = Arc<[GltfMaterial]>;
+    type Output = Vec<GltfMaterial>;
 
     type Erased = MaterialComponent<dyn ProvidesMaterialData>;
 

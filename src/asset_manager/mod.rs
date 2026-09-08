@@ -307,7 +307,7 @@ pub trait ProvidesAnimationData: Asset {
 }
 
 pub trait ProvidesMaterialData: Asset {
-    fn material_data<'a>(&self, material_accessor: &'a MaterialAccessor) -> Arc<[GltfMaterial]>;
+    fn material_data<'a>(&self, material_accessor: &'a MaterialAccessor) -> Vec<GltfMaterial>;
 }
 
 pub struct LoadedAsset<'a> {

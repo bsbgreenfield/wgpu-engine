@@ -68,6 +68,11 @@ pub enum TextureKey {
     File(PathBuf),
     Embedded(AssetHandle, usize),
 }
+
+pub enum MaterialKey {
+    File(PathBuf),
+    Embedded,
+}
 enum TextureResidency {
     CPUStaged,
     PendingGPU,
@@ -542,6 +547,9 @@ pub(super) mod asset_mocks {
         fn as_animation_provider(
             &self,
         ) -> Option<&dyn crate::asset_manager::ProvidesAnimationData> {
+            None
+        }
+        fn as_materials_provider(&self) -> Option<&dyn crate::asset_manager::ProvidesMaterialData> {
             None
         }
     }

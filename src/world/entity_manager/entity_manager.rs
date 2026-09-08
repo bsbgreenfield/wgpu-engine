@@ -74,6 +74,7 @@ impl EntityManager {
             instance_handle: instance_handle.clone(),
             mesh_renderables: Vec::new(),
             animations: None,
+            materials: None,
         };
 
         if let Some(mesh_collection) = self
@@ -102,11 +103,15 @@ impl EntityManager {
             renderables.animations = Some(entity_animations);
         }
 
-        if let Some(materials_component) = self.materials.get(instance_handle.entity_handle.0 as usize)
+        if let Some(materials_component) =
+            self.materials.get(instance_handle.entity_handle.0 as usize)
         {
-            let asset = asset_manager.get_loaded_asset(&materials_component.resource_backing.asset_handle);
+            let asset =
+                asset_manager.get_loaded_asset(&materials_component.resource_backing.asset_handle);
 
-            let material_data = materials_component.get_output_data(asset.as_ma)
+            let material_data =
+                materials_component.get_output_data(asset.as_materials_provider().unwrap());
+            renderables.materials = Some(material_data)
         }
 
         Ok(renderables)
