@@ -5,7 +5,7 @@ use cgmath::vec3;
 
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
-    asset_manager::{Asset, AssetHandle, AssetLoadError, asset_manager::AssetManager},
+    asset_manager::{Asset, AssetHandle, AssetLoadError, AssetSource, asset_manager::AssetManager},
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
     util::types::{LocalTransform, Mat4F32},
@@ -188,7 +188,7 @@ impl World {
 
     pub fn register_asset<A>(&mut self, str_dir: &str) -> Result<ResourceBacking<A>, AssetLoadError>
     where
-        A: Asset + 'static,
+        A: Asset + AssetSource + 'static,
     {
         self.asset_manager.register_asset::<A>(str_dir)
     }
@@ -263,9 +263,11 @@ impl World {
             .poll_jobs(&mut self.asset_manager)?
         {
             if matches!(transition.new, SceneLoadLevel::PendingGPU) {
-                let job: GPUAssetUploadJob =
-                    self.asset_manager.get_upload_job_for(transition.handle)?;
-                self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+                let jobs: Vec<GPUAssetUploadJob> =
+                    self.asset_manager.get_upload_jobs_for(transition.handle)?;
+                for job in jobs {
+                    self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
+                }
             } else if transition.old == SceneLoadLevel::GPU {
                 println!("here and {:?}", transition.old);
                 let alloc_handle = self.asset_manager.alloc_handle_of(&transition.handle)?;

@@ -11,31 +11,32 @@ pub mod app;
 pub mod app_config;
 pub mod app_state;
 
-#[derive(Debug, Clone)]
-pub struct GPUAssetUploadJob {
-    pub asset_handle: AssetHandle,
-    pub pnu_vertices: Option<Arc<[PNUVertex]>>,
-    pub pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
-    pub indices: Option<Arc<[VIndex]>>,
-    pub textures: Option<Arc<[GPUTextureData]>>,
-    pub materials: Option<Arc<[GPUMaterialData]>>,
-}
-
-impl GPUAssetUploadJob {
-    pub fn new(
+#[derive(Clone)]
+pub enum GPUAssetUploadJob {
+    ModelData {
         asset_handle: AssetHandle,
         pnu_vertices: Option<Arc<[PNUVertex]>>,
         pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
         indices: Option<Arc<[VIndex]>>,
-        textures: Option<Arc<[GPUTextureData]>>,
-        materials: Option<Arc<[GPUMaterialData]>>,
+    },
+    MaterialData {
+        asset_handle: AssetHandle,
+        material_data: GPUMaterialData,
+    },
+    TextureData {},
+}
+
+impl GPUAssetUploadJob {
+    pub fn new_model_upload(
+        asset_handle: AssetHandle,
+        pnu_vertices: Option<Arc<[PNUVertex]>>,
+        pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
+        indices: Option<Arc<[VIndex]>>,
     ) -> Result<Self, AssetLoadError> {
         if pnu_vertices.is_none() && pnujw_vertices.is_none() {
             return Err(AssetLoadError::NoVertexData);
         }
-        Ok(Self {
-            materials,
-            textures,
+        Ok(Self::ModelData {
             asset_handle,
             pnu_vertices,
             pnujw_vertices,

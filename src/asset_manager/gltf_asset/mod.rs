@@ -9,7 +9,7 @@ use crate::{
     animation::{AnimationChannels, AnimationSampler},
     app::GPUAssetUploadJob,
     asset_manager::{
-        Asset, AssetHandle, AssetLoadError, ModelBuilderError, gltf_asset::mesh::Mesh,
+        Asset, AssetHandle, AssetLoadError, AssetSource, ModelBuilderError, gltf_asset::mesh::Mesh,
     },
     util::types::{GPUMaterialData, GPUTextureData, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
 };
@@ -50,7 +50,7 @@ impl PartialEq for BinarySource {
     }
 }
 
-impl Asset for GltfAsset {
+impl AssetSource for GltfAsset {
     fn new(dir_name: &str) -> Result<super::UnloadedAssetData, AssetLoadError>
     where
         Self: Sized,
@@ -59,7 +59,9 @@ impl Asset for GltfAsset {
             crate::asset_manager::gltf_asset::loader::load_gltf_from_resource(dir_name)?;
         Ok(super::UnloadedAssetData::Gltf { gltf, sources })
     }
+}
 
+impl Asset for GltfAsset {
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,
@@ -86,13 +88,11 @@ impl Asset for GltfAsset {
         } else {
             None
         };
-        GPUAssetUploadJob::new(
+        GPUAssetUploadJob::new_model_upload(
             asset_handle,
             Some(self.pnu_vertices.clone()),
             Some(self.pnujw_vertices.clone()),
             self.indices.as_ref().map(|i| i.clone()),
-            None,
-            materials,
         )
     }
 

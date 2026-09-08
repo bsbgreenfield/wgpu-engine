@@ -2,10 +2,7 @@ use std::{
     fmt::{Debug, Display},
     ops::Deref,
     range::Range,
-    sync::Arc,
 };
-
-use image::DynamicImage;
 
 use crate::{
     animation::EntityAnimationData,
@@ -15,9 +12,10 @@ use crate::{
         gltf_asset::{
             AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfMaterial, GltfValidationError,
         },
+        material::MaterialAsset,
     },
     renderer::GPUAllocationHandle,
-    util::types::{GPUTextureData, LocalTransform, Mat4F32},
+    util::types::{LocalTransform, Mat4F32},
     world::{
         RenderKey,
         entity_manager::components::{AnimationAccessor, MaterialAccessor, MeshAcessor},
@@ -27,6 +25,7 @@ use crate::{
 
 pub mod asset_manager;
 pub mod gltf_asset;
+pub mod material;
 mod range_splicer;
 mod texture;
 #[derive(Debug)]
@@ -112,7 +111,7 @@ pub enum UnloadedAssetData {
 impl Debug for UnloadedAssetData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnloadedAssetData::Gltf { .. } => write!(f, "Gltf Asset",),
+            UnloadedAssetData::Gltf { .. } => write!(f, "Gltf Asset"),
             #[cfg(test)]
             UnloadedAssetData::Mock => write!(f, "mock"),
         }
@@ -134,6 +133,24 @@ impl UnloadedAssetData {
             #[cfg(test)]
             UnloadedAssetData::Mock => todo!(),
         }
+    }
+
+    fn intern_materials(
+        &mut self,
+        asset_handle: &AssetHandle,
+        bin: &BinaryData,
+    ) -> Vec<MaterialAsset> {
+        let mut res = Vec::new();
+        match self {
+            UnloadedAssetData::Gltf { sources, gltf } => {
+                for material in gltf.materials() {
+                    res.push(MaterialAsset::from(material));
+                }
+            }
+            #[cfg(test)]
+            UnloadedAssetData::Mock => todo!(),
+        }
+        res
     }
 
     fn intern_textures(
@@ -178,11 +195,13 @@ impl UnloadedAssetData {
     }
 }
 
-pub trait Asset {
+pub trait AssetSource {
     fn new(dir_name: &str) -> Result<UnloadedAssetData, AssetLoadError>
     where
         Self: Sized;
+}
 
+pub trait Asset {
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,

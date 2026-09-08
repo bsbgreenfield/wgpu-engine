@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::{
     app::GPUAssetUploadJob,
     asset_manager::AssetHandle,
@@ -179,30 +181,41 @@ pub trait BytecodeGenerator<'frame> {
         instructions: &mut Vec<Instruction>,
         constants: &mut Vec<RenderConstant<'frame>>,
     ) {
-        instructions.push(Instruction::Op(Operations::AddAsset));
-        constants.push(RenderConstant::Key(asset_upload_job.asset_handle.as_key()));
-        Self::emit_const_last(constants, instructions);
-        if let Some(pnu) = &asset_upload_job.pnu_vertices {
-            instructions.push(Instruction::Op(Operations::PNUUpload));
-            let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(&pnu);
-            constants.push(RenderConstant::DataRef(pnu_data));
-            Self::emit_const_last(constants, instructions);
+        match asset_upload_job {
+            GPUAssetUploadJob::ModelData {
+                asset_handle,
+                pnu_vertices,
+                pnujw_vertices,
+                indices,
+            } => {
+                if let Some(pnu) = &pnu_vertices {
+                    instructions.push(Instruction::Op(Operations::PNUUpload));
+                    let pnu_data = bytemuck::cast_slice::<PNUVertex, u8>(&pnu);
+                    constants.push(RenderConstant::DataRef(pnu_data));
+                    Self::emit_const_last(constants, instructions);
+                }
+                if let Some(pnujw) = &pnujw_vertices {
+                    instructions.push(Instruction::Op(Operations::PNUJWUpload));
+                    let pnujw_data = bytemuck::cast_slice::<PNUJWVertex, u8>(&pnujw);
+                    constants.push(RenderConstant::DataRef(pnujw_data));
+                    Self::emit_const_last(constants, instructions);
+                }
+                if let Some(indices) = &indices {
+                    instructions.push(Instruction::Op(Operations::IndexUpload));
+                    let index_data = bytemuck::cast_slice::<VIndex, u8>(&indices);
+                    constants.push(RenderConstant::DataRef(index_data));
+                    Self::emit_const_last(constants, instructions);
+                }
+                instructions.push(Instruction::Op(Operations::AddAsset));
+                constants.push(RenderConstant::Key(asset_handle.as_key()));
+                Self::emit_const_last(constants, instructions);
+            }
+            GPUAssetUploadJob::MaterialData {} => todo!(),
+            GPUAssetUploadJob::TextureData {} => todo!(),
         }
-        if let Some(pnujw) = &asset_upload_job.pnujw_vertices {
-            instructions.push(Instruction::Op(Operations::PNUJWUpload));
-            let pnujw_data = bytemuck::cast_slice::<PNUJWVertex, u8>(&pnujw);
-            constants.push(RenderConstant::DataRef(pnujw_data));
-            Self::emit_const_last(constants, instructions);
-        }
-        if let Some(indices) = &asset_upload_job.indices {
-            instructions.push(Instruction::Op(Operations::IndexUpload));
-            let index_data = bytemuck::cast_slice::<VIndex, u8>(&indices);
-            constants.push(RenderConstant::DataRef(index_data));
-            Self::emit_const_last(constants, instructions);
-        }
-        if let Some(textures) = &asset_upload_job.textures {
-            instructions.push(Instruction::Op(Operations::TextureUpload));
-        }
+        //if let Some(textures) = &asset_upload_job.textures {
+        //    instructions.push(Instruction::Op(Operations::TextureUpload));
+        //}
         instructions.push(Instruction::Op(Operations::EmitAssetUpload));
     }
 }

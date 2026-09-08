@@ -322,7 +322,9 @@ impl<'frame> Renderer {
                             alloc_handle: gpu_alloc_handle,
                         })
                     }
-                    Operations::TextureUpload => {}
+                    Operations::TextureUpload => {
+                        todo!()
+                    }
                 },
                 Instruction::Byte(_byte) => {}
                 Instruction::ConstIdx(_idx) => {}

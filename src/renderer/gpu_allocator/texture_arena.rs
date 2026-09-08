@@ -38,7 +38,7 @@ struct TextureAllocator {
 impl TextureAllocator {
     fn new() -> Self {
         let fl = Vec::from_iter(0..NUM_LAYERS);
-        assert!(fl.first() == Some(&0) && fl.last() == Some(&16));
+        assert!(fl.first() == Some(&0) && fl.last() == Some(&15));
         Self {
             free_layers: Vec::from_iter(0..NUM_LAYERS as usize),
         }
@@ -53,6 +53,34 @@ struct TextureChunk {
 }
 
 impl TextureChunk {
+    fn white(device: &wgpu::Device) -> Self {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(format!("default white pixel texture").as_str()),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[TextureFormat::Rgba8Unorm, TextureFormat::Rgba8UnormSrgb],
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
+        Self {
+            texture,
+            view,
+            allocator: TextureAllocator::new(),
+            dimension: 1,
+        }
+    }
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat, dimension: u32) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(format!("Texture chunk for dimension: {dimension}").as_str()),
@@ -120,7 +148,7 @@ impl TextureChunk {
 }
 
 pub struct TextureArena {
-    chunks: [Option<TextureChunk>; 4],
+    chunks: [Option<TextureChunk>; 5],
     alloc_table: AllocationTable<GPUTextureHandle>,
 }
 
@@ -133,16 +161,17 @@ impl UploadTextureJob {
 impl TextureArena {
     pub fn new() -> Self {
         Self {
-            chunks: [None, None, None, None],
+            chunks: [None, None, None, None, None],
             alloc_table: AllocationTable::new(),
         }
     }
     const fn idx_from_dimension(dimension: u32) -> usize {
         match dimension {
-            64 => 0,
-            128 => 1,
-            256 => 2,
-            1024 => 3,
+            1 => 0,
+            64 => 1,
+            128 => 2,
+            256 => 3,
+            1024 => 4,
             _ => panic!(),
         }
     }
@@ -152,6 +181,9 @@ impl TextureArena {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> GPUUploadResult {
+        if self.chunks[0].is_none() {
+            self.chunks[0] = Some(TextureChunk::white(device))
+        }
         let chunk_idx = Self::idx_from_dimension(job.data.height);
         let maybe_chunk = &mut self.chunks[chunk_idx];
         let chunk = if maybe_chunk.is_some() {
