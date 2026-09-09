@@ -8,7 +8,7 @@ use crate::{
     common::entity::EntityHandle,
     world::{
         entity_manager::components::{
-            AnimationMode, ComponentAccessor, ComponentDescriptor, EmbeddedComponent,
+            AnimationComponentDescriptor, AnimationMode, ComponentAccessor,
             MaterialComponentDescriptor, MaterialTextureSource, MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
@@ -90,7 +90,7 @@ impl Scene {
         world.entity_manager.add_mesh_collection_for_entity(
             &brain_entity,
             MeshCollectionDescriptor::new(brain_asset.clone().into(), ComponentAccessor::All)
-                .with_embedded_component(EmbeddedComponent::Animation {
+                .with_animation(AnimationComponentDescriptor::Embedded {
                     accessor: ComponentAccessor::All,
                     rigid_animation_mode: AnimationMode::Shared,
                     skinned_animation_mode: AnimationMode::Shared,
@@ -256,7 +256,7 @@ impl Scene {
         let fox_entity = world.entity_manager.new_entity()?;
 
         let mcc = MeshCollectionDescriptor::new(fox_asset.clone().into(), ComponentAccessor::All)
-            .with_embedded_component(EmbeddedComponent::Animation {
+            .with_animation(AnimationComponentDescriptor::Embedded {
                 accessor: ComponentAccessor::All,
                 rigid_animation_mode: AnimationMode::Shared,
                 skinned_animation_mode: AnimationMode::Independent,
@@ -353,7 +353,7 @@ impl Scene {
         world.entity_manager.add_mesh_collection_for_entity(
             &box_anim_entity,
             MeshCollectionDescriptor::new(box_anim_asset.clone().into(), ComponentAccessor::All)
-                .with_embedded_component(EmbeddedComponent::Animation {
+                .with_animation(AnimationComponentDescriptor::Embedded {
                     accessor: ComponentAccessor::All,
                     rigid_animation_mode: AnimationMode::Shared,
                     skinned_animation_mode: AnimationMode::Shared,
@@ -390,7 +390,7 @@ impl Scene {
         let fox_asset = world.register_asset::<GltfAsset>("fox")?;
         let fox_entity = world.entity_manager.new_entity()?;
         let mcc = MeshCollectionDescriptor::new(fox_asset.clone().into(), ComponentAccessor::All)
-            .with_embedded_component(EmbeddedComponent::Animation {
+            .with_animation(AnimationComponentDescriptor::Embedded {
                 accessor: ComponentAccessor::All,
                 rigid_animation_mode: AnimationMode::Independent,
                 skinned_animation_mode: AnimationMode::Independent,

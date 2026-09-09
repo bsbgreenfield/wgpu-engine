@@ -30,6 +30,15 @@ struct InstanceRecord {
 	pad_2: u32,
 }
 
+struct Material {
+	base_color_factors: vec4<f32>,
+	roughness: f32,
+	metallic: f32,
+	pad_1: u32,
+	pad_2: u32,
+
+}
+
 var<immediate> pc: DrawPushConstants;
 
 @group(0) @binding(0)
@@ -51,6 +60,13 @@ var<storage, read> global_transforms: array<mat4x4<f32>>;
 var<storage, read> joint_transforms: array<mat4x4<f32>>;
 @group(3) @binding(1)
 var<storage, read> ibm_transforms: array<mat4x4<f32>>;
+
+@group(4) @binding(0)
+var t_diffuse: texture_2d_array<f32>;
+@group(4) @binding(1)
+var s_diffuse: sampler;
+@group(4) @binding(2)
+var<storage, read> materials: array<Material>;
 
 fn apply_bone_transform(joint_base: u32,  joint_offset: u32, joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>)  -> vec4<f32> {
 	let joint0 = joint_transforms[joint_base + joints[0]] * ibm_transforms[joint_offset + joints[0]];
@@ -80,6 +96,7 @@ fn vs_main(obj: VertexInput, @builtin(instance_index) inst_idx: u32 ) -> VertexO
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-	let colors = vec4<f32>(0.8, 0.3, 0.1, 1.0);
-	return colors;
+	let colors: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, 0);
+	let bc_factor = materials[0].base_color_factors;
+	return vec4<f32>(colors[0] * bc_factor[0], colors[1] * bc_factor[1], colors[2] * bc_factor[2], colors[3] * bc_factor[3]);
 }

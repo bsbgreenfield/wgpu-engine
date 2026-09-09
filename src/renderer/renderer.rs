@@ -6,7 +6,7 @@ use crate::{
         DrawPacket, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob, Instruction,
         PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderUpdateDelta,
         RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
-        bind_groups::BindGroupCollection,
+        bind_groups::{BindGroupCollection, BindGroupProvider},
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
             gpu_arena::GPUArena,
@@ -147,6 +147,9 @@ impl Renderer {
     pub(crate) fn init(&mut self, config: &AppConfig) {
         let pipeline_collection = PipelineCollection::new(config);
         self.pipelines = Some(pipeline_collection);
+        self.bind_groups
+            .material_bind_group
+            .ensure_defaults(&config.queue, &config.device);
     }
 
     pub(crate) fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
@@ -375,6 +378,11 @@ impl Renderer {
                     &[],
                 );
                 render_pass.set_bind_group(2, self.bind_groups.instance_data.get_first_bg(), &[]);
+                render_pass.set_bind_group(
+                    4,
+                    self.bind_groups.material_bind_group.get_default_bg(),
+                    &[],
+                );
                 for render_category in pass.categories.iter() {
                     match render_category {
                         RenderCategory::OpaqueStatic => {

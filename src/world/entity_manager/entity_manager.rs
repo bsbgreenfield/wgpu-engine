@@ -3,7 +3,7 @@ use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
 use crate::{
     asset_manager::{
         AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
-        ProvidesTextureData, asset_manager::AssetManager,
+        asset_manager::AssetManager,
     },
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::PrototypeHandle,
@@ -12,7 +12,7 @@ use crate::{
             EntityManagerError, Renderables,
             components::{
                 AnimationComponent, AnimationMode, Component, MaterialPalleteComponent,
-                MeshCollectionComponent, MeshCollectionDescriptor, TextureComponent,
+                MeshCollectionComponent, MeshCollectionDescriptor,
             },
         },
         world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},

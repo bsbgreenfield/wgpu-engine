@@ -18,15 +18,41 @@ pub(super) mod local_transforms;
 pub(super) mod materials;
 pub(super) mod skinning;
 
+#[derive(Debug, Clone, Copy)]
 pub(super) enum BGBufferType {
     LocalTransform,
     GlobalTransform,
     InstanceRecordData,
     JointData,
+    Texture1,
     Texture64,
     Texture128,
     Texture256,
     Texture1024,
+}
+
+impl BGBufferType {
+    pub(super) fn tex_dim_from_u32(val: u32) -> Self {
+        match val {
+            1 => Self::Texture1,
+            64 => Self::Texture64,
+            128 => Self::Texture128,
+            256 => Self::Texture256,
+            1024 => Self::Texture1024,
+            _ => panic!("cant handle dim of {val}"),
+        }
+    }
+
+    pub(super) fn u32_from_dim(&self) -> Option<u32> {
+        match self {
+            Self::Texture1 => Some(1),
+            Self::Texture64 => Some(64),
+            Self::Texture128 => Some(128),
+            Self::Texture256 => Some(256),
+            Self::Texture1024 => Some(1024),
+            _ => None,
+        }
+    }
 }
 
 pub(super) trait BindGroupProvider {

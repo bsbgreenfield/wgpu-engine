@@ -43,6 +43,17 @@ impl<T: GPUUploadable> GPUArena<T> {
     pub(super) fn get_chunks_mut(&mut self) -> &mut [GPUChunk<T>] {
         &mut self.chunks
     }
+
+    pub(in crate::renderer) fn ensure_initialized(
+        &mut self,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) {
+        if self.chunks.is_empty() {
+            self.chunks.push(T::get_chunk(device));
+            T::insert_default(self, queue, device);
+        }
+    }
 }
 
 impl<T: SharedInstanceData> GPUArena<T> {
@@ -136,6 +147,7 @@ impl<T: StorageData> GPUUploadable for T {
             alloc_meta_idx: slot_idx,
         };
     }
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {}
 }
 
 impl GPUUploadable for VIndex {
@@ -158,6 +170,7 @@ impl GPUUploadable for VIndex {
         arena.alloc_table.allocate(handle, chunk_id, node_id);
         return GPUUploadResult::VertexDataUploadSuccess;
     }
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {}
 }
 
 impl GPUUploadable for PNUJWVertex {
@@ -180,6 +193,7 @@ impl GPUUploadable for PNUJWVertex {
         arena.alloc_table.allocate(handle, chunk_id, node_id);
         return GPUUploadResult::VertexDataUploadSuccess;
     }
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {}
 }
 impl GPUUploadable for PNUVertex {
     type GPUHandle = GPUAllocationHandle;
@@ -201,6 +215,7 @@ impl GPUUploadable for PNUVertex {
         arena.alloc_table.allocate(handle, chunk_id, node_id);
         return GPUUploadResult::VertexDataUploadSuccess;
     }
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {}
 }
 impl GPUUploadable for GPUMaterialData {
     type GPUHandle = GPUAllocationHandle;
@@ -229,6 +244,26 @@ impl GPUUploadable for GPUMaterialData {
         arena.alloc_table.allocate(handle, chunk_id, node_id);
         return GPUUploadResult::MaterialUploadSucess;
     }
+
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {
+        println!("adding default material!!!!");
+        let default_data = &[GPUMaterialData {
+            base_color_factors: [0.2, 0.6, 0.5, 1.],
+            roughness: 1.,
+            metallic: 1.,
+            tex_modifier: 0,
+            _pad: 0,
+        }];
+        let bytes = bytemuck::cast_slice::<GPUMaterialData, u8>(default_data);
+        let default_material_job = UploadMaterialJob {
+            data: &bytes,
+            alloc_handle: GPUAllocationHandle {
+                global_allocation_id: u32::MAX,
+            },
+        };
+
+        let _ = gpu_arena.upload(default_material_job, queue, device);
+    }
 }
 
 impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
@@ -249,9 +284,7 @@ impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, Self::AllocationError> {
-        if self.chunks.is_empty() {
-            self.chunks.push(T::get_chunk(device));
-        }
+        self.ensure_initialized(queue, device);
         'outer: for (chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
             match chunk.gpu_alloc(job.get_data(), queue, self.label.as_ref().unwrap()) {
                 Ok((node_id, _)) => {

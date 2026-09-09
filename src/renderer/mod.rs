@@ -52,6 +52,7 @@ trait GPUUploadable: Debug + bytemuck::Pod {
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
         GPUChunk::new(device, Self::CHUNK_SIZE, Self::LABEL, Self::USAGE)
     }
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device);
     fn upload(
         arena: &mut GPUArena<Self>,
         handle: Self::GPUHandle,

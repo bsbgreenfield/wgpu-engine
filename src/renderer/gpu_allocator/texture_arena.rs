@@ -175,15 +175,37 @@ impl TextureArena {
             _ => panic!(),
         }
     }
+    pub fn upload_default(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        if self.chunks[0].is_none() {
+            let white_chunk = TextureChunk::white(device);
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &white_chunk.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::default(),
+                },
+                &[255u8, 255, 255, 255],
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4),
+                    rows_per_image: Some(1),
+                },
+                wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.chunks[0] = Some(white_chunk)
+        }
+    }
     pub fn upload(
         &mut self,
         job: UploadTextureJob,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> GPUUploadResult {
-        if self.chunks[0].is_none() {
-            self.chunks[0] = Some(TextureChunk::white(device))
-        }
         let chunk_idx = Self::idx_from_dimension(job.data.height);
         let maybe_chunk = &mut self.chunks[chunk_idx];
         let chunk = if maybe_chunk.is_some() {
@@ -206,6 +228,12 @@ impl TextureArena {
 
     pub fn get_texture_ref(&self, ty: BGBufferType) -> &wgpu::TextureView {
         match ty {
+            BGBufferType::Texture1 => {
+                &self.chunks[0]
+                    .as_ref()
+                    .expect("default should be init")
+                    .view
+            }
             BGBufferType::Texture64 => {
                 &self.chunks[Self::idx_from_dimension(64)]
                     .as_ref()
