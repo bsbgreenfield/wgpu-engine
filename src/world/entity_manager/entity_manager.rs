@@ -141,18 +141,6 @@ impl EntityManager {
             for resource_backing in material_component.resource_backings.iter() {
                 result.insert(resource_backing.asset_handle);
             }
-            for maybe_texture in material_component.textures.iter() {
-                if let Some(texture_source) = maybe_texture {
-                    match texture_source {
-                        super::components::MaterialTextureSource::External(texture_backing) => {
-                            result.insert(texture_backing.asset_handle);
-                        }
-                        super::components::MaterialTextureSource::Embedded => {
-                            todo!()
-                        }
-                    }
-                }
-            }
         }
         return result;
     }

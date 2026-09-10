@@ -64,118 +64,17 @@ impl<A: Asset + ?Sized> RegisteredAsset<A> {
     }
 }
 
-#[derive(PartialEq)]
-pub enum TextureKey {
-    File(PathBuf),
-    Embedded(AssetHandle, usize),
-    Default,
-}
-
-pub enum MaterialKey {
-    File(PathBuf),
-    Embedded,
-    Default,
-}
-
-enum TextureResidency {
-    CPUStaged,
-    PendingGPU,
-    GPU(GPUTextureHandle),
-    PendingUnloadGPU(GPUTextureHandle),
-}
-struct RegisteredTexture {
-    key: TextureKey,
-    data: Cell<Option<GPUTextureData>>,
-    residency: TextureResidency,
-    cpu_refs: usize,
-    gpu_refs: usize,
-}
-
 #[derive(Default)]
 pub struct TextureRegistry {
-    asset_mapping: HashMap<AssetHandle, Vec<usize>>,
-    pub registered_paths: HashSet<PathBuf>,
-    textures: Vec<RegisteredTexture>,
+    registered_textures: HashMap<PathBuf, AssetHandle>,
 }
 
-impl TextureRegistry {
-    pub fn intern(&mut self, key: TextureKey, decode: impl FnOnce() -> GPUTextureData) -> usize {
-        if let Some(position) = self.textures.iter().position(|rt| rt.key == key) {
-            return position;
-        } else {
-            let id = self.textures.len();
-            self.textures.push(RegisteredTexture {
-                key,
-                data: Cell::new(Some(decode())),
-                residency: TextureResidency::CPUStaged,
-                cpu_refs: 0,
-                gpu_refs: 0,
-            });
-            return id;
-        }
-    }
-
-    fn set_texture_residencies(
-        &mut self,
-        asset_handle: &AssetHandle,
-        level: SceneLoadLevel,
-    ) -> Option<()> {
-        let texture_ids = self.asset_mapping.get(asset_handle)?;
-        for id in texture_ids.iter() {
-            let texture_res = &mut self
-                .textures
-                .get_mut(*id)
-                .expect("should be reigstered")
-                .residency;
-            match (level, &texture_res) {
-                (
-                    SceneLoadLevel::GPU,
-                    TextureResidency::CPUStaged | TextureResidency::PendingGPU,
-                ) => *texture_res = TextureResidency::PendingGPU,
-                (SceneLoadLevel::GPU, TextureResidency::GPU(_)) => {}
-                (SceneLoadLevel::CPU, TextureResidency::CPUStaged) => {}
-                (SceneLoadLevel::CPU | SceneLoadLevel::NotLoaded, _) => {
-                    todo!("not implemented unloading")
-                }
-                (SceneLoadLevel::PendingGPU | SceneLoadLevel::PendingCPU, _) => panic!("why"),
-
-                _ => todo!(),
-            }
-        }
-        None
-    }
-
-    fn gpu_uploadable_textures(&self, asset_handle: &AssetHandle) -> Option<Arc<[GPUTextureData]>> {
-        let texture_ids = self.asset_mapping.get(asset_handle)?;
-
-        let mut uploadable_texture_data = Vec::new();
-        for id in texture_ids.iter() {
-            let registered_texture = self
-                .textures
-                .get(*id)
-                .expect("texture wasnt properly registered");
-            match &registered_texture.residency {
-                TextureResidency::CPUStaged => {
-                    todo!("shouldnt happen?");
-                }
-                TextureResidency::PendingGPU => {
-                    uploadable_texture_data.push(
-                        registered_texture
-                            .data
-                            .take()
-                            .expect("if its cpu staged, there must be data here"),
-                    );
-                }
-                TextureResidency::GPU(gputexture_handle) => todo!(),
-                TextureResidency::PendingUnloadGPU(gputexture_handle) => todo!(),
-            }
-        }
-        if !uploadable_texture_data.is_empty() {
-            return Some(uploadable_texture_data.into());
-        }
-        None
-    }
+#[derive(Clone, Copy)]
+pub struct InternedAssetKey {
+    pub owner: AssetHandle,
+    pub idx: u32,
 }
+
 pub struct AssetManager {
     registered_assets: HashMap<AssetHandle, RegisteredAsset<dyn Asset>>,
     interned_assets: HashMap<AssetHandle, Vec<Box<dyn Asset>>>,
@@ -196,6 +95,9 @@ impl AssetManager {
         AssetHandle(self.registered_assets.len() as u32)
     }
 
+    pub(super) fn get_registered_texture(&self, path: &PathBuf) -> Option<&AssetHandle> {
+        self.texture_registry.registered_textures.get(path)
+    }
     pub(crate) fn res_level_of(
         &self,
         asset_handle: &AssetHandle,
@@ -253,7 +155,7 @@ impl AssetManager {
             RegisteredAsset::Unloaded { mut data, _t } => {
                 let bin = data.load_binary()?;
 
-                for material in data.intern_materials(asset_handle, &bin) {
+                for material in data.intern_materials(asset_handle, &bin, self) {
                     let _interned_la_index = self.intern_value(*asset_handle, material)?;
                 }
                 // insert texture data in to registered textures, if new
@@ -362,7 +264,11 @@ impl AssetManager {
         }
     }
 
-    fn intern_value<A>(&mut self, owner: AssetHandle, asset: A) -> Result<usize, AssetLoadError>
+    pub(super) fn intern_value<A>(
+        &mut self,
+        owner: AssetHandle,
+        asset: A,
+    ) -> Result<usize, AssetLoadError>
     where
         A: Asset + 'static,
     {
@@ -478,8 +384,6 @@ impl AssetManager {
             SceneLoadLevel::GPU => match asset_res_level {
                 AssetResidency::Registered => {
                     let idx = self.load(asset_handle)?;
-                    self.texture_registry
-                        .set_texture_residencies(&asset_handle, load_level);
                     match self.registered_assets.get_mut(asset_handle).unwrap() {
                         RegisteredAsset::Loaded { residency: res, .. } => {
                             *res = AssetResidency::PendingGPU(idx)

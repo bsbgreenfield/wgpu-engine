@@ -1,7 +1,7 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    asset_manager::{AssetHandle, AssetLoadError},
+    asset_manager::{AssetHandle, AssetLoadError, material::MaterialAsset},
     renderer::{RenderError, RenderUpdateError},
     util::types::{GPUMaterialData, GPUTextureData, PNUJWVertex, PNUVertex, VIndex},
     world::WorldUpdateError,
@@ -12,13 +12,19 @@ pub mod app_config;
 pub mod app_state;
 
 #[derive(Clone)]
+pub struct EmbeddedMaterialPayload {
+    pub material: GPUMaterialData,
+    pub texture: Option<AssetHandle>,
+}
+
+#[derive(Clone)]
 pub enum GPUAssetUploadJob {
     ModelData {
         asset_handle: AssetHandle,
         pnu_vertices: Option<Arc<[PNUVertex]>>,
         pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
         indices: Option<Arc<[VIndex]>>,
-        materials: Option<Vec<GPUMaterialData>>,
+        embedded_materials: Option<Vec<MaterialAsset>>,
     },
     MaterialData {
         asset_handle: AssetHandle,

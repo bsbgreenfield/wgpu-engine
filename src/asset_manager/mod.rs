@@ -1,6 +1,5 @@
 use std::{
     fmt::{Debug, Display},
-    fs::write,
     ops::Deref,
     path::PathBuf,
     range::Range,
@@ -13,11 +12,12 @@ use crate::{
     animation::EntityAnimationData,
     app::GPUAssetUploadJob,
     asset_manager::{
-        asset_manager::{TextureKey, TextureRegistry},
+        asset_manager::{AssetManager, InternedAssetKey},
         gltf_asset::{
-            AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfMaterial, GltfValidationError,
+            AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfValidationError,
+            TextureSource,
         },
-        material::MaterialAsset,
+        material::{MaterialAsset, MaterialTextureKey},
         texture::TextureAsset,
     },
     renderer::GPUAllocationHandle,
@@ -152,12 +152,53 @@ impl UnloadedAssetData {
         &mut self,
         asset_handle: &AssetHandle,
         bin: &BinaryData,
+        asset_manager: &mut AssetManager,
     ) -> Vec<MaterialAsset> {
         let mut res = Vec::new();
         match self {
             UnloadedAssetData::Gltf { sources, gltf } => {
                 for material in gltf.materials() {
-                    res.push(MaterialAsset::from(material));
+                    let maybe_texture: Option<MaterialTextureKey> =
+                        if let Some(texture_dependency) =
+                            material.pbr_metallic_roughness().base_color_texture()
+                        {
+                            match texture_dependency.texture().source().source() {
+                                gltf::image::Source::View { view, mime_type } => {
+                                    let texture_asset = TextureAsset::from_gltf_binary(
+                                        gltf,
+                                        bin,
+                                        texture_dependency.texture().index(),
+                                    );
+                                    let intern_idx = asset_manager
+                                        .intern_value(*asset_handle, texture_asset)
+                                        .unwrap();
+                                    Some(MaterialTextureKey::Embedded(InternedAssetKey {
+                                        owner: *asset_handle,
+                                        idx: intern_idx as u32,
+                                    }))
+                                }
+                                gltf::image::Source::Uri { uri, mime_type } => {
+                                    // get texture asset
+                                    let TextureSource::ExternalFile(path) =
+                                        &sources.textures[texture_dependency.texture().index()]
+                                    else {
+                                        panic!("bin source mismatch, expected external texture");
+                                    };
+                                    Some(MaterialTextureKey::External(
+                                        *asset_manager.get_registered_texture(path).unwrap(),
+                                    ))
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                    let material_asset = MaterialAsset {
+                        texture: maybe_texture,
+                        base_color_factors: material.pbr_metallic_roughness().base_color_factor(),
+                        roughness: material.pbr_metallic_roughness().roughness_factor(),
+                        metallic: material.pbr_metallic_roughness().metallic_factor(),
+                    };
+                    res.push(material_asset);
                 }
             }
             UnloadedAssetData::Texture(_) => {}

@@ -41,7 +41,7 @@ pub(super) fn decode_embedded(
     gltf: &gltf::Gltf,
     bin: &BinaryData,
     idx: usize,
-) -> Result<GPUTextureData, GltfLoadError> {
+) -> Result<DynamicImage, GltfLoadError> {
     let texture = gltf.textures().nth(idx).ok_or(GltfLoadError::BadFile(
         "cannot find texture on the gltf file".to_string(),
     ))?;
@@ -54,12 +54,7 @@ pub(super) fn decode_embedded(
     let image = ImageReader::new(Cursor::new(data))
         .decode()
         .expect("image read failure");
-    Ok(GPUTextureData {
-        height: image.height(),
-        width: image.width(),
-        srgb: false,
-        pixels: image.to_rgba8().into_raw().into(),
-    })
+    Ok(image)
 }
 
 pub struct TextureAsset {
@@ -130,5 +125,11 @@ impl TextureAsset {
         Ok(Box::new(TextureAsset {
             data: Cell::new(Some(data)),
         }))
+    }
+    pub fn from_gltf_binary(gltf: &gltf::Gltf, bin: &BinaryData, idx: usize) -> Self {
+        let image = decode_embedded(gltf, bin, idx).expect("fail to decode");
+        Self {
+            data: Cell::new(Some(image)),
+        }
     }
 }

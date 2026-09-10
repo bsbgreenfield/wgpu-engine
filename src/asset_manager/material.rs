@@ -1,26 +1,21 @@
 use crate::{
     app::GPUAssetUploadJob,
-    asset_manager::{Asset, ProvidesMaterialData},
+    asset_manager::{Asset, AssetHandle, ProvidesMaterialData, asset_manager::InternedAssetKey},
     util::types::GPUMaterialData,
 };
 
+#[derive(Clone)]
+pub enum MaterialTextureKey {
+    External(AssetHandle),
+    Embedded(InternedAssetKey),
+}
+
+#[derive(Clone)]
 pub struct MaterialAsset {
     pub base_color_factors: [f32; 4],
     pub roughness: f32,
     pub metallic: f32,
-    pub tex_modifier: u32,
-}
-
-impl From<gltf::Material<'_>> for MaterialAsset {
-    fn from(value: gltf::Material) -> Self {
-        let pbr_mr = value.pbr_metallic_roughness();
-        Self {
-            base_color_factors: pbr_mr.base_color_factor(),
-            roughness: pbr_mr.roughness_factor(),
-            metallic: pbr_mr.metallic_factor(),
-            tex_modifier: u32::MAX,
-        }
-    }
+    pub texture: Option<MaterialTextureKey>,
 }
 
 impl ProvidesMaterialData for MaterialAsset {
@@ -33,19 +28,14 @@ impl ProvidesMaterialData for MaterialAsset {
 }
 impl Asset for MaterialAsset {
     fn intern_payload(&self, job: &mut GPUAssetUploadJob) -> () {
-        let payload = GPUMaterialData {
-            base_color_factors: self.base_color_factors,
-            roughness: self.roughness,
-            metallic: self.metallic,
-            tex_modifier: self.tex_modifier,
-            _pad: 0,
-        };
         match job {
-            GPUAssetUploadJob::ModelData { materials, .. } => {
-                if let Some(material_payloads) = materials {
-                    material_payloads.push(payload);
+            GPUAssetUploadJob::ModelData {
+                embedded_materials, ..
+            } => {
+                if let Some(material_payloads) = embedded_materials {
+                    material_payloads.push(self.clone());
                 } else {
-                    materials.insert(vec![payload]);
+                    embedded_materials.insert(vec![self.clone()]);
                 }
             }
             GPUAssetUploadJob::MaterialData {
@@ -65,7 +55,7 @@ impl Asset for MaterialAsset {
                 base_color_factors: self.base_color_factors,
                 roughness: self.roughness,
                 metallic: self.metallic,
-                tex_modifier: self.tex_modifier,
+                tex_modifier: todo!(),
                 _pad: 0,
             },
         })

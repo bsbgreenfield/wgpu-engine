@@ -187,7 +187,7 @@ pub trait BytecodeGenerator<'frame> {
                 pnu_vertices,
                 pnujw_vertices,
                 indices,
-                materials,
+                embedded_materials,
             } => {
                 instructions.push(Instruction::Op(Operations::AddAsset));
                 constants.push(RenderConstant::Key(asset_handle.as_key()));
