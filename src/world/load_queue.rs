@@ -67,6 +67,9 @@ impl LoadQueue {
                 });
                 continue;
             }
+            if job.target == SceneLoadLevel::GPU && !asset_manager.deps_gpu_ready(asset_handle) {
+                continue;
+            }
             let after = asset_manager.set_minimum_load_level(asset_handle, job.target)?;
             if after != current {
                 res.push(AssetTransition {

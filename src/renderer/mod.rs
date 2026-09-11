@@ -1,3 +1,4 @@
+use core::panic;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::range::Range;
@@ -9,7 +10,7 @@ use crate::common::instance::InstanceHandle;
 use crate::renderer::RenderConstant::DataRef;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
 use crate::renderer::gpu_allocator::{GPUUploadJob, GPUUploadResult};
-use crate::util::types::GPUTextureData;
+use crate::util::types::{GPUMaterialData, GPUTextureData};
 use crate::{
     renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
     util::types::{GlobalTransform, ModelVertex},
@@ -276,6 +277,7 @@ pub(crate) enum Operations {
     PNUJWUpload,
     IndexUpload,
     TextureUpload,
+    TextureAcquire,
     MaterialUpload,
     EmitAssetUpload,
     EmitEntitySpawn,

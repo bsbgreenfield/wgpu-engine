@@ -5,13 +5,16 @@ use std::{
     sync::Arc,
 };
 
+use image::DynamicImage;
+
 use crate::{
     animation::{AnimationChannels, AnimationSampler},
-    app::GPUAssetUploadJob,
+    app::{GPUAssetUploadJob, MaterialPaletteJob},
     asset_manager::{
-        Asset, AssetHandle, AssetLoadError, AssetSource, ModelBuilderError, gltf_asset::mesh::Mesh,
+        Asset, AssetHandle, AssetLoadError, AssetSource, ModelBuilderError,
+        asset_manager::AssetManager, gltf_asset::mesh::Mesh,
     },
-    util::types::{GPUMaterialData, GPUTextureData, Mat4F32, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{Mat4F32, PNUJWVertex, PNUVertex, VIndex},
 };
 mod animation;
 mod build;
@@ -62,20 +65,21 @@ impl AssetSource for GltfAsset {
 }
 
 impl Asset for GltfAsset {
-    fn intern_payload(&self, job: &mut GPUAssetUploadJob) {
-        panic!("gltf asset cannot be interned at this time")
-    }
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,
+        asset_manager: &AssetManager,
     ) -> Result<GPUAssetUploadJob, AssetLoadError> {
-        GPUAssetUploadJob::new_model_upload(
+        Ok(GPUAssetUploadJob::ModelData {
             asset_handle,
-            Some(self.pnu_vertices.clone()),
-            Some(self.pnujw_vertices.clone()),
-            self.indices.as_ref().map(|i| i.clone()),
-            None,
-        )
+            pnu_vertices: Some(self.pnu_vertices.clone()),
+            pnujw_vertices: Some(self.pnujw_vertices.clone()),
+            indices: self.indices.as_ref().map(|i| i.clone()),
+            embedded_materials: MaterialPaletteJob::from_gltf(
+                &self.material_palette,
+                asset_manager,
+            ),
+        })
     }
 
     fn as_mesh_provider(&self) -> Option<&dyn super::ProvidesMeshData> {
@@ -173,8 +177,10 @@ impl Hash for GltfNode {
     }
 }
 
-struct GltfTexture {
-    data: image::DynamicImage,
+#[derive(Clone, Debug)]
+pub enum GltfTexture {
+    External(AssetHandle),
+    Embedded(Arc<DynamicImage>),
 }
 
 struct TexturePixels<const IMAGE_SIZE: usize> {
@@ -182,16 +188,18 @@ struct TexturePixels<const IMAGE_SIZE: usize> {
 }
 
 #[derive(Debug, Clone)]
-struct PBRMetallicRoughness {
-    roughness: f32,
-    metallicness: f32,
-    base_color_factor: [f32; 4],
-    texture_idx: Option<usize>,
+pub struct PBRMetallicRoughness {
+    pub roughness: f32,
+    pub metallicness: f32,
+    pub base_color_factor: [f32; 4],
+    pub texture_idx: Option<usize>,
+    pub texture: Option<GltfTexture>,
 }
+
 #[derive(Clone)]
 pub struct GltfMaterial {
     label: Option<String>,
-    pbr_metallic_roughness: PBRMetallicRoughness,
+    pub pbr_metallic_roughness: PBRMetallicRoughness,
 }
 
 struct MaterialPalette {

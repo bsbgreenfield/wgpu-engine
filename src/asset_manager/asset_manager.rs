@@ -1,11 +1,4 @@
-use std::{
-    cell::Cell,
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    marker::PhantomData,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::HashMap, fmt::Debug, marker::PhantomData, path::PathBuf};
 
 use crate::{
     app::GPUAssetUploadJob,
@@ -13,8 +6,7 @@ use crate::{
         Asset, AssetHandle, AssetLoadError, AssetResidency, AssetSource, LoadedAsset,
         UnloadedAssetData,
     },
-    renderer::{GPUAllocationHandle, GPUTextureHandle},
-    util::types::GPUTextureData,
+    renderer::GPUAllocationHandle,
     world::{entity_manager::components::ResourceBacking, scene::SceneLoadLevel},
 };
 
@@ -77,22 +69,42 @@ pub struct InternedAssetKey {
 
 pub struct AssetManager {
     registered_assets: HashMap<AssetHandle, RegisteredAsset<dyn Asset>>,
-    interned_assets: HashMap<AssetHandle, Vec<Box<dyn Asset>>>,
+    //interned_assets: HashMap<AssetHandle, Vec<Box<dyn Asset>>>,
     loaded_assets: Vec<(AssetHandle, Box<dyn Asset>)>,
     texture_registry: TextureRegistry,
+    asset_dependencies: HashMap<AssetHandle, Vec<AssetHandle>>,
 }
 
 impl AssetManager {
     pub fn new() -> Self {
         Self {
             texture_registry: TextureRegistry::default(),
-            interned_assets: HashMap::new(),
             loaded_assets: Vec::new(),
             registered_assets: HashMap::new(),
+            asset_dependencies: HashMap::new(),
         }
     }
     fn gen_handle(&self) -> AssetHandle {
         AssetHandle(self.registered_assets.len() as u32)
+    }
+
+    pub fn deps_gpu_ready(&self, handle: &AssetHandle) -> bool {
+        match self.asset_dependencies.get(handle) {
+            Some(deps) => {
+                for dep in deps {
+                    let RegisteredAsset::Loaded { residency, .. } =
+                        self.registered_assets.get(dep).unwrap()
+                    else {
+                        return false;
+                    };
+                    if !matches!(residency, AssetResidency::GPU(_, _)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            None => true,
+        }
     }
 
     pub(super) fn get_registered_texture(&self, path: &PathBuf) -> Option<&AssetHandle> {
@@ -142,7 +154,6 @@ impl AssetManager {
             } => {
                 self.registered_assets
                     .insert(handle, RegisteredAsset::Unloaded { data, _t });
-                self.interned_assets.remove(&handle);
             }
             _ => panic!("not loaded"),
         }
@@ -152,38 +163,10 @@ impl AssetManager {
     fn load(&mut self, asset_handle: &AssetHandle) -> Result<usize, AssetLoadError> {
         let registered_asset = self.registered_assets.remove(asset_handle).unwrap();
         match registered_asset {
-            RegisteredAsset::Unloaded { mut data, _t } => {
+            RegisteredAsset::Unloaded { data, _t } => {
                 let bin = data.load_binary()?;
 
-                for material in data.intern_materials(asset_handle, &bin, self) {
-                    let _interned_la_index = self.intern_value(*asset_handle, material)?;
-                }
-                // insert texture data in to registered textures, if new
-                // and also record the indices of all the registered textures for
-                // this asset
-                //                let mut texture_indices =
-                //                    data.intern_textures(asset_handle, &bin, &mut self.texture_registry)?;
-                //                texture_indices.sort();
-                //
-                //                let mut last: isize = -1;
-                //                for ti in texture_indices.iter() {
-                //                    if *ti as isize == last {
-                //                        continue;
-                //                    }
-                //                    last = *ti as isize;
-                //                    self.texture_registry
-                //                        .textures
-                //                        .get_mut(*ti)
-                //                        .expect("registered texture")
-                //                        .cpu_refs += 1;
-                //                }
-                //
-                //                self.texture_registry
-                //                    .asset_mapping
-                //                    .insert(*asset_handle, texture_indices);
-                //
-                // load the rest of the data for the asset
-                let loaded = data.load(&bin)?;
+                let loaded = data.load(&bin, &self)?;
                 let la_index = self.loaded_assets.len().clone();
                 self.loaded_assets.push((asset_handle.clone(), loaded));
                 self.registered_assets.insert(
@@ -214,21 +197,13 @@ impl AssetManager {
             )),
             RegisteredAsset::Loaded { residency: res, .. } => {
                 //.
-                let mut job = match res {
+                let job = match res {
                     AssetResidency::CPU(la_index) | AssetResidency::PendingGPU(la_index) => {
-                        println!("this asset is {:?} RES", res);
                         let asset = &self.loaded_assets[*la_index].1;
-                        let main_job = asset.get_upload_job(asset_handle)?;
-                        //job.textures = self.texture_registry.gpu_uploadable_textures(&asset_handle);
-                        main_job
+                        asset.get_upload_job(asset_handle, &self)?
                     }
                     _ => return Err(AssetLoadError::AssetNotFound),
                 };
-                if let Some(interned_assets) = self.interned_assets.get(&asset_handle) {
-                    for asset in interned_assets {
-                        asset.intern_payload(&mut job);
-                    }
-                }
                 Ok(job)
             }
         }
@@ -264,24 +239,13 @@ impl AssetManager {
         }
     }
 
-    pub(super) fn intern_value<A>(
-        &mut self,
-        owner: AssetHandle,
-        asset: A,
-    ) -> Result<usize, AssetLoadError>
-    where
-        A: Asset + 'static,
-    {
-        let owned = self.interned_assets.entry(owner).or_insert(vec![]);
-        owned.push(Box::new(asset));
-        Ok(owned.len() - 1)
-    }
     pub fn register_asset<A>(&mut self, source: &str) -> Result<ResourceBacking<A>, AssetLoadError>
     where
         A: Asset + AssetSource + 'static,
     {
         let asset = A::new(source)?;
         let handle = self.gen_handle();
+        self.register_external_dependency(&asset, &handle);
         self.registered_assets.insert(
             handle,
             RegisteredAsset::Unloaded {
@@ -290,6 +254,31 @@ impl AssetManager {
             },
         );
         Ok(ResourceBacking::new(handle))
+    }
+
+    fn register_external_dependency(&mut self, asset: &UnloadedAssetData, handle: &AssetHandle) {
+        match asset {
+            UnloadedAssetData::Gltf { sources, gltf } => {
+                for texture_source in sources.textures.iter() {
+                    match texture_source {
+                        super::gltf_asset::TextureSource::ExternalFile(path_buf) => {
+                            let texture_asset = self
+                                .texture_registry
+                                .registered_textures
+                                .get(path_buf)
+                                .expect("texture must be registered");
+                            self.asset_dependencies
+                                .entry(*handle)
+                                .or_insert(vec![*texture_asset]);
+                        }
+                        super::gltf_asset::TextureSource::BinarySource(binary_source) => todo!(),
+                    }
+                }
+            }
+            UnloadedAssetData::Texture(path_buf) => todo!(),
+            #[cfg(test)]
+            UnloadedAssetData::Mock => todo!(),
+        }
     }
 
     pub(crate) fn register_asset_gpu_residency(
@@ -320,13 +309,6 @@ impl AssetManager {
             return Err(AssetLoadError::AssetNotFound);
         }
         return Ok(());
-        //if let Some(registered_asset) = self.registered_assets.remove(&asset_handle) {
-        //    self.registered_assets
-        //        .insert(asset_handle, registered_asset.as_unloaded()?);
-        //    return Ok(());
-        //} else {
-        //    return Err(AssetLoadError::AssetNotFound);
-        //}
     }
 
     pub(crate) fn set_minimum_load_level(
@@ -448,7 +430,7 @@ pub(super) mod asset_mocks {
     use std::marker::PhantomData;
 
     use crate::{
-        app::GPUAssetUploadJob,
+        app::{GPUAssetUploadJob, MaterialPaletteJob},
         asset_manager::{
             Asset, AssetHandle, AssetResidency, UnloadedAssetData,
             asset_manager::{AssetManager, RegisteredAsset},
@@ -457,12 +439,21 @@ pub(super) mod asset_mocks {
 
     pub struct MockAsset;
     impl Asset for MockAsset {
-        fn intern_payload(&self, job: &mut GPUAssetUploadJob) {}
         fn get_upload_job(
             &self,
             asset_handle: crate::asset_manager::AssetHandle,
+            asset_manager: &AssetManager,
         ) -> Result<crate::app::GPUAssetUploadJob, crate::asset_manager::AssetLoadError> {
-            GPUAssetUploadJob::new_model_upload(asset_handle, None, None, None, None)
+            Ok(GPUAssetUploadJob::ModelData {
+                asset_handle,
+                pnu_vertices: None,
+                pnujw_vertices: None,
+                indices: None,
+                embedded_materials: MaterialPaletteJob {
+                    records: vec![],
+                    tex_bindings: vec![],
+                },
+            })
         }
 
         fn as_mesh_provider(&self) -> Option<&dyn crate::asset_manager::ProvidesMeshData> {

@@ -6,7 +6,7 @@ use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
         Asset, AssetSource, BinaryData, ModelBuilderError, ProvidesTextureData,
-        gltf_asset::GltfLoadError,
+        asset_manager::AssetManager, gltf_asset::GltfLoadError,
     },
     util::types::GPUTextureData,
 };
@@ -27,7 +27,7 @@ pub fn load_texture_from_file(path: &PathBuf) -> Result<GPUTextureData, GltfLoad
     })
 }
 
-fn load_image_from_file(path: &PathBuf) -> Result<DynamicImage, Box<dyn Error>> {
+pub(super) fn load_image_from_file(path: &PathBuf) -> Result<DynamicImage, Box<dyn Error>> {
     let data = std::fs::read(path)?;
     let image = image::ImageReader::new(Cursor::new(data))
         .with_guessed_format()
@@ -86,6 +86,7 @@ impl Asset for TextureAsset {
     fn get_upload_job(
         &self,
         asset_handle: super::AssetHandle,
+        asset_manager: &AssetManager,
     ) -> Result<crate::app::GPUAssetUploadJob, super::AssetLoadError> {
         let image = self.data.take().unwrap();
 
@@ -112,9 +113,6 @@ impl Asset for TextureAsset {
         None
     }
 
-    fn intern_payload(&self, job: &mut crate::app::GPUAssetUploadJob) {
-        todo!()
-    }
     fn as_texture_provider(&self) -> Option<&dyn super::ProvidesTextureData> {
         Some(self)
     }

@@ -1,26 +1,22 @@
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::path::PathBuf;
 use std::range::Range;
 use std::sync::Arc;
-
-use image::DynamicImage;
-use wgpu::Extent3d;
 
 use crate::animation::{
     AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
     InterpolationType,
 };
+use crate::asset_manager::asset_manager::AssetManager;
 use crate::asset_manager::gltf_asset::mesh::{
-    base64_decode, copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
+    copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
 };
 use crate::asset_manager::gltf_asset::util::collect_mesh_ids;
 use crate::asset_manager::gltf_asset::{
     AssetSources, GltfAnimation, GltfAsset, GltfLoadError, GltfMaterial, GltfTexture,
-    MaterialPalette, NodeTransforms, NodeType, PBRMetallicRoughness, TextureSource, loader,
+    NodeTransforms, NodeType, PBRMetallicRoughness, loader,
 };
-use crate::asset_manager::{
-    Asset, BinaryData, BinarySource, GltfValidationError, ModelBuilderError,
-};
+use crate::asset_manager::{Asset, BinaryData, GltfValidationError, ModelBuilderError, texture};
 use crate::util::types::{Mat4F32, ModelVertex, PrimitiveVerticesData, VIndex};
 use crate::{
     asset_manager::{
@@ -280,11 +276,33 @@ fn get_ibms(
     Ok(ibms)
 }
 
-fn get_materials(gltf: &gltf::Gltf) -> Result<Arc<[GltfMaterial]>, ModelBuilderError> {
+fn get_materials(
+    gltf: &gltf::Gltf,
+    bin: &BinaryData,
+    asset_manager: &AssetManager,
+) -> Result<Arc<[GltfMaterial]>, ModelBuilderError> {
     let mut materials: Vec<GltfMaterial> = Vec::new();
 
     for material in gltf.materials() {
         let pbr_data = material.pbr_metallic_roughness();
+
+        let gltf_texture: Option<GltfTexture> = if let Some(texture) = pbr_data.base_color_texture()
+        {
+            match texture.texture().source().source() {
+                gltf::image::Source::View { view, mime_type } => {
+                    let image = texture::decode_embedded(gltf, bin, texture.texture().index())
+                        .expect("image load fail");
+                    Some(GltfTexture::Embedded(Arc::new(image)))
+                }
+                gltf::image::Source::Uri { uri, mime_type } => Some(GltfTexture::External(
+                    *asset_manager
+                        .get_registered_texture(&PathBuf::from(uri))
+                        .unwrap(),
+                )),
+            }
+        } else {
+            None
+        };
         materials.push(GltfMaterial {
             label: material.name().map(|n| n.to_string()),
             pbr_metallic_roughness: PBRMetallicRoughness {
@@ -292,6 +310,7 @@ fn get_materials(gltf: &gltf::Gltf) -> Result<Arc<[GltfMaterial]>, ModelBuilderE
                 metallicness: pbr_data.metallic_factor(),
                 base_color_factor: pbr_data.base_color_factor(),
                 texture_idx: pbr_data.base_color_texture().map(|t| t.texture().index()),
+                texture: gltf_texture,
             },
         });
     }
@@ -369,13 +388,17 @@ impl GltfAsset {
     ) -> Result<BinaryData, GltfLoadError> {
         loader::load_binary_data_from_source(gltf, sources)
     }
-    pub fn load(gltf: &gltf::Gltf, bin: &BinaryData) -> Result<Box<dyn Asset>, ModelBuilderError> {
+    pub fn load(
+        gltf: &gltf::Gltf,
+        bin: &BinaryData,
+        asset_manager: &AssetManager,
+    ) -> Result<Box<dyn Asset>, ModelBuilderError> {
         let binary_data = &bin.data;
         let buffer_offsets = &bin.buffer_offsets;
         let skins = get_skins(gltf);
         let node_tree = build_node_trees(gltf, &skins)?;
 
-        let material_palette = get_materials(&gltf)?;
+        let material_palette = get_materials(gltf, bin, asset_manager)?;
         let ibms = get_ibms(&gltf, binary_data, buffer_offsets)?;
         let primitive_data = get_primitive_data_map(&gltf, &node_tree)?;
         let index_range_vec = get_index_range_vec(&primitive_data, buffer_offsets)?;

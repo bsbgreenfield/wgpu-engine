@@ -1,10 +1,12 @@
 use core::panic;
+use std::sync::Arc;
 
 use crate::{
     app::GPUAssetUploadJob,
     asset_manager::AssetHandle,
     renderer::{
-        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction, Operations,
+        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction,
+        Operations::{self, TextureUpload},
         RenderConstant,
     },
     util::types::{GPUMaterialData, PNUJWVertex, PNUVertex, VIndex},
@@ -210,12 +212,32 @@ pub trait BytecodeGenerator<'frame> {
                     constants.push(RenderConstant::DataRef(index_data));
                     Self::emit_const_last(constants, instructions);
                 }
-                if let Some(material_data) = materials {
+                if !embedded_materials.records.is_empty() {
+                    // emit all textures, backwards for stack
+                    for tex in embedded_materials.tex_bindings.iter().rev() {
+                        match tex {
+                            crate::app::GPUTextureBinding::None => todo!(),
+                            crate::app::GPUTextureBinding::Embedded(gputexture_data) => {
+                                instructions.push(Instruction::Op(Operations::TextureUpload));
+                                constants
+                                    .push(RenderConstant::DataRef(gputexture_data.pixels.as_ref()));
+                                Self::emit_const_last(constants, instructions);
+                                instructions.push(Instruction::Byte(4)); // TODO: collapse tex dim
+                            }
+                            crate::app::GPUTextureBinding::Resolved(gpuallocation_handle) => {
+                                instructions.push(Instruction::Op(Operations::TextureAcquire));
+                                constants.push(RenderConstant::Key(gpuallocation_handle.as_key()));
+                                Self::emit_const_last(constants, instructions);
+                            }
+                        }
+                    }
                     instructions.push(Instruction::Op(Operations::MaterialUpload));
-                    let material_data = bytemuck::cast_slice::<GPUMaterialData, u8>(material_data);
-                    constants.push(RenderConstant::DataRef(material_data));
+                    let material_bytes =
+                        bytemuck::cast_slice::<GPUMaterialData, u8>(&embedded_materials.records);
+                    constants.push(RenderConstant::DataRef(material_bytes));
                     Self::emit_const_last(constants, instructions);
                 }
+
                 instructions.push(Instruction::Op(Operations::EmitAssetUpload));
             }
             GPUAssetUploadJob::MaterialData { .. } => todo!(),

@@ -34,6 +34,13 @@ impl MaterialBindGroup {
         res
     }
 
+    pub(in crate::renderer) fn resolve_texture_slot(
+        &self,
+        alloc_handle: &GPUAllocationHandle,
+    ) -> Option<(u32, u32)> {
+        self.texture_arena.resolve(alloc_handle)
+    }
+
     pub(in crate::renderer) fn upload_texture(
         &mut self,
         job: UploadTextureJob,

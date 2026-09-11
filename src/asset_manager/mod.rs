@@ -12,12 +12,8 @@ use crate::{
     animation::EntityAnimationData,
     app::GPUAssetUploadJob,
     asset_manager::{
-        asset_manager::{AssetManager, InternedAssetKey},
-        gltf_asset::{
-            AssetSources, BinarySource, GltfAsset, GltfLoadError, GltfValidationError,
-            TextureSource,
-        },
-        material::{MaterialAsset, MaterialTextureKey},
+        asset_manager::AssetManager,
+        gltf_asset::{AssetSources, GltfAsset, GltfLoadError, GltfValidationError},
         texture::TextureAsset,
     },
     renderer::GPUAllocationHandle,
@@ -106,6 +102,10 @@ impl RenderKey for AssetHandle {
     }
 }
 
+struct BinaryData {
+    buffer_offsets: Vec<usize>,
+    data: Vec<u8>,
+}
 pub enum UnloadedAssetData {
     Gltf {
         sources: AssetSources,
@@ -127,11 +127,6 @@ impl Debug for UnloadedAssetData {
     }
 }
 
-struct BinaryData {
-    buffer_offsets: Vec<usize>,
-    data: Vec<u8>,
-}
-
 impl UnloadedAssetData {
     fn load_binary(&self) -> Result<BinaryData, AssetLoadError> {
         match self {
@@ -147,66 +142,80 @@ impl UnloadedAssetData {
             UnloadedAssetData::Mock => todo!(),
         }
     }
-
-    fn intern_materials(
-        &mut self,
-        asset_handle: &AssetHandle,
+    fn load(
+        &self,
         bin: &BinaryData,
-        asset_manager: &mut AssetManager,
-    ) -> Vec<MaterialAsset> {
-        let mut res = Vec::new();
+        asset_manager: &AssetManager,
+    ) -> Result<Box<dyn Asset>, ModelBuilderError> {
         match self {
-            UnloadedAssetData::Gltf { sources, gltf } => {
-                for material in gltf.materials() {
-                    let maybe_texture: Option<MaterialTextureKey> =
-                        if let Some(texture_dependency) =
-                            material.pbr_metallic_roughness().base_color_texture()
-                        {
-                            match texture_dependency.texture().source().source() {
-                                gltf::image::Source::View { view, mime_type } => {
-                                    let texture_asset = TextureAsset::from_gltf_binary(
-                                        gltf,
-                                        bin,
-                                        texture_dependency.texture().index(),
-                                    );
-                                    let intern_idx = asset_manager
-                                        .intern_value(*asset_handle, texture_asset)
-                                        .unwrap();
-                                    Some(MaterialTextureKey::Embedded(InternedAssetKey {
-                                        owner: *asset_handle,
-                                        idx: intern_idx as u32,
-                                    }))
-                                }
-                                gltf::image::Source::Uri { uri, mime_type } => {
-                                    // get texture asset
-                                    let TextureSource::ExternalFile(path) =
-                                        &sources.textures[texture_dependency.texture().index()]
-                                    else {
-                                        panic!("bin source mismatch, expected external texture");
-                                    };
-                                    Some(MaterialTextureKey::External(
-                                        *asset_manager.get_registered_texture(path).unwrap(),
-                                    ))
-                                }
-                            }
-                        } else {
-                            None
-                        };
-                    let material_asset = MaterialAsset {
-                        texture: maybe_texture,
-                        base_color_factors: material.pbr_metallic_roughness().base_color_factor(),
-                        roughness: material.pbr_metallic_roughness().roughness_factor(),
-                        metallic: material.pbr_metallic_roughness().metallic_factor(),
-                    };
-                    res.push(material_asset);
-                }
-            }
-            UnloadedAssetData::Texture(_) => {}
+            Self::Gltf { sources, gltf } => GltfAsset::load(gltf, bin, asset_manager),
+            Self::Texture(path) => TextureAsset::load(path),
             #[cfg(test)]
-            UnloadedAssetData::Mock => todo!(),
+            Self::Mock => Ok(Box::new(
+                crate::asset_manager::asset_manager::asset_mocks::MockAsset,
+            )),
         }
-        res
     }
+
+    // fn intern_materials(
+    //     &mut self,
+    //     asset_handle: &AssetHandle,
+    //     bin: &BinaryData,
+    //     asset_manager: &mut AssetManager,
+    // ) -> Vec<MaterialAsset> {
+    //     let mut res = Vec::new();
+    //     match self {
+    //         UnloadedAssetData::Gltf { sources, gltf } => {
+    //             for material in gltf.materials() {
+    //                 let maybe_texture: Option<MaterialTextureKey> =
+    //                     if let Some(texture_dependency) =
+    //                         material.pbr_metallic_roughness().base_color_texture()
+    //                     {
+    //                         match texture_dependency.texture().source().source() {
+    //                             gltf::image::Source::View { view, mime_type } => {
+    //                                 let texture_asset = TextureAsset::from_gltf_binary(
+    //                                     gltf,
+    //                                     bin,
+    //                                     texture_dependency.texture().index(),
+    //                                 );
+    //                                 let intern_idx = asset_manager
+    //                                     .intern_value(*asset_handle, texture_asset)
+    //                                     .unwrap();
+    //                                 Some(MaterialTextureKey::Embedded(InternedAssetKey {
+    //                                     owner: *asset_handle,
+    //                                     idx: intern_idx as u32,
+    //                                 }))
+    //                             }
+    //                             gltf::image::Source::Uri { uri, mime_type } => {
+    //                                 // get texture asset
+    //                                 let TextureSource::ExternalFile(path) =
+    //                                     &sources.textures[texture_dependency.texture().index()]
+    //                                 else {
+    //                                     panic!("bin source mismatch, expected external texture");
+    //                                 };
+    //                                 Some(MaterialTextureKey::External(
+    //                                     *asset_manager.get_registered_texture(path).unwrap(),
+    //                                 ))
+    //                             }
+    //                         }
+    //                     } else {
+    //                         None
+    //                     };
+    //                 let material_asset = MaterialAsset {
+    //                     texture: maybe_texture,
+    //                     base_color_factors: material.pbr_metallic_roughness().base_color_factor(),
+    //                     roughness: material.pbr_metallic_roughness().roughness_factor(),
+    //                     metallic: material.pbr_metallic_roughness().metallic_factor(),
+    //                 };
+    //                 res.push(material_asset);
+    //             }
+    //         }
+    //         UnloadedAssetData::Texture(_) => {}
+    //         #[cfg(test)]
+    //         UnloadedAssetData::Mock => todo!(),
+    //     }
+    //     res
+    // }
 
     // fn intern_textures(
     //     &self,
@@ -238,17 +247,6 @@ impl UnloadedAssetData {
     //         UnloadedAssetData::Mock => todo!(),
     //     }
     // }
-
-    fn load(&self, bin: &BinaryData) -> Result<Box<dyn Asset>, ModelBuilderError> {
-        match self {
-            Self::Gltf { sources, gltf } => GltfAsset::load(gltf, bin),
-            Self::Texture(path) => TextureAsset::load(path),
-            #[cfg(test)]
-            Self::Mock => Ok(Box::new(
-                crate::asset_manager::asset_manager::asset_mocks::MockAsset,
-            )),
-        }
-    }
 }
 
 pub trait AssetSource {
@@ -265,13 +263,13 @@ pub trait Asset {
     fn get_upload_job(
         &self,
         asset_handle: AssetHandle,
+        asset_manager: &AssetManager,
     ) -> Result<GPUAssetUploadJob, AssetLoadError>;
 
     fn as_mesh_provider(&self) -> Option<&dyn ProvidesMeshData>;
     fn as_animation_provider(&self) -> Option<&dyn ProvidesAnimationData>;
     fn as_materials_provider(&self) -> Option<&dyn ProvidesMaterialData>;
     fn as_texture_provider(&self) -> Option<&dyn ProvidesTextureData>;
-    fn intern_payload(&self, job: &mut GPUAssetUploadJob);
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AssetResidency {

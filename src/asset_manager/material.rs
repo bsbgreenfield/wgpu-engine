@@ -1,13 +1,22 @@
+use std::sync::Arc;
+
+use image::DynamicImage;
+
 use crate::{
     app::GPUAssetUploadJob,
-    asset_manager::{Asset, AssetHandle, ProvidesMaterialData, asset_manager::InternedAssetKey},
-    util::types::GPUMaterialData,
+    asset_manager::{
+        Asset, AssetHandle, ProvidesMaterialData, asset_manager::AssetManager,
+        gltf_asset::GltfMaterial,
+    },
+    renderer::GPUAllocationHandle,
+    util::types::{GPUMaterialData, GPUTextureData},
 };
 
 #[derive(Clone)]
-pub enum MaterialTextureKey {
+pub enum MaterialTexture {
     External(AssetHandle),
-    Embedded(InternedAssetKey),
+    Embedded(Arc<GPUTextureData>),
+    Resolved(GPUAllocationHandle),
 }
 
 #[derive(Clone)]
@@ -15,7 +24,34 @@ pub struct MaterialAsset {
     pub base_color_factors: [f32; 4],
     pub roughness: f32,
     pub metallic: f32,
-    pub texture: Option<MaterialTextureKey>,
+    pub texture: Option<MaterialTexture>,
+}
+
+impl From<&GltfMaterial> for MaterialAsset {
+    fn from(value: &GltfMaterial) -> Self {
+        let pbr = value.pbr_metallic_roughness.clone();
+        Self {
+            base_color_factors: pbr.base_color_factor,
+            roughness: pbr.roughness,
+            metallic: pbr.metallicness,
+            texture: pbr.texture.map(|gltf_texture| match gltf_texture {
+                super::gltf_asset::GltfTexture::External(asset_handle) => {
+                    MaterialTexture::External(asset_handle)
+                }
+                super::gltf_asset::GltfTexture::Embedded(dynamic_image) => {
+                    MaterialTexture::Embedded(
+                        GPUTextureData {
+                            height: dynamic_image.height(),
+                            width: dynamic_image.width(),
+                            srgb: false,
+                            pixels: dynamic_image.to_rgba8().into_raw().into(),
+                        }
+                        .into(),
+                    )
+                }
+            }),
+        }
+    }
 }
 
 impl ProvidesMaterialData for MaterialAsset {
@@ -27,27 +63,28 @@ impl ProvidesMaterialData for MaterialAsset {
     }
 }
 impl Asset for MaterialAsset {
-    fn intern_payload(&self, job: &mut GPUAssetUploadJob) -> () {
-        match job {
-            GPUAssetUploadJob::ModelData {
-                embedded_materials, ..
-            } => {
-                if let Some(material_payloads) = embedded_materials {
-                    material_payloads.push(self.clone());
-                } else {
-                    embedded_materials.insert(vec![self.clone()]);
-                }
-            }
-            GPUAssetUploadJob::MaterialData {
-                asset_handle,
-                material_data,
-            } => todo!(),
-            GPUAssetUploadJob::TextureData { .. } => todo!(),
-        }
-    }
+    // fn intern_payload(&self, job: &mut GPUAssetUploadJob) -> () {
+    //     match job {
+    //         GPUAssetUploadJob::ModelData {
+    //             embedded_materials, ..
+    //         } => {
+    //             if let Some(material_payloads) = embedded_materials {
+    //                 material_payloads.push(self.clone());
+    //             } else {
+    //                 embedded_materials.insert(vec![self.clone()]);
+    //             }
+    //         }
+    //         GPUAssetUploadJob::MaterialData {
+    //             asset_handle,
+    //             material_data,
+    //         } => todo!(),
+    //         GPUAssetUploadJob::TextureData { .. } => todo!(),
+    //     }
+    // }
     fn get_upload_job(
         &self,
         asset_handle: super::AssetHandle,
+        asset_manager: &AssetManager,
     ) -> Result<crate::app::GPUAssetUploadJob, super::AssetLoadError> {
         Ok(GPUAssetUploadJob::MaterialData {
             asset_handle,
@@ -58,6 +95,7 @@ impl Asset for MaterialAsset {
                 tex_modifier: todo!(),
                 _pad: 0,
             },
+            texture: todo!(),
         })
     }
 

@@ -165,6 +165,14 @@ impl TextureArena {
             alloc_table: AllocationTable::new(),
         }
     }
+
+    pub(in crate::renderer) fn resolve(
+        &self,
+        alloc_handle: &GPUAllocationHandle,
+    ) -> Option<(u32, u32)> {
+        let meta = self.alloc_table.resolve(alloc_handle)?;
+        Some((meta.chunk_id as u32, meta.node_id as u32))
+    }
     const fn idx_from_dimension(dimension: u32) -> usize {
         match dimension {
             1 => 0,

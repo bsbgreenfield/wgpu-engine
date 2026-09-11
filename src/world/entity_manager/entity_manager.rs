@@ -137,9 +137,19 @@ impl EntityManager {
         {
             result.insert(mesh_collection_component.resource_backing.asset_handle);
         }
-        if let Some(material_component) = self.materials.get(entity_handle.0 as usize) {
-            for resource_backing in material_component.resource_backings.iter() {
+        if let Some(material_palette_component) = self.materials.get(entity_handle.0 as usize) {
+            for resource_backing in material_palette_component.resource_backings.iter() {
                 result.insert(resource_backing.asset_handle);
+            }
+            for maybe_texture_dep in material_palette_component.textures.iter() {
+                if let Some(texture_dep) = maybe_texture_dep {
+                    match texture_dep {
+                        super::components::MaterialTextureSource::External(resource_backing) => {
+                            result.insert(resource_backing.asset_handle);
+                        }
+                        super::components::MaterialTextureSource::Embedded => {}
+                    }
+                }
             }
         }
         return result;
