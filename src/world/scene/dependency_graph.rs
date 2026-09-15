@@ -59,6 +59,11 @@ pub struct DependencyGraph {
     asset_demand: HashMap<AssetHandle, AssetDemand>,
 }
 
+pub struct AssetRequirement {
+    entity_handle: EntityHandle,
+    asset_handle: AssetHandle,
+}
+
 impl DependencyGraph {
     pub fn ack_despawn(&mut self, instance_handle: InstanceHandle) {
         //let mut free_assets = Vec::<AssetHandle>::new();
@@ -85,31 +90,29 @@ impl DependencyGraph {
             .map(|d| d.holders.as_slice())
             .unwrap_or(&[])
     }
-    pub fn required_assets_of(&self, scene_id: SceneId) -> Vec<AssetHandle> {
+    pub fn required_assets_of(&self, scene_id: SceneId) -> Vec<(EntityHandle, AssetHandle)> {
         let mut assets = HashSet::new();
+        let mut entities = Vec::new();
         for entity in self.scenes.get(&scene_id).unwrap().entities.iter() {
-            assets.extend(
-                self.entities
-                    .get(entity.0 as usize)
-                    .unwrap()
-                    .assets
-                    .iter()
-                    .copied(),
-            );
+            for asset in &self.entities.get(entity.0 as usize).unwrap().assets {
+                if assets.insert(*asset) {
+                    entities.push(*entity);
+                }
+            }
         }
-        assets.into_iter().collect()
+        entities.drain(..).zip(assets.into_iter()).collect()
     }
     pub fn recompute_asset_levels(
         &mut self,
         scene_id: SceneId,
         prev: SceneLoadLevel,
         new: SceneLoadLevel,
-    ) -> Vec<AssetHandle> {
+    ) -> Vec<(EntityHandle, AssetHandle)> {
         let mut assets = self.required_assets_of(scene_id);
         if prev == new {
             return assets;
         }
-        for asset in assets.iter_mut() {
+        for (_, asset) in assets.iter_mut() {
             let d = self.asset_demand.get_mut(&asset).unwrap();
             if prev == SceneLoadLevel::CPU {
                 d.cpu -= 1;

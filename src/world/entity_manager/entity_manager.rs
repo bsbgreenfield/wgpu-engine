@@ -12,7 +12,7 @@ use crate::{
             EntityManagerError, Renderables,
             components::{
                 AnimationComponent, AnimationMode, Component, MaterialPalleteComponent,
-                MeshCollectionComponent, MeshCollectionDescriptor,
+                MaterialTextureSource, MeshCollectionComponent, MeshCollectionDescriptor,
             },
         },
         world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},
@@ -27,6 +27,26 @@ pub struct EntityManager {
 }
 
 impl EntityManager {
+    pub fn asset_dependencies_of(
+        &self,
+        entity_handle: &EntityHandle,
+        asset_handle: &AssetHandle,
+    ) -> Vec<AssetHandle> {
+        // TODO: probably store asset dependencies in an easier way
+        let mut res = Vec::new();
+        if let Some(material) = self.materials.get(entity_handle.0 as usize) {
+            for rb in material.resource_backings.iter() {
+                if &rb.asset_handle == asset_handle {
+                    for tex in material.textures.iter().filter(|t| t.is_some()) {
+                        if let MaterialTextureSource::External(rb) = tex.as_ref().unwrap() {
+                            res.push(rb.asset_handle);
+                        }
+                    }
+                }
+            }
+        }
+        res
+    }
     pub fn get_entity_cloned<'frame>(
         &'frame self,
         instance_handles: Vec<InstanceHandle>,

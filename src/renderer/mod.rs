@@ -247,6 +247,36 @@ impl<'a, T: Pod> InstanceUploadJob<'a, T> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TexDim {
+    Dim1,
+    Dim64,
+    Dim128,
+    Dim256,
+    Dim1024,
+}
+
+impl TexDim {
+    pub(in super::renderer) fn as_u32(self) -> u32 {
+        match self {
+            TexDim::Dim1 => 1,
+            TexDim::Dim64 => 64,
+            TexDim::Dim128 => 128,
+            TexDim::Dim256 => 256,
+            TexDim::Dim1024 => 1024,
+        }
+    }
+    pub(crate) fn from_u32(val: u32) -> Self {
+        match val {
+            1 => Self::Dim1,
+            64 => Self::Dim64,
+            128 => Self::Dim128,
+            256 => Self::Dim256,
+            1024 => Self::Dim1024,
+            _ => todo!("tex dim not implemented for {val}"),
+        }
+    }
+}
 #[allow(unused)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Instruction {
@@ -255,6 +285,7 @@ pub(crate) enum Instruction {
     ConstIdx(u8),
     WideIdx(u8),
     Buffer(BufferType),
+    TexDim(TexDim),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -277,6 +308,7 @@ pub(crate) enum Operations {
     PNUJWUpload,
     IndexUpload,
     TextureUpload,
+    TexureDefault,
     TextureAcquire,
     MaterialUpload,
     EmitAssetUpload,
@@ -300,6 +332,7 @@ enum StackValue {
     Alloc(GPUAllocationHandle),
     Instance(GPUInstanceHandle),
     Offset(u32),
+    TextureSlot(u32),
 }
 
 impl StackValue {
@@ -307,6 +340,12 @@ impl StackValue {
         match self {
             StackValue::Alloc(a) => a,
             _ => panic!("expected an alloc key, got {self:?}"),
+        }
+    }
+    fn as_texture_slot(self) -> u32 {
+        match self {
+            StackValue::TextureSlot(val) => val,
+            _ => panic!("expected texuture slot, got {self:?}"),
         }
     }
 

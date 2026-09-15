@@ -69,10 +69,8 @@ pub struct InternedAssetKey {
 
 pub struct AssetManager {
     registered_assets: HashMap<AssetHandle, RegisteredAsset<dyn Asset>>,
-    //interned_assets: HashMap<AssetHandle, Vec<Box<dyn Asset>>>,
     loaded_assets: Vec<(AssetHandle, Box<dyn Asset>)>,
     texture_registry: TextureRegistry,
-    asset_dependencies: HashMap<AssetHandle, Vec<AssetHandle>>,
 }
 
 impl AssetManager {
@@ -81,30 +79,10 @@ impl AssetManager {
             texture_registry: TextureRegistry::default(),
             loaded_assets: Vec::new(),
             registered_assets: HashMap::new(),
-            asset_dependencies: HashMap::new(),
         }
     }
     fn gen_handle(&self) -> AssetHandle {
         AssetHandle(self.registered_assets.len() as u32)
-    }
-
-    pub fn deps_gpu_ready(&self, handle: &AssetHandle) -> bool {
-        match self.asset_dependencies.get(handle) {
-            Some(deps) => {
-                for dep in deps {
-                    let RegisteredAsset::Loaded { residency, .. } =
-                        self.registered_assets.get(dep).unwrap()
-                    else {
-                        return false;
-                    };
-                    if !matches!(residency, AssetResidency::GPU(_, _)) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-            None => true,
-        }
     }
 
     pub(super) fn get_registered_texture(&self, path: &PathBuf) -> Option<&AssetHandle> {
@@ -245,7 +223,6 @@ impl AssetManager {
     {
         let asset = A::new(source)?;
         let handle = self.gen_handle();
-        self.register_external_dependency(&asset, &handle);
         self.registered_assets.insert(
             handle,
             RegisteredAsset::Unloaded {
@@ -254,31 +231,6 @@ impl AssetManager {
             },
         );
         Ok(ResourceBacking::new(handle))
-    }
-
-    fn register_external_dependency(&mut self, asset: &UnloadedAssetData, handle: &AssetHandle) {
-        match asset {
-            UnloadedAssetData::Gltf { sources, gltf } => {
-                for texture_source in sources.textures.iter() {
-                    match texture_source {
-                        super::gltf_asset::TextureSource::ExternalFile(path_buf) => {
-                            let texture_asset = self
-                                .texture_registry
-                                .registered_textures
-                                .get(path_buf)
-                                .expect("texture must be registered");
-                            self.asset_dependencies
-                                .entry(*handle)
-                                .or_insert(vec![*texture_asset]);
-                        }
-                        super::gltf_asset::TextureSource::BinarySource(binary_source) => todo!(),
-                    }
-                }
-            }
-            UnloadedAssetData::Texture(path_buf) => todo!(),
-            #[cfg(test)]
-            UnloadedAssetData::Mock => todo!(),
-        }
     }
 
     pub(crate) fn register_asset_gpu_residency(

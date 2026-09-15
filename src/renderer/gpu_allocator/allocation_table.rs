@@ -2,6 +2,73 @@ use std::{collections::HashMap, hash::Hash};
 
 use crate::renderer::gpu_allocator::{AllocMetaData, VertexArenaError};
 
+pub(super) struct MultiAllocTable<H: Eq + Hash + Clone> {
+    free_list: Vec<usize>,
+    alloc_meta: Vec<AllocMetaData>,
+    table: HashMap<H, Vec<usize>>,
+}
+impl<H> MultiAllocTable<H>
+where
+    H: Eq + Hash + Clone,
+{
+    pub(super) fn allocate(&mut self, handle: H, chunk_id: usize, node_id: usize) -> usize {
+        let meta = AllocMetaData {
+            chunk_id,
+            node_id,
+            ref_count: 1,
+        };
+        let slot = match self.free_list.pop() {
+            Some(free_idx) => {
+                self.alloc_meta[free_idx] = meta;
+                free_idx
+            }
+            None => {
+                self.alloc_meta.push(meta);
+                self.alloc_meta.len() - 1
+            }
+        };
+        let slots = self.table.entry(handle).or_default();
+        slots.push(slot);
+        slots.len() - 1
+    }
+
+    pub(super) fn resolve(&self, handle: &H, alloc_index: usize) -> Option<&AllocMetaData> {
+        let slot = *self.table.get(handle)?.get(alloc_index)?;
+        self.alloc_meta.get(slot)
+    }
+
+    pub(super) fn allocation_count(&self, handle: &H) -> usize {
+        self.table.get(handle).map_or(0, |slots| slots.len())
+    }
+
+    pub(super) fn remove(&mut self, handle: &H) -> Result<Vec<AllocMetaData>, VertexArenaError> {
+        let Some(slots) = self.table.remove(handle) else {
+            return Ok(vec![]);
+        };
+        let mut freed = Vec::new();
+        for slot in slots {
+            let meta = self
+                .alloc_meta
+                .get_mut(slot)
+                .ok_or(VertexArenaError::MetadataNotFound)?;
+            meta.ref_count -= 1;
+            if meta.ref_count == 0 {
+                freed.push(self.alloc_meta[slot].clone());
+                self.free_list.push(slot);
+            }
+        }
+        Ok(freed)
+    }
+
+    pub(super) fn new() -> Self {
+        Self {
+            free_list: vec![],
+            alloc_meta: vec![],
+            table: HashMap::new(),
+        }
+    }
+}
+
 pub(super) struct AllocationTable<H: Eq + Hash + Clone> {
     free_list: Vec<usize>,
     alloc_meta: Vec<AllocMetaData>,

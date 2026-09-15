@@ -1,12 +1,15 @@
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
 use wgpu::TextureFormat;
 
 use crate::{
     renderer::{
-        GPUAllocationHandle, GPUTextureHandle,
+        GPUAllocationHandle, TexDim,
         bind_groups::BGBufferType,
-        gpu_allocator::{GPUUploadResult, UploadTextureJob, allocation_table::AllocationTable},
+        gpu_allocator::{
+            GPUUploadResult, UploadTextureJob,
+            allocation_table::{AllocationTable, MultiAllocTable},
+        },
     },
     util::types::GPUTextureData,
 };
@@ -81,12 +84,12 @@ impl TextureChunk {
             dimension: 1,
         }
     }
-    fn new(device: &wgpu::Device, format: wgpu::TextureFormat, dimension: u32) -> Self {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat, dimension: TexDim) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(format!("Texture chunk for dimension: {dimension}").as_str()),
+            label: Some(format!("Texture chunk for dimension: {dimension:?}").as_str()),
             size: wgpu::Extent3d {
-                width: dimension,
-                height: dimension,
+                width: dimension.as_u32(),
+                height: dimension.as_u32(),
                 depth_or_array_layers: NUM_LAYERS,
             },
             mip_level_count: 1,
@@ -106,13 +109,14 @@ impl TextureChunk {
             texture,
             view,
             allocator: TextureAllocator::new(),
-            dimension,
+            dimension: dimension.as_u32(),
         }
     }
 
     fn gpu_alloc(
         &mut self,
-        gpu_texture: &GPUTextureData,
+        pixels: &[u8],
+        dimension: TexDim,
         queue: &wgpu::Queue,
     ) -> Result<usize, TextureAllocationError> {
         let layer = self
@@ -131,15 +135,15 @@ impl TextureChunk {
                 },
                 aspect: wgpu::TextureAspect::default(),
             },
-            gpu_texture.pixels.as_ref(),
+            pixels.as_ref(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * gpu_texture.width),
-                rows_per_image: Some(gpu_texture.height),
+                bytes_per_row: Some(4 * dimension.as_u32()),
+                rows_per_image: Some(dimension.as_u32()),
             },
             wgpu::Extent3d {
-                width: gpu_texture.width,
-                height: gpu_texture.height,
+                width: dimension.as_u32(),
+                height: dimension.as_u32(),
                 depth_or_array_layers: 1,
             },
         );
@@ -149,12 +153,12 @@ impl TextureChunk {
 
 pub struct TextureArena {
     chunks: [Option<TextureChunk>; 5],
-    alloc_table: AllocationTable<GPUAllocationHandle>,
+    alloc_table: MultiAllocTable<GPUAllocationHandle>,
 }
 
 impl<'frame> UploadTextureJob<'frame> {
     fn new_chunk(&self, device: &wgpu::Device) -> TextureChunk {
-        TextureChunk::new(device, TextureFormat::Rgba8Unorm, self.data.height)
+        TextureChunk::new(device, TextureFormat::Rgba8Unorm, self.dim)
     }
 }
 
@@ -162,24 +166,25 @@ impl TextureArena {
     pub fn new() -> Self {
         Self {
             chunks: [None, None, None, None, None],
-            alloc_table: AllocationTable::new(),
+            alloc_table: MultiAllocTable::new(),
         }
     }
 
     pub(in crate::renderer) fn resolve(
         &self,
         alloc_handle: &GPUAllocationHandle,
+        alloc_index: usize,
     ) -> Option<(u32, u32)> {
-        let meta = self.alloc_table.resolve(alloc_handle)?;
+        let meta = self.alloc_table.resolve(alloc_handle, alloc_index)?;
         Some((meta.chunk_id as u32, meta.node_id as u32))
     }
-    const fn idx_from_dimension(dimension: u32) -> usize {
+    const fn idx_from_tex_dim(dimension: TexDim) -> usize {
         match dimension {
-            1 => 0,
-            64 => 1,
-            128 => 2,
-            256 => 3,
-            1024 => 4,
+            TexDim::Dim1 => 0,
+            TexDim::Dim64 => 1,
+            TexDim::Dim128 => 2,
+            TexDim::Dim256 => 3,
+            TexDim::Dim1024 => 4,
             _ => panic!(),
         }
     }
@@ -214,7 +219,7 @@ impl TextureArena {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> GPUUploadResult {
-        let chunk_idx = Self::idx_from_dimension(job.data.height);
+        let chunk_idx = Self::idx_from_tex_dim(job.dim);
         let maybe_chunk = &mut self.chunks[chunk_idx];
         let chunk = if maybe_chunk.is_some() {
             maybe_chunk.as_mut().unwrap()
@@ -222,7 +227,7 @@ impl TextureArena {
             maybe_chunk.insert(job.new_chunk(device))
         };
 
-        match chunk.gpu_alloc(job.data, queue) {
+        match chunk.gpu_alloc(job.pixels, job.dim, queue) {
             Ok(layer) => {
                 self.alloc_table
                     .allocate(job.texture_handle, chunk_idx, layer);
@@ -243,25 +248,25 @@ impl TextureArena {
                     .view
             }
             BGBufferType::Texture64 => {
-                &self.chunks[Self::idx_from_dimension(64)]
+                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim64)]
                     .as_ref()
                     .expect("should be initialized")
                     .view
             }
             BGBufferType::Texture128 => {
-                &self.chunks[Self::idx_from_dimension(128)]
+                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim128)]
                     .as_ref()
                     .expect("should be initialized")
                     .view
             }
             BGBufferType::Texture256 => {
-                &self.chunks[Self::idx_from_dimension(256)]
+                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim256)]
                     .as_ref()
                     .expect("should be initialized")
                     .view
             }
             BGBufferType::Texture1024 => {
-                &self.chunks[Self::idx_from_dimension(1024)]
+                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim1024)]
                     .as_ref()
                     .expect("should be initialized")
                     .view

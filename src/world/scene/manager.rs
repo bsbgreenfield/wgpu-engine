@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     asset_manager::{AssetHandle, asset_manager::AssetManager},
-    common::instance::InstanceHandle,
+    common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::GPUInstanceHandle,
     world::{
         entity_manager::entity_manager::EntityManager,
@@ -49,7 +49,7 @@ pub struct SceneManager {
     dependency_graph: DependencyGraph,
     pub spawn_queue: HashMap<SceneId, Vec<Spawn<dyn Archetype>>>,
     pub despawn_queue: Vec<InstanceHandle>,
-    asset_requests: HashMap<AssetHandle, SceneLoadLevel>,
+    asset_requests: HashMap<(EntityHandle, AssetHandle), SceneLoadLevel>,
     pending: Vec<usize>,
     ready: Vec<SceneId>,
     pub load_queue_new: LoadQueue,
@@ -87,7 +87,9 @@ impl SceneManager {
         //}
     }
 
-    pub fn asset_requests<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
+    pub fn asset_requests<'frame>(
+        &'frame mut self,
+    ) -> Vec<((EntityHandle, AssetHandle), SceneLoadLevel)> {
         self.asset_requests.drain().collect()
     }
     pub fn process_scene_events(&mut self) -> Result<(), SceneManagerError> {
@@ -162,12 +164,12 @@ impl SceneManager {
             // raising one holder can only raise each asset's max, so no other
             // scene's request needs consulting
             let mut count = 0;
-            for asset in assets {
+            for (entity, asset) in assets {
                 let residency = asset_manager
                     .res_level_of(&asset)
                     .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
                 if SceneLoadLevel::from(&residency) < level {
-                    asset_requests.insert(asset, level);
+                    asset_requests.insert((entity, asset), level);
                     count += 1;
                 }
             }

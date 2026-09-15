@@ -2,12 +2,12 @@ use core::panic;
 use std::sync::Arc;
 
 use crate::{
-    app::GPUAssetUploadJob,
+    app::{GPUAssetUploadJob, GPUTextureBinding},
     asset_manager::AssetHandle,
     renderer::{
         BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction,
         Operations::{self, TextureUpload},
-        RenderConstant,
+        RenderConstant, TexDim,
     },
     util::types::{GPUMaterialData, PNUJWVertex, PNUVertex, VIndex},
     world::{
@@ -213,23 +213,41 @@ pub trait BytecodeGenerator<'frame> {
                     Self::emit_const_last(constants, instructions);
                 }
                 if !embedded_materials.records.is_empty() {
-                    // emit all textures, backwards for stack
-                    for tex in embedded_materials.tex_bindings.iter().rev() {
+                    let mut tex_indices: Vec<u8> =
+                        Vec::with_capacity(embedded_materials.tex_bindings.len());
+                    let mut next_embedded = 0;
+                    for tex in embedded_materials.tex_bindings.iter() {
                         match tex {
-                            crate::app::GPUTextureBinding::None => todo!(),
+                            crate::app::GPUTextureBinding::None => {}
                             crate::app::GPUTextureBinding::Embedded(gputexture_data) => {
                                 instructions.push(Instruction::Op(Operations::TextureUpload));
                                 constants
                                     .push(RenderConstant::DataRef(gputexture_data.pixels.as_ref()));
                                 Self::emit_const_last(constants, instructions);
-                                instructions.push(Instruction::Byte(4)); // TODO: collapse tex dim
+                                instructions.push(Instruction::TexDim(TexDim::from_u32(
+                                    gputexture_data.height,
+                                )));
+                                tex_indices.push(next_embedded);
+                                next_embedded += 1;
                             }
-                            crate::app::GPUTextureBinding::Resolved(gpuallocation_handle) => {
-                                instructions.push(Instruction::Op(Operations::TextureAcquire));
-                                constants.push(RenderConstant::Key(gpuallocation_handle.as_key()));
-                                Self::emit_const_last(constants, instructions);
-                            }
+                            crate::app::GPUTextureBinding::Resolved(_) => tex_indices.push(0),
                         }
+                    }
+                    for (tex, idx) in embedded_materials
+                        .tex_bindings
+                        .iter()
+                        .zip(tex_indices)
+                        .rev()
+                    {
+                        if let GPUTextureBinding::Resolved(handle) = tex {
+                            instructions.push(Instruction::Op(Operations::Push));
+                            constants.push(RenderConstant::Key(handle.as_key()));
+                            Self::emit_const_last(constants, instructions);
+                        } else if let GPUTextureBinding::None = tex {
+                            instructions.push(Instruction::Op(Operations::TexureDefault));
+                        }
+                        instructions.push(Instruction::Op(Operations::TextureAcquire));
+                        instructions.push(Instruction::Byte(idx));
                     }
                     instructions.push(Instruction::Op(Operations::MaterialUpload));
                     let material_bytes =
@@ -245,11 +263,13 @@ pub trait BytecodeGenerator<'frame> {
                 asset_handle,
                 data: gpu_texture_data,
             } => {
-                instructions.push(Instruction::Op(Operations::TextureUpload));
+                instructions.push(Instruction::Op(Operations::AddAsset));
                 constants.push(RenderConstant::Key(asset_handle.as_key()));
                 Self::emit_const_last(constants, instructions);
+                instructions.push(Instruction::Op(Operations::TextureUpload));
                 constants.push(RenderConstant::Texture(gpu_texture_data));
                 Self::emit_const_last(constants, instructions);
+                instructions.push(Instruction::Op(Operations::EmitAssetUpload));
             }
         }
     }

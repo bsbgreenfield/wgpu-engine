@@ -123,7 +123,9 @@ mod scene_tests {
     }
 
     /// `asset_requests` drains into an unordered Vec; a map is what assertions want.
-    fn requests(manager: &mut SceneManager) -> HashMap<AssetHandle, SceneLoadLevel> {
+    fn requests(
+        manager: &mut SceneManager,
+    ) -> HashMap<(EntityHandle, AssetHandle), SceneLoadLevel> {
         manager.asset_requests().into_iter().collect()
     }
 
@@ -170,7 +172,9 @@ mod scene_tests {
             2,
             "two entities backed by the same asset must collapse to one dependency"
         );
-        assert!(assets.contains(&shared) && assets.contains(&other));
+        assert!(
+            assets.iter().any(|(e, a)| a == &shared) && assets.iter().any(|(e, a)| a == &other)
+        );
 
         assert_eq!(graph.children_of(SceneId(0)), &[SceneId(1), SceneId(2)]);
         assert!(
@@ -248,7 +252,10 @@ mod scene_tests {
             1,
             "the already-CPU-resident asset must not be requested again"
         );
-        assert_eq!(requested[&cold], SceneLoadLevel::CPU);
+        assert_eq!(
+            requested[requested.keys().find(|(e, a)| a == &cold).as_ref().unwrap()],
+            SceneLoadLevel::CPU
+        );
         assert_eq!(
             state(&manager, scene),
             SceneLoadLevel::NotLoaded,

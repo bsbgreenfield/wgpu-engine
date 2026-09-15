@@ -11,6 +11,7 @@ use crate::renderer::GPUInstanceHandle;
 use crate::renderer::GPUTextureHandle;
 use crate::renderer::GPUUploadable;
 use crate::renderer::StorageData;
+use crate::renderer::TexDim;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::util::types::GPUTextureData;
 use crate::util::types::ModelVertex;
@@ -184,7 +185,8 @@ pub(crate) struct UploadMaterialJob<'frame> {
 }
 
 pub(crate) struct UploadTextureJob<'frame> {
-    pub(super) data: &'frame GPUTextureData,
+    pub(super) pixels: &'frame [u8],
+    pub(super) dim: TexDim,
     pub(super) texture_handle: GPUAllocationHandle,
 }
 

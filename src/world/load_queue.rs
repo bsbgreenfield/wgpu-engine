@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    asset_manager::{AssetHandle, AssetLoadError, asset_manager::AssetManager},
-    world::scene::SceneLoadLevel,
+    asset_manager::{AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager},
+    common::entity::EntityHandle,
+    world::{entity_manager::entity_manager::EntityManager, scene::SceneLoadLevel},
 };
 
 #[derive(Clone)]
@@ -17,27 +18,36 @@ pub struct AssetTransition {
     pub new: SceneLoadLevel,
 }
 
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+struct AssetJobKey {
+    entity_handle: EntityHandle,
+    asset_handle: AssetHandle,
+}
+
 #[derive(Default)]
 pub struct LoadQueue {
-    jobs: HashMap<AssetHandle, AssetLoadJob>,
+    jobs: HashMap<AssetJobKey, AssetLoadJob>,
 }
 
 impl LoadQueue {
     pub(super) fn add_load_job(
         &mut self,
-        update: (AssetHandle, SceneLoadLevel),
+        update: ((EntityHandle, AssetHandle), SceneLoadLevel),
         asset_manager: &AssetManager,
     ) {
+        let (entity, asset) = &update.0;
         let target = update.1;
-        let current = asset_manager
-            .res_level_of(&update.0)
-            .expect("can't find asset");
+        let current = asset_manager.res_level_of(asset).expect("can't find asset");
+        let key = AssetJobKey {
+            entity_handle: *entity,
+            asset_handle: *asset,
+        };
         if current == target {
-            self.jobs.remove(&update.0);
+            self.jobs.remove(&key);
             return;
         }
         self.jobs
-            .entry(update.0)
+            .entry(key)
             .and_modify(|j| j.target = target)
             .or_insert(AssetLoadJob {
                 target,
@@ -48,36 +58,51 @@ impl LoadQueue {
     pub(super) fn poll_jobs(
         &mut self,
         asset_manager: &mut AssetManager,
+        entity_manager: &EntityManager,
     ) -> Result<Vec<AssetTransition>, AssetLoadError> {
         let mut res: Vec<AssetTransition> = Vec::new();
-        let jobs: Vec<(AssetHandle, AssetLoadJob)> =
-            self.jobs.iter().map(|(ah, aj)| (*ah, aj.clone())).collect();
-        for (asset_handle, job) in jobs.iter() {
+        let jobs: Vec<(AssetJobKey, AssetLoadJob)> = self
+            .jobs
+            .iter()
+            .map(|(key, asset_job)| (*key, asset_job.clone()))
+            .collect();
+        for (key, job) in jobs.iter() {
             println!("JOB with base: {:?} and target: {:?}", job.base, job.target);
-            let current = asset_manager.res_level_of(asset_handle)?;
+            let current = asset_manager.res_level_of(&key.asset_handle)?;
             if current == job.target {
-                let (handle, _) = self
-                    .jobs
-                    .remove_entry(asset_handle)
+                self.jobs
+                    .remove_entry(key)
                     .ok_or(AssetLoadError::AssetNotFound)?;
                 res.push(AssetTransition {
-                    handle: handle,
+                    handle: key.asset_handle,
                     old: job.base,
                     new: job.target,
                 });
                 continue;
             }
-            if job.target == SceneLoadLevel::GPU && !asset_manager.deps_gpu_ready(asset_handle) {
-                continue;
+            if job.target == SceneLoadLevel::GPU {
+                let asset_deps =
+                    entity_manager.asset_dependencies_of(&key.entity_handle, &key.asset_handle);
+
+                if !asset_deps.is_empty()
+                    && asset_deps.iter().any(|ah| {
+                        !matches!(
+                            asset_manager.res_level_of(ah).unwrap(),
+                            AssetResidency::GPU(_, _)
+                        )
+                    })
+                {
+                    continue;
+                }
             }
-            let after = asset_manager.set_minimum_load_level(asset_handle, job.target)?;
+            let after = asset_manager.set_minimum_load_level(&key.asset_handle, job.target)?;
             if after != current {
                 res.push(AssetTransition {
-                    handle: *asset_handle,
+                    handle: key.asset_handle,
                     old: SceneLoadLevel::from(&current),
                     new: SceneLoadLevel::from(&after),
                 });
-                self.jobs.get_mut(asset_handle).unwrap().base = SceneLoadLevel::from(&after);
+                self.jobs.get_mut(&key).unwrap().base = SceneLoadLevel::from(&after);
             }
         }
 
