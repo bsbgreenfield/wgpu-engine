@@ -51,6 +51,9 @@ impl<'frame> Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
+        for instruction in instructions.iter() {
+            println!("{instruction:?}");
+        }
         let mut stack = Vec::<StackValue>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
@@ -71,6 +74,12 @@ impl<'frame> Renderer {
                         let val = constants[val_idx as usize].clone();
                         stack.push(val.into());
                     }
+                    Operations::Swap => {
+                        let first = stack.pop().unwrap();
+                        let second = stack.pop().unwrap();
+                        stack.push(first);
+                        stack.push(second);
+                    }
                     Operations::TextureUpload => {
                         let alloc_handle = stack.pop().unwrap().as_alloc();
                         let texture_data_idx = Self::get_constant_idx(&mut instr_peek);
@@ -82,7 +91,7 @@ impl<'frame> Renderer {
                             dim,
                             texture_handle: alloc_handle.clone(),
                         };
-                        self.upload_texture(job, queue, device)?;
+                        self.upload_texture(job, queue)?;
                         stack.push(StackValue::Alloc(alloc_handle));
                     }
                     Operations::TexureDefault => {
@@ -104,6 +113,7 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Alloc(texture_alloc_handle));
                     }
                     Operations::MaterialUpload => {
+                        println!(" material upload: {stack:?}");
                         let gac = stack.pop().expect("should be gac").as_alloc();
                         let material_data = constants
                             [Self::get_constant_idx(&mut instr_peek) as usize]
@@ -166,6 +176,7 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Alloc(alloc_handle));
                     }
                     Operations::EmitAssetUpload => {
+                        println!("emit: {stack:?}");
                         let alloc_handle = stack.pop().expect("should be gac").as_alloc();
                         let asset_key = stack.pop().expect("should be asset handle").as_raw_key();
                         res.push(RenderUpdateDelta::AssetGPULoaded {

@@ -70,23 +70,23 @@ pub struct InternedAssetKey {
 pub struct AssetManager {
     registered_assets: HashMap<AssetHandle, RegisteredAsset<dyn Asset>>,
     loaded_assets: Vec<(AssetHandle, Box<dyn Asset>)>,
-    texture_registry: TextureRegistry,
+    path_registry: HashMap<String, AssetHandle>,
 }
 
 impl AssetManager {
     pub fn new() -> Self {
         Self {
-            texture_registry: TextureRegistry::default(),
             loaded_assets: Vec::new(),
             registered_assets: HashMap::new(),
+            path_registry: HashMap::new(),
         }
     }
     fn gen_handle(&self) -> AssetHandle {
         AssetHandle(self.registered_assets.len() as u32)
     }
 
-    pub(super) fn get_registered_texture(&self, path: &PathBuf) -> Option<&AssetHandle> {
-        self.texture_registry.registered_textures.get(path)
+    pub(super) fn get_registered_path(&self, path: &PathBuf) -> Option<&AssetHandle> {
+        self.path_registry.get(path.to_str().unwrap())
     }
     pub(crate) fn res_level_of(
         &self,
@@ -230,6 +230,8 @@ impl AssetManager {
                 _t: PhantomData,
             },
         );
+        self.path_registry
+            .insert(String::from(source), handle.clone());
         Ok(ResourceBacking::new(handle))
     }
 

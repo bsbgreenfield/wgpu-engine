@@ -46,18 +46,8 @@ impl MaterialBindGroup {
         &mut self,
         job: UploadTextureJob,
         queue: &wgpu::Queue,
-        device: &wgpu::Device,
     ) -> Result<GPUUploadResult, VertexArenaError> {
-        let needs_bg: Option<u32> = if self.texture_type_map.get(&job.data.height).is_none() {
-            Some(job.data.height)
-        } else {
-            None
-        };
-        let upload_result = self.texture_arena.upload(job, queue, device);
-        if let Some(texture_dim) = needs_bg {
-            let ty = BGBufferType::tex_dim_from_u32(texture_dim);
-            self.add_bind_group(device, ty);
-        }
+        let upload_result = self.texture_arena.upload(job, queue);
         Ok(upload_result)
     }
 
@@ -78,7 +68,7 @@ impl MaterialBindGroup {
                 ..Default::default()
             }));
 
-        self.texture_arena.upload_default(device, queue);
+        self.texture_arena.ensure_chunks(device, queue);
         self.material_arena.ensure_initialized(queue, device);
         self.add_bind_group(device, BGBufferType::Texture1);
     }
@@ -121,11 +111,51 @@ impl BindGroupProvider for MaterialBindGroup {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -139,33 +169,34 @@ impl BindGroupProvider for MaterialBindGroup {
     }
 
     fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType) {
-        println!("texture type is : {:?}", ty);
+        let view = self.texture_arena.get_views();
+        let mut entries: Vec<wgpu::BindGroupEntry> = view
+            .iter()
+            .enumerate()
+            .map(|(idx, view)| wgpu::BindGroupEntry {
+                binding: idx as u32,
+                resource: wgpu::BindingResource::TextureView(view),
+            })
+            .collect();
 
+        entries.push(wgpu::BindGroupEntry {
+            binding: 5,
+            resource: wgpu::BindingResource::Sampler(&self.samplers[0]), // TODO: get actual
+                                                                         // sampler
+        });
+        entries.push(wgpu::BindGroupEntry {
+            binding: 6,
+            resource: wgpu::BindingResource::Buffer(BufferBinding {
+                buffer: self.material_arena.get_first_buffer(),
+                offset: 0,
+                size: None,
+            }),
+        });
         let bgl = Self::get_bind_group_layout(device);
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("texture bind group"),
             layout: &bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &self.texture_arena.get_texture_ref(ty),
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.samplers[0]), // TODO: get actual
-                                                                                 // sampler
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer(BufferBinding {
-                        buffer: self.material_arena.get_first_buffer(),
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-            ],
+            entries: &entries,
         });
         let idx = self.bind_groups.len();
         self.bind_groups.push(bg);

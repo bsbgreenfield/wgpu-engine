@@ -188,9 +188,11 @@ impl TextureArena {
             _ => panic!(),
         }
     }
-    pub fn upload_default(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+
+    pub fn ensure_chunks(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         if self.chunks[0].is_none() {
             let white_chunk = TextureChunk::white(device);
+
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &white_chunk.texture,
@@ -212,20 +214,27 @@ impl TextureArena {
             );
             self.chunks[0] = Some(white_chunk)
         }
+
+        for (maybe_chunk, dim) in self
+            .chunks
+            .iter_mut()
+            .skip(1)
+            .zip([64, 128, 256, 1024].into_iter())
+        {
+            if maybe_chunk.is_none() {
+                maybe_chunk.insert(TextureChunk::new(
+                    device,
+                    TextureFormat::Rgba8Unorm,
+                    TexDim::from_u32(dim),
+                ));
+            }
+        }
     }
-    pub fn upload(
-        &mut self,
-        job: UploadTextureJob,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> GPUUploadResult {
+    pub fn upload(&mut self, job: UploadTextureJob, queue: &wgpu::Queue) -> GPUUploadResult {
         let chunk_idx = Self::idx_from_tex_dim(job.dim);
-        let maybe_chunk = &mut self.chunks[chunk_idx];
-        let chunk = if maybe_chunk.is_some() {
-            maybe_chunk.as_mut().unwrap()
-        } else {
-            maybe_chunk.insert(job.new_chunk(device))
-        };
+        let chunk = self.chunks[chunk_idx]
+            .as_mut()
+            .expect("chunks should be initialized");
 
         match chunk.gpu_alloc(job.pixels, job.dim, queue) {
             Ok(layer) => {
@@ -239,39 +248,13 @@ impl TextureArena {
         }
     }
 
-    pub fn get_texture_ref(&self, ty: BGBufferType) -> &wgpu::TextureView {
-        match ty {
-            BGBufferType::Texture1 => {
-                &self.chunks[0]
-                    .as_ref()
-                    .expect("default should be init")
-                    .view
-            }
-            BGBufferType::Texture64 => {
-                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim64)]
-                    .as_ref()
-                    .expect("should be initialized")
-                    .view
-            }
-            BGBufferType::Texture128 => {
-                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim128)]
-                    .as_ref()
-                    .expect("should be initialized")
-                    .view
-            }
-            BGBufferType::Texture256 => {
-                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim256)]
-                    .as_ref()
-                    .expect("should be initialized")
-                    .view
-            }
-            BGBufferType::Texture1024 => {
-                &self.chunks[Self::idx_from_tex_dim(TexDim::Dim1024)]
-                    .as_ref()
-                    .expect("should be initialized")
-                    .view
-            }
-            _ => panic!("must be a texture type"),
-        }
+    pub fn get_views(&self) -> [&wgpu::TextureView; 5] {
+        [
+            &self.chunks[0].as_ref().unwrap().view,
+            &self.chunks[1].as_ref().unwrap().view,
+            &self.chunks[2].as_ref().unwrap().view,
+            &self.chunks[3].as_ref().unwrap().view,
+            &self.chunks[4].as_ref().unwrap().view,
+        ]
     }
 }

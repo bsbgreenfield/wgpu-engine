@@ -296,7 +296,7 @@ fn get_materials(
                 }
                 gltf::image::Source::Uri { uri, mime_type } => Some(GltfTexture::External(
                     *asset_manager
-                        .get_registered_texture(&PathBuf::from(uri))
+                        .get_registered_path(&PathBuf::from(uri))
                         .unwrap(),
                 )),
             }

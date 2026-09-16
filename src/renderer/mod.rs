@@ -316,13 +316,13 @@ pub(crate) enum Operations {
     DespawnInstance,
     DespawnAsset,
     Pop,
+    Swap,
     Push,
 }
 
 #[derive(Debug)]
 pub(crate) enum RenderConstant<'frame> {
     DataRef(&'frame [u8]),
-    Texture(&'frame GPUTextureData),
     Key(u64),
 }
 
@@ -339,6 +339,9 @@ impl StackValue {
     fn as_alloc(self) -> GPUAllocationHandle {
         match self {
             StackValue::Alloc(a) => a,
+            StackValue::Key(a) => GPUAllocationHandle {
+                global_allocation_id: a as u32,
+            },
             _ => panic!("expected an alloc key, got {self:?}"),
         }
     }
@@ -375,7 +378,6 @@ impl From<RenderConstant<'_>> for StackValue {
         match value {
             DataRef(_) => panic!("cannot push binary data onto the stack"),
             RenderConstant::Key(key) => StackValue::Key(key),
-            RenderConstant::Texture(gputexture_data) => todo!(),
         }
     }
 }
@@ -384,7 +386,6 @@ impl<'frame> Clone for RenderConstant<'frame> {
     fn clone(&self) -> Self {
         match self {
             Self::Key(key) => Self::Key(*key),
-            Self::Texture(_) => panic!("canot copy texture"),
             Self::DataRef(_) => panic!("cannot clone ref data (maybe make it an arc)"),
         }
     }
@@ -402,13 +403,6 @@ impl<'frame> RenderConstant<'frame> {
         match self {
             Self::DataRef(data_ref) => data_ref,
             _ => panic!("invalid bytecode, expected data, found {:?}", self),
-        }
-    }
-
-    fn unwrap_texture_data(&self) -> &GPUTextureData {
-        match self {
-            Self::Texture(data) => *data,
-            _ => panic!("inalid bytecode, expected texture, found {:?}", self),
         }
     }
 }

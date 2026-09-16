@@ -6,7 +6,7 @@ use crate::{
         DrawPacket, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob, Instruction,
         PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderUpdateDelta,
         RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
-        bind_groups::{BindGroupCollection, BindGroupProvider},
+        bind_groups::BindGroupCollection,
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
             gpu_arena::GPUArena,
@@ -243,11 +243,10 @@ impl Renderer {
         &mut self,
         job: UploadTextureJob,
         queue: &wgpu::Queue,
-        device: &wgpu::Device,
     ) -> Result<(), VertexArenaError> {
         self.bind_groups
             .material_bind_group
-            .upload_texture(job, queue, device)?;
+            .upload_texture(job, queue)?;
         Ok(())
     }
 

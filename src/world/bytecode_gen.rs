@@ -1,12 +1,11 @@
 use core::panic;
-use std::sync::Arc;
 
 use crate::{
     app::{GPUAssetUploadJob, GPUTextureBinding},
     asset_manager::AssetHandle,
     renderer::{
         BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction,
-        Operations::{self, TextureUpload},
+        Operations::{self},
         RenderConstant, TexDim,
     },
     util::types::{GPUMaterialData, PNUJWVertex, PNUVertex, VIndex},
@@ -243,11 +242,17 @@ pub trait BytecodeGenerator<'frame> {
                             instructions.push(Instruction::Op(Operations::Push));
                             constants.push(RenderConstant::Key(handle.as_key()));
                             Self::emit_const_last(constants, instructions);
-                        } else if let GPUTextureBinding::None = tex {
-                            instructions.push(Instruction::Op(Operations::TexureDefault));
+                            instructions.push(Instruction::Op(Operations::TextureAcquire));
+                            instructions.push(Instruction::Byte(idx));
+                            instructions.push(Instruction::Op(Operations::Pop));
+                            instructions.push(Instruction::Op(Operations::Swap));
+                        } else {
+                            if let GPUTextureBinding::None = tex {
+                                instructions.push(Instruction::Op(Operations::TexureDefault));
+                            }
+                            instructions.push(Instruction::Op(Operations::TextureAcquire));
+                            instructions.push(Instruction::Byte(idx));
                         }
-                        instructions.push(Instruction::Op(Operations::TextureAcquire));
-                        instructions.push(Instruction::Byte(idx));
                     }
                     instructions.push(Instruction::Op(Operations::MaterialUpload));
                     let material_bytes =
@@ -267,8 +272,11 @@ pub trait BytecodeGenerator<'frame> {
                 constants.push(RenderConstant::Key(asset_handle.as_key()));
                 Self::emit_const_last(constants, instructions);
                 instructions.push(Instruction::Op(Operations::TextureUpload));
-                constants.push(RenderConstant::Texture(gpu_texture_data));
+                constants.push(RenderConstant::DataRef(&gpu_texture_data.pixels));
                 Self::emit_const_last(constants, instructions);
+                instructions.push(Instruction::TexDim(TexDim::from_u32(
+                    gpu_texture_data.height,
+                )));
                 instructions.push(Instruction::Op(Operations::EmitAssetUpload));
             }
         }

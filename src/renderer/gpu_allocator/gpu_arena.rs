@@ -251,7 +251,7 @@ impl GPUUploadable for GPUMaterialData {
             base_color_factors: [0.2, 0.6, 0.5, 1.],
             roughness: 1.,
             metallic: 1.,
-            tex_modifier: 0,
+            tex_mod: 0,
             _pad: 0,
         }];
         let bytes = bytemuck::cast_slice::<GPUMaterialData, u8>(default_data);

@@ -92,7 +92,7 @@ impl Asset for MaterialAsset {
                 base_color_factors: self.base_color_factors,
                 roughness: self.roughness,
                 metallic: self.metallic,
-                tex_modifier: todo!(),
+                tex_mod: 0,
                 _pad: 0,
             },
             texture: todo!(),

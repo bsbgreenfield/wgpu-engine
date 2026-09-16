@@ -44,7 +44,7 @@ impl MaterialPaletteJob {
                 base_color_factors: pbr.base_color_factor,
                 roughness: pbr.roughness,
                 metallic: pbr.metallicness,
-                tex_modifier: 0,
+                tex_mod: 0,
                 _pad: 0,
             });
             tex_bindings.push(match &pbr.texture {
@@ -125,7 +125,7 @@ impl GPUAssetUploadJob {
                 base_color_factors: material.pbr_metallic_roughness.base_color_factor.clone(),
                 roughness: material.pbr_metallic_roughness.roughness.clone(),
                 metallic: material.pbr_metallic_roughness.metallicness.clone(),
-                tex_modifier: 0,
+                tex_mod: 0,
                 _pad: 0,
             },
             texture: texture,

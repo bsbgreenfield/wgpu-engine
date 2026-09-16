@@ -114,12 +114,21 @@ pub fn mat4_from_cgmath(value: cgmath::Matrix4<f32>) -> Mat4F32 {
 
 // ************************* TEXTURE *********************
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GPUTextureData {
     pub height: u32,
     pub width: u32,
     pub srgb: bool,
     pub pixels: Arc<[u8]>,
+}
+
+impl Debug for GPUTextureData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GPUTextureData")
+            .field("height", &self.height)
+            .field("width", &self.width)
+            .finish()
+    }
 }
 
 // ************************* MATERIAL *********************
@@ -129,7 +138,7 @@ pub struct GPUMaterialData {
     pub base_color_factors: [f32; 4],
     pub roughness: f32,
     pub metallic: f32,
-    pub tex_modifier: u32,
+    pub tex_mod: u32,
     pub _pad: u32,
 }
 

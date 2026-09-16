@@ -34,7 +34,7 @@ struct Material {
 	base_color_factors: vec4<f32>,
 	roughness: f32,
 	metallic: f32,
-	pad_1: u32,
+	tex_mod: u32,
 	pad_2: u32,
 
 }
@@ -62,10 +62,18 @@ var<storage, read> joint_transforms: array<mat4x4<f32>>;
 var<storage, read> ibm_transforms: array<mat4x4<f32>>;
 
 @group(4) @binding(0)
-var t_diffuse: texture_2d_array<f32>;
+var t_default: texture_2d_array<f32>;
 @group(4) @binding(1)
-var s_diffuse: sampler;
+var t_64: texture_2d_array<f32>;
 @group(4) @binding(2)
+var t_128: texture_2d_array<f32>;
+@group(4) @binding(3)
+var t_256: texture_2d_array<f32>;
+@group(4) @binding(4)
+var t_1024: texture_2d_array<f32>;
+@group(4) @binding(5)
+var s_diffuse: sampler;
+@group(4) @binding(6)
 var<storage, read> materials: array<Material>;
 
 fn apply_bone_transform(joint_base: u32,  joint_offset: u32, joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>)  -> vec4<f32> {
@@ -82,6 +90,18 @@ fn apply_bone_transform(joint_base: u32,  joint_offset: u32, joints: vec4<u32>, 
 	return result;
 }
 
+fn sample_diffuse(tex_modifier: u32, uv: vec2<f32>) -> vec4<f32> {
+      let bucket: u32 = tex_modifier >> 16u;
+      let layer: i32 = i32(tex_modifier & 0xFFFFu);
+      switch bucket {
+              case 1u: { return textureSampleLevel(t_64,   s_diffuse, uv, layer, 0.0); }
+              case 2u: { return textureSampleLevel(t_128,  s_diffuse, uv, layer, 0.0); }
+              case 3u: { return textureSampleLevel(t_256,  s_diffuse, uv, layer, 0.0); }
+              case 4u: { return textureSampleLevel(t_1024, s_diffuse, uv, layer, 0.0); }
+              default: { return textureSampleLevel(t_default, s_diffuse, uv, 0, 0.0); }
+      }
+}
+
 @vertex
 fn vs_main(obj: VertexInput, @builtin(instance_index) inst_idx: u32 ) -> VertexOutput {
 	let record_idx: u32 = instance_offsets[inst_idx];
@@ -96,7 +116,7 @@ fn vs_main(obj: VertexInput, @builtin(instance_index) inst_idx: u32 ) -> VertexO
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-	let colors: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, 0);
-	let bc_factor = materials[0].base_color_factors;
-	return vec4<f32>(colors[0] * bc_factor[0], colors[1] * bc_factor[1], colors[2] * bc_factor[2], colors[3] * bc_factor[3]);
+	let material = materials[1];
+	return sample_diffuse(material.tex_mod, in.tex_coords) * material.base_color_factors;
+
 }
