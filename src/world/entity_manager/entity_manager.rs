@@ -1,15 +1,19 @@
-use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    mem::MaybeUninit,
+    ops::Range,
+};
 
 use crate::{
     asset_manager::{
-        AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
-        asset_manager::AssetManager,
+        AssetHandle, MaterialRenderables, ProvidesAnimationData, ProvidesMaterialData,
+        ProvidesMeshData, asset_manager::AssetManager,
     },
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::PrototypeHandle,
     world::{
         entity_manager::{
-            EntityManagerError, Renderables,
+            EntityManagerError, MaterialBinding, Renderables,
             components::{
                 AnimationComponent, AnimationMode, Component, MaterialPalleteComponent,
                 MaterialTextureSource, MeshCollectionComponent, MeshCollectionDescriptor,
@@ -94,7 +98,7 @@ impl EntityManager {
             instance_handle: instance_handle.clone(),
             mesh_renderables: Vec::new(),
             animations: None,
-            materials: Vec::new(),
+            material_palette: Vec::new(),
         };
 
         if let Some(mesh_collection) = self
@@ -126,26 +130,23 @@ impl EntityManager {
         if let Some(materials_component) =
             self.materials.get(instance_handle.entity_handle.0 as usize)
         {
-            // let asset =
-            //     asset_manager.get_loaded_asset(&materials_component.resource_backing.asset_handle);
-
-            // let material_data =
-            //materials_component.get_output_data(asset.as_materials_provider().unwrap());
-            for (idx, maybe_texture) in materials_component.textures.iter().enumerate() {
-                match maybe_texture {
-                    Some(texture_source) => match texture_source {
-                        super::components::MaterialTextureSource::External(resource_backing) => {
-                            let asset =
-                                asset_manager.get_loaded_asset(&resource_backing.asset_handle);
-                            renderables
-                                .materials
-                                .push(Some(asset.alloc_handle().clone()));
-                        }
-                        super::components::MaterialTextureSource::Embedded => todo!(),
-                    },
-                    None => renderables.materials.push(None),
-                }
+            let mut palette = Vec::<MaterialBinding>::new();
+            for backing in materials_component.resource_backings.iter() {
+                let asset = asset_manager.get_loaded_asset(&backing.asset_handle);
+                let alloc = asset.alloc_handle().clone();
+                palette.extend(
+                    asset
+                        .as_materials_provider()
+                        .unwrap()
+                        .material_palette(&materials_component.material_accessor)
+                        .into_iter()
+                        .map(|idx| MaterialBinding {
+                            alloc_handle: alloc.clone(),
+                            index: idx,
+                        }),
+                );
             }
+            renderables.material_palette = palette;
         }
 
         Ok(renderables)

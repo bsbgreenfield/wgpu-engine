@@ -9,7 +9,7 @@ pub(super) struct MultiAllocTable<H: Eq + Hash + Clone> {
 }
 impl<H> MultiAllocTable<H>
 where
-    H: Eq + Hash + Clone,
+    H: Eq + Hash + Clone + std::fmt::Debug,
 {
     pub(super) fn allocate(&mut self, handle: H, chunk_id: usize, node_id: usize) -> usize {
         let meta = AllocMetaData {

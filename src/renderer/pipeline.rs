@@ -53,7 +53,7 @@ impl PipelineCollection {
                 Some(&SkinningBindGroup::get_bind_group_layout(device)),
                 Some(&MaterialBindGroup::get_bind_group_layout(device)),
             ],
-            immediate_size: 8,
+            immediate_size: 12,
         })
     }
 

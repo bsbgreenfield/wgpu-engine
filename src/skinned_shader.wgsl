@@ -16,6 +16,7 @@ struct VertexOutput {
 struct DrawPushConstants {
     lt_idx: u32,
 	joint_offset: u32,
+	material_offset: u32,
 }
 
 
@@ -116,7 +117,7 @@ fn vs_main(obj: VertexInput, @builtin(instance_index) inst_idx: u32 ) -> VertexO
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-	let material = materials[1];
+	let material = materials[pc.material_offset];
 	return sample_diffuse(material.tex_mod, in.tex_coords) * material.base_color_factors;
 
 }

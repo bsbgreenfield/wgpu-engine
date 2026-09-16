@@ -32,6 +32,7 @@ pub struct DrawSet {
     pub primtitive_ranges: Vec<Range<u32>>,
     pub index_ranges: Option<Vec<Range<u32>>>,
     pub joint_map: Vec<u32>,
+    pub material_indices: Vec<Option<u32>>,
 }
 
 impl DrawSet {

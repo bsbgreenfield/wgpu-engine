@@ -445,6 +445,7 @@ impl Renderer {
                                         bytemuck::cast_slice(&[
                                             draw.lt_idx,
                                             draw.joint_offset.unwrap(),
+                                            draw.material.unwrap_or(0),
                                         ]),
                                     );
                                     if let Some(indices) = &draw.indices {

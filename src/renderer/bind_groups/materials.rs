@@ -30,6 +30,9 @@ impl MaterialBindGroup {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, VertexArenaError> {
+        let a = bytemuck::cast_slice::<u8, GPUMaterialData>(job.data);
+        println!("JOB: {:?}", a);
+        println!("BUCKET 1 and layer 0 equals {}", (1 << 16) | 0);
         let res = self.material_arena.upload(job, queue, device);
         res
     }

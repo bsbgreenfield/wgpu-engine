@@ -46,6 +46,8 @@ pub struct MeshRenderables {
     pub ibms: Option<Vec<Mat4F32>>,
     pub index_ranges: Option<Vec<Range<u32>>>,
     pub local_transforms: Vec<LocalTransform>,
+    pub pnu_materials: Vec<Option<u32>>,
+    pub pnujw_materials: Vec<Option<u32>>,
 }
 impl Display for AssetLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -65,7 +67,8 @@ impl Display for AssetLoadError {
 }
 
 pub struct MaterialRenderables {
-    pub texture_idx: usize,
+    pnu_materials: Vec<Option<u32>>,
+    pnujw_materials: Vec<Option<u32>>,
 }
 
 impl std::error::Error for AssetLoadError {}
@@ -386,10 +389,7 @@ pub trait ProvidesAnimationData: Asset {
 }
 
 pub trait ProvidesMaterialData: Asset {
-    fn material_data<'a>(
-        &self,
-        material_accessor: &'a ComponentAccessor,
-    ) -> Vec<MaterialRenderables>;
+    fn material_palette<'a>(&self, material_accessor: &'a ComponentAccessor) -> Vec<u32>;
 }
 
 pub trait ProvidesTextureData: Asset {

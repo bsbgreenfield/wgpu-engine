@@ -1,10 +1,8 @@
 use std::{error::Error, fmt::Display};
 
 use crate::{
-    animation::EntityAnimationData,
-    asset_manager::{MaterialRenderables, MeshRenderables, gltf_asset::GltfMaterial},
-    common::instance::InstanceHandle,
-    renderer::GPUAllocationHandle,
+    animation::EntityAnimationData, asset_manager::MeshRenderables,
+    common::instance::InstanceHandle, renderer::GPUAllocationHandle,
 };
 
 pub mod components;
@@ -24,10 +22,16 @@ impl Display for EntityManagerError {
         return f.write_str(&self.to_string());
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct MaterialBinding {
+    alloc_handle: GPUAllocationHandle,
+    pub index: u32,
+}
 pub(crate) struct Renderables {
     pub instance_handle: InstanceHandle,
     pub(crate) mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimationData>,
-    pub materials: Vec<Option<GPUAllocationHandle>>,
+    pub material_palette: Vec<MaterialBinding>,
 }
 impl Error for EntityManagerError {}

@@ -67,6 +67,9 @@ impl ProvidesMeshData for GltfAsset {
         let mut index_ranges = Vec::new();
         let mut local_transforms = Vec::new();
         let mut joint_map = Vec::new();
+
+        let mut pnu_materials = Vec::new();
+        let mut pnujw_materials = Vec::new();
         let has_indices = self.meshes[0].primitives[0].indices.is_some();
         let mut relative_lt_offset = 0;
         // iterate over each mesh instance and its associate local transform
@@ -87,10 +90,12 @@ impl ProvidesMeshData for GltfAsset {
                 if primitive.vertex_type == TypeId::of::<PNUVertex>() {
                     pnu_mesh_map.push(relative_lt_offset);
                     pnu_ranges.push(primitive.vertices.clone());
+                    pnu_materials.push(primitive.material_idx);
                 } else if primitive.vertex_type == TypeId::of::<PNUJWVertex>() {
                     pnujw_mesh_map.push(relative_lt_offset);
                     pnujw_ranges.push(primitive.vertices.clone());
                     joint_map.push(skin_offset_of(mesh_instance.skin_idx, &self.skins) as u32);
+                    pnujw_materials.push(primitive.material_idx);
                 } else {
                     panic!("vertex type not specified {:?}", primitive.vertex_type);
                 }
@@ -123,6 +128,8 @@ impl ProvidesMeshData for GltfAsset {
             pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
             index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
             local_transforms,
+            pnu_materials,
+            pnujw_materials,
         }
     }
 }
@@ -211,19 +218,7 @@ impl ProvidesAnimationData for GltfAsset {
 }
 
 impl ProvidesMaterialData for GltfAsset {
-    fn material_data<'a>(
-        &self,
-        material_accessor: &'a crate::world::entity_manager::components::ComponentAccessor,
-    ) -> Vec<MaterialRenderables> {
-        match material_accessor {
-            crate::world::entity_manager::components::ComponentAccessor::All => self
-                .material_palette
-                .iter()
-                .enumerate()
-                .map(|(idx, gltf_material)| MaterialRenderables { texture_idx: idx })
-                .collect(),
-            crate::world::entity_manager::components::ComponentAccessor::Indices(_) => todo!(),
-            ComponentAccessor::Index(_) => todo!(),
-        }
+    fn material_palette<'a>(&self, material_accessor: &'a ComponentAccessor) -> Vec<u32> {
+        return Vec::from_iter(0..(self.material_palette.len()) as u32);
     }
 }

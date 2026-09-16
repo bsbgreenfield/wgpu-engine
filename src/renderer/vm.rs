@@ -51,9 +51,6 @@ impl<'frame> Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
-        for instruction in instructions.iter() {
-            println!("{instruction:?}");
-        }
         let mut stack = Vec::<StackValue>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
@@ -109,6 +106,7 @@ impl<'frame> Renderer {
                             .material_bind_group
                             .resolve_texture_slot(&texture_alloc_handle, alloc_index)
                             .unwrap();
+                        println!("GOT BUCKET: {} and layer = {}", bucket, layer);
                         stack.push(StackValue::TextureSlot((bucket << 16) | layer));
                         stack.push(StackValue::Alloc(texture_alloc_handle));
                     }

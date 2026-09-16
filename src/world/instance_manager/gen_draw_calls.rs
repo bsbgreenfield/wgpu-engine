@@ -36,6 +36,7 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
                             instances: instance_range.clone(),
                             primitives: prim_range.clone(),
                             indices: pnu.index_ranges.as_ref().map(|x| x[i].clone()),
+                            material: pnu.material_indices[i],
                         });
                     }
                 }
@@ -52,6 +53,7 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
                             instances: instance_range.clone(),
                             primitives: prim_range.clone(),
                             indices: pnujw.index_ranges.as_ref().map(|x| x[i].clone()),
+                            material: pnujw.material_indices[i],
                         });
                     }
                 }

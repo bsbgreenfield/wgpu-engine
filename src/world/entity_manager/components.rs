@@ -1,7 +1,5 @@
 use std::{fmt::Debug, marker::PhantomData};
 
-use image::DynamicImage;
-
 use crate::{
     animation::EntityAnimationData,
     asset_manager::{
@@ -281,7 +279,7 @@ impl<T: ProvidesMaterialData + ?Sized> Debug for MaterialPalleteComponent<T> {
 impl<M: ProvidesMaterialData + ?Sized> Component for MaterialPalleteComponent<M> {
     type AssetType = M;
 
-    type Output = Vec<MaterialRenderables>;
+    type Output = Vec<u32>;
 
     type Erased = MaterialPalleteComponent<dyn ProvidesMaterialData>;
 
@@ -298,7 +296,7 @@ impl<M: ProvidesMaterialData + ?Sized> Component for MaterialPalleteComponent<M>
     }
 
     fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output {
-        asset.material_data(&self.material_accessor)
+        asset.material_palette(&self.material_accessor)
     }
 }
 

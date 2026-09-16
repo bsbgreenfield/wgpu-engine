@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use image::DynamicImage;
-
 use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
@@ -10,6 +8,7 @@ use crate::{
     },
     renderer::GPUAllocationHandle,
     util::types::{GPUMaterialData, GPUTextureData},
+    world::entity_manager::components::ComponentAccessor,
 };
 
 #[derive(Clone)]
@@ -55,10 +54,7 @@ impl From<&GltfMaterial> for MaterialAsset {
 }
 
 impl ProvidesMaterialData for MaterialAsset {
-    fn material_data<'a>(
-        &self,
-        material_accessor: &'a crate::world::entity_manager::components::ComponentAccessor,
-    ) -> Vec<super::MaterialRenderables> {
+    fn material_palette<'a>(&self, material_accessor: &'a ComponentAccessor) -> Vec<u32> {
         todo!()
     }
 }

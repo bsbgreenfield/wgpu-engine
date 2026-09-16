@@ -472,6 +472,7 @@ pub(crate) struct DrawItem {
     pub(crate) instances: Range<u32>,
     pub(crate) primitives: Range<u32>,
     pub(crate) indices: Option<Range<u32>>,
+    pub(crate) material: Option<u32>,
 }
 
 #[cfg(test)]

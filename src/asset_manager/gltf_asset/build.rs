@@ -356,13 +356,21 @@ fn build_all_models(
                     start: pnujw_vertices.len() as u32,
                     end: (pnujw_vertices.len() + primitive_vertex_data.count) as u32,
                 };
-                Primitive::new::<PNUJWVertex>(vertex_range, maybe_index_range)
+                Primitive::new::<PNUJWVertex>(
+                    vertex_range,
+                    maybe_index_range,
+                    primitive_data.material_idx,
+                )
             } else {
                 let vertex_range = Range {
                     start: pnu_vertices.len() as u32,
                     end: (pnu_vertices.len() + primitive_vertex_data.count) as u32,
                 };
-                Primitive::new::<PNUVertex>(vertex_range, maybe_index_range)
+                Primitive::new::<PNUVertex>(
+                    vertex_range,
+                    maybe_index_range,
+                    primitive_data.material_idx,
+                )
             };
 
             primitives.push(current_primitive);

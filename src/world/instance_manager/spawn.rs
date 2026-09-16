@@ -92,7 +92,12 @@ impl InstanceManager {
         let mut new_instance_data =
             NewInstanceData::new(renderables.instance_handle.clone(), prototype);
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
+        // TODO: change raw u32 to a structure in which a GPUAllocHandle can be included for an
+        // external material
         for (alloc_handle, mesh_data) in renderables.mesh_renderables.drain(..) {
+            println!("PALETTE: {:?}", renderables.material_palette);
+            println!("PNU: {:?}", mesh_data.pnu_materials);
+            println!("PNUJW: {:?}", mesh_data.pnujw_materials);
             let view = RenderView {
                 alloc_handle: alloc_handle,
                 pnu_draws: mesh_data.pnu_vertex_ranges.map(|pnu| DrawSet {
@@ -100,12 +105,34 @@ impl InstanceManager {
                     mesh_map: mesh_data.pnu_mesh_map,
                     primtitive_ranges: pnu,
                     index_ranges: mesh_data.index_ranges.clone(),
+                    material_indices: mesh_data
+                        .pnu_materials
+                        .iter()
+                        .map(|i| {
+                            if let Some(idx) = *i {
+                                return Some(renderables.material_palette[idx as usize].index);
+                            } else {
+                                return None;
+                            }
+                        })
+                        .collect(),
                 }),
                 pnujw_draws: mesh_data.pnujw_vertex_ranges.map(|pnujw| DrawSet {
                     joint_map: mesh_data.joint_map,
                     mesh_map: mesh_data.pnujw_mesh_map,
                     primtitive_ranges: pnujw,
                     index_ranges: mesh_data.index_ranges.clone(),
+                    material_indices: mesh_data
+                        .pnujw_materials
+                        .iter()
+                        .map(|i| {
+                            if let Some(idx) = *i {
+                                return Some(renderables.material_palette[idx as usize].index);
+                            } else {
+                                return None;
+                            }
+                        })
+                        .collect(),
                 }),
             };
 

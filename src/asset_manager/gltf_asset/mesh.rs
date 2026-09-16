@@ -13,6 +13,7 @@ pub(super) struct Primitive {
     pub vertex_type: TypeId,
     pub vertices: Range<u32>,
     pub indices: Option<Range<u32>>,
+    pub material_idx: Option<u32>,
 }
 
 pub(super) struct Mesh {
@@ -24,11 +25,13 @@ impl Primitive {
     pub(in crate::asset_manager) fn new<V: ModelVertex>(
         vertices: Range<u32>,
         indices: Option<Range<u32>>,
+        material_idx: Option<u32>,
     ) -> Self {
         Self {
             vertices,
             indices,
             vertex_type: TypeId::of::<V>(),
+            material_idx,
         }
     }
 }
@@ -51,6 +54,7 @@ pub(super) struct PrimitiveData {
     pub(super) joints: Option<GLTFDataAccessor>,
     pub(super) weights: Option<GLTFDataAccessor>,
     pub(super) indices: Option<GLTFDataAccessor>,
+    pub(super) material_idx: Option<u32>,
 }
 
 impl GLTFDataAccessor {
@@ -133,6 +137,8 @@ impl Primitive {
             None => None,
         };
 
+        let maybe_material = primitive.material().index();
+
         Ok(PrimitiveData {
             positions: position_accessor,
             normals: maybe_normals_accessor,
@@ -140,6 +146,7 @@ impl Primitive {
             tex_coords: maybe_tex_coords_accessor,
             joints: maybe_joints0_accessor,
             weights: maybe_weights_accessor,
+            material_idx: maybe_material.map(|m| m as u32),
         })
     }
 
