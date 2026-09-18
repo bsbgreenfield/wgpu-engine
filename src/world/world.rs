@@ -268,7 +268,6 @@ impl World {
                     self.asset_manager.get_upload_job_for(transition.handle)?;
                 self.deltas.push(WorldUpdateDelta::AssetDidLoad(job));
             } else if transition.old == SceneLoadLevel::GPU {
-                println!("here and {:?}", transition.old);
                 let alloc_handle = self.asset_manager.alloc_handle_of(&transition.handle)?;
                 self.deltas.push(WorldUpdateDelta::AssetUnload(
                     transition.handle,

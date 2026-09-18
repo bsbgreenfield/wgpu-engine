@@ -246,7 +246,6 @@ impl GPUUploadable for GPUMaterialData {
     }
 
     fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {
-        println!("adding default material!!!!");
         let default_data = &[GPUMaterialData {
             base_color_factors: [0.2, 0.6, 0.5, 1.],
             roughness: 1.,

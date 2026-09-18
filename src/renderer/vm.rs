@@ -106,7 +106,6 @@ impl<'frame> Renderer {
                             .material_bind_group
                             .resolve_texture_slot(&texture_alloc_handle, alloc_index)
                             .unwrap();
-                        println!("GOT BUCKET: {} and layer = {}", bucket, layer);
                         stack.push(StackValue::TextureSlot((bucket << 16) | layer));
                         stack.push(StackValue::Alloc(texture_alloc_handle));
                     }
@@ -173,7 +172,6 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Alloc(alloc_handle));
                     }
                     Operations::EmitAssetUpload => {
-                        println!("emit: {stack:?}");
                         let alloc_handle = stack.pop().expect("should be gac").as_alloc();
                         let asset_key = stack.pop().expect("should be asset handle").as_raw_key();
                         res.push(RenderUpdateDelta::AssetGPULoaded {
@@ -380,7 +378,6 @@ impl<'frame> Renderer {
                         res.push(RenderUpdateDelta::InstanceDespawn(gpu_instance_handle));
                     }
                     Operations::DespawnAsset => {
-                        println!("DESPAWNING!!!!!!!!!");
                         let asset_key_idx = Self::get_constant_idx(&mut instr_peek);
                         let asset_key = constants[asset_key_idx].unwrap_key();
                         let gpu_alloc_handle_idx = Self::get_constant_idx(&mut instr_peek);

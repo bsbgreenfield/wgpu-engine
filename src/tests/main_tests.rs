@@ -111,7 +111,6 @@ mod integration_tests {
             actual,
             expected
         );
-        println!("actual: {:?}, expected: {:?}", actual, expected);
         for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
             let matches = matches!(
                 (a, e),
@@ -149,7 +148,7 @@ mod integration_tests {
             TestCases::IndependantFoxes => {
                 Scene::independant_foxes(&mut world).expect("independant foxes")
             }
-            TestCases::BuggyBrain => Scene::buggy(&mut world).unwrap(),
+            TestCases::BuggyBrain => Scene::buggy_brain(&mut world).unwrap(),
             TestCases::Box => Scene::box_scene(&mut world).unwrap(),
         };
         app.world = world;
@@ -306,6 +305,11 @@ mod integration_tests {
 
             run_frame(
                 &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+            run_frame(
+                &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
                 &[RenderDeltaKind::EntitySpawn],
             );
@@ -354,6 +358,11 @@ mod integration_tests {
             );
             run_frame(
                 &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+            run_frame(
+                &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
                 &[RenderDeltaKind::EntitySpawn],
             );
@@ -390,6 +399,11 @@ mod integration_tests {
                     RenderDeltaKind::AssetGPULoaded,
                     RenderDeltaKind::AssetGPULoaded,
                 ],
+            );
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
             );
             gen_draw_calls(&mut app);
             assert!(app.render_packet.draw_packet.is_empty());
@@ -648,10 +662,14 @@ mod integration_tests {
 
             run_frame(
                 &mut app,
-                &[WorldDeltaKind::AssetDidLoad, AssetDidLoad],
-                &[RenderDeltaKind::AssetGPULoaded, TextureGPULoaded],
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
             );
-
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
             run_frame(
                 &mut app,
                 &[WorldDeltaKind::NewEntitySpawn],
@@ -776,6 +794,7 @@ mod integration_tests {
     fn independant_foxes() {
         pollster::block_on(async {
             let mut app = setup_world(TestCases::IndependantFoxes).await;
+            run_frame_unchecked(&mut app);
             run_frame_unchecked(&mut app);
             gen_draw_calls(&mut app);
             let dump = run_frame_with_bytecode_dump(&mut app);
@@ -1158,6 +1177,7 @@ mod integration_tests {
             let mut app = setup_world(TestCases::BoxFox).await;
 
             // Frame 1: both assets load. Frame 2: both entities spawn.
+            run_frame_unchecked(&mut app);
             run_frame_unchecked(&mut app);
             run_frame_unchecked(&mut app);
             gen_draw_calls(&mut app);

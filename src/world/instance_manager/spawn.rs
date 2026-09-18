@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    iter::{repeat, repeat_n},
+};
 
 use crate::{
     animation::EntityAnimations,
@@ -94,7 +97,7 @@ impl InstanceManager {
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
         // TODO: change raw u32 to a structure in which a GPUAllocHandle can be included for an
         // external material
-        for ((alloc_handle, mesh_data), (material_alloc, material_indices)) in renderables
+        for ((alloc_handle, mesh_data), maybe_material) in renderables
             .mesh_renderables
             .drain(..)
             .zip(renderables.material_palette.drain(..))
@@ -106,26 +109,42 @@ impl InstanceManager {
                     mesh_map: mesh_data.pnu_mesh_map,
                     primtitive_ranges: pnu,
                     index_ranges: mesh_data.index_ranges.clone(),
-                    material_indices: mesh_data
-                        .pnu_materials
-                        .iter()
-                        .map(|primitive_mat_idx| {
-                            primitive_mat_idx.map(|i| material_indices[i as usize])
+                    material_indices: maybe_material
+                        .as_ref()
+                        .map(|(_material_alloc, material_indices)| {
+                            mesh_data
+                                .pnu_materials
+                                .iter()
+                                .map(|primitive_mat_idx| {
+                                    primitive_mat_idx.map(|i| material_indices[i as usize])
+                                })
+                                .collect()
                         })
-                        .collect(),
+                        .unwrap_or(Vec::from_iter(repeat_n(
+                            None,
+                            mesh_data.pnu_materials.len(),
+                        ))),
                 }),
                 pnujw_draws: mesh_data.pnujw_vertex_ranges.map(|pnujw| DrawSet {
                     joint_map: mesh_data.joint_map,
                     mesh_map: mesh_data.pnujw_mesh_map,
                     primtitive_ranges: pnujw,
                     index_ranges: mesh_data.index_ranges.clone(),
-                    material_indices: mesh_data
-                        .pnujw_materials
-                        .iter()
-                        .map(|primitive_mat_idx| {
-                            primitive_mat_idx.map(|i| material_indices[i as usize])
+                    material_indices: maybe_material
+                        .as_ref()
+                        .map(|(_material_alloc, material_indices)| {
+                            mesh_data
+                                .pnujw_materials
+                                .iter()
+                                .map(|primitive_mat_idx| {
+                                    primitive_mat_idx.map(|i| material_indices[i as usize])
+                                })
+                                .collect()
                         })
-                        .collect(),
+                        .unwrap_or(Vec::from_iter(repeat_n(
+                            None,
+                            mesh_data.pnujw_materials.len(),
+                        ))),
                 }),
             };
 

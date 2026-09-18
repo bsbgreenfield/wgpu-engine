@@ -36,6 +36,6 @@ pub(crate) struct Renderables {
     pub instance_handle: InstanceHandle,
     pub(crate) mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimationData>,
-    pub material_palette: Vec<(GPUAllocationHandle, Vec<u32>)>,
+    pub material_palette: Vec<Option<(GPUAllocationHandle, Vec<u32>)>>,
 }
 impl Error for EntityManagerError {}

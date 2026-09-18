@@ -31,7 +31,6 @@ impl AnimationController {
         anim_idx: usize,
         time_offset: Option<f32>,
     ) -> Option<()> {
-        println!("HANDLE: {:?}, anim idx: {:?}", instance_handle, anim_idx);
         let entity_animation = self
             .registered_animations
             .get(&instance_handle.entity_handle)?;

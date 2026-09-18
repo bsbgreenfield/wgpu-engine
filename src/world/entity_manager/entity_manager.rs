@@ -9,7 +9,7 @@ use crate::{
     renderer::PrototypeHandle,
     world::{
         entity_manager::{
-            EntityManagerError, MaterialBinding, Renderables,
+            EntityManagerError, Renderables,
             components::{
                 AnimationComponent, AnimationMode, Component, MaterialPalleteComponent,
                 MeshCollectionComponent, MeshCollectionDescriptor,
@@ -113,9 +113,10 @@ impl EntityManager {
             let alloc = asset_manager
                 .alloc_handle_of(&materials_component.resource_backing.asset_handle)
                 .unwrap();
-            renderables.material_palette.push((alloc, indices));
+            renderables.material_palette.push(Some((alloc, indices)));
+        } else {
+            renderables.material_palette.push(None);
         }
-
         Ok(renderables)
     }
 

@@ -147,7 +147,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             if !self.world.is_initialized() {
                 self.world
                     .init(aspect_ratio, &self.app_config.as_ref().unwrap().device);
-                Scene::independant_foxes(&mut self.world).expect("scene creation error");
+                Scene::box_scene(&mut self.world).expect("scene creation error");
                 self.renderer.init(self.app_config.as_ref().unwrap());
                 self.renderer.add_pass(
                     "Opaque Pass".to_string(),

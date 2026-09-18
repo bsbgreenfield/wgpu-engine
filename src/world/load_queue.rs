@@ -62,7 +62,6 @@ impl LoadQueue {
             .map(|(handle, asset_job)| (*handle, asset_job.clone()))
             .collect();
         for (asset_handle, job) in jobs.iter() {
-            println!("JOB with base: {:?} and target: {:?}", job.base, job.target);
             let current = asset_manager.res_level_of(asset_handle)?;
             if current == job.target {
                 self.jobs

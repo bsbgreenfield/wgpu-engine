@@ -159,7 +159,6 @@ pub(super) fn load_binary_data_from_source(
     for bin_source in sources.binary_sources.iter() {
         match bin_source {
             BinarySource::BinFile(path) => {
-                println!("{:?}", path);
                 let data = std::fs::read(path).map_err(|e| GltfLoadError::IOErr(e.kind()))?;
                 buffer_offsets.push(data.len());
                 res.extend(data);
