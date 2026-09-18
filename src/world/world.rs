@@ -10,7 +10,7 @@ use crate::{
     renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
     util::types::{LocalTransform, Mat4F32},
     world::{
-        RenderKey, WorldUpdateError,
+        InstanceResidency, RenderKey, WorldUpdateError,
         camera::Camera,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{
@@ -354,10 +354,6 @@ impl World {
                         )
                         .expect("Asset not found");
                 }
-                RenderUpdateDelta::TextureGPULoaded { key, alloc_handle } => self
-                    .asset_manager
-                    .register_asset_gpu_residency(AssetHandle::from_key(key), alloc_handle.clone())
-                    .expect("texture asset not found"),
                 RenderUpdateDelta::AssetUnloaded {
                     alloc_handle: _,
                     key,
@@ -370,11 +366,12 @@ impl World {
                     instance_key,
                     gpu_instance_handle,
                     record_offset,
+                    binding_key,
                 } => {
                     let instance_handle = InstanceHandle::from_key(instance_key);
                     self.instance_manager.add_record_index(
                         &instance_handle,
-                        record_offset,
+                        InstanceResidency::new(record_offset, binding_key.as_u32()),
                         gpu_instance_handle,
                     );
                 }

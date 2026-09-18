@@ -2,16 +2,9 @@ use std::fmt::Display;
 
 use wgpu::TextureFormat;
 
-use crate::{
-    renderer::{
-        GPUAllocationHandle, TexDim,
-        bind_groups::BGBufferType,
-        gpu_allocator::{
-            GPUUploadResult, UploadTextureJob,
-            allocation_table::{AllocationTable, MultiAllocTable},
-        },
-    },
-    util::types::GPUTextureData,
+use crate::renderer::{
+    GPUAllocationHandle, TexDim,
+    gpu_allocator::{GPUUploadResult, UploadTextureJob, allocation_table::MultiAllocTable},
 };
 
 #[derive(Debug)]
@@ -185,7 +178,6 @@ impl TextureArena {
             TexDim::Dim128 => 2,
             TexDim::Dim256 => 3,
             TexDim::Dim1024 => 4,
-            _ => panic!(),
         }
     }
 
@@ -222,7 +214,7 @@ impl TextureArena {
             .zip([64, 128, 256, 1024].into_iter())
         {
             if maybe_chunk.is_none() {
-                maybe_chunk.insert(TextureChunk::new(
+                let _ = maybe_chunk.insert(TextureChunk::new(
                     device,
                     TextureFormat::Rgba8Unorm,
                     TexDim::from_u32(dim),

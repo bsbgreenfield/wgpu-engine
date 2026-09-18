@@ -4,10 +4,11 @@ use crate::{
     common::instance::InstanceHandle,
     renderer::{
         GPUInstanceHandle, InstanceUploadJob,
-        bind_groups::{BGBufferType, BindGroupProvider},
+        bind_groups::BindGroupProvider,
         gpu_allocator::{
-            GPUAllocator, GPUUploadResult, VertexArenaError, gpu_arena::GPUArena,
-            instance_arena::SharedInstanceArena,
+            GPUAllocator, GPUUploadResult, VertexArenaError,
+            gpu_arena::GPUArena,
+            instance_arena::{InstanceAllocationResult, SharedInstanceArena},
         },
     },
     util::types::{LocalTransform, Mat4F32},
@@ -45,7 +46,7 @@ impl LocalTransformBindGroup {
     ) -> Result<GPUUploadResult, VertexArenaError> {
         let upload_result = self.lt_arena.upload(job, queue, device);
         if self.bind_groups.is_empty() {
-            self.add_bind_group(device, BGBufferType::LocalTransform);
+            self.add_bind_group(device);
         }
         upload_result
     }
@@ -54,7 +55,7 @@ impl LocalTransformBindGroup {
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<InstanceAllocationResult, VertexArenaError> {
         self.lt_arena
             .register_shared_binding(slot_index, new_handle)
     }
@@ -65,14 +66,14 @@ impl LocalTransformBindGroup {
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<InstanceAllocationResult, VertexArenaError> {
         self.lt_arena
             .register_copy_binding(slot_index, new_handle, queue, device)
     }
 }
 
 impl BindGroupProvider for LocalTransformBindGroup {
-    fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType) {
+    fn add_bind_group(&mut self, device: &wgpu::Device) {
         let bgl = Self::get_bind_group_layout(device);
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lt bind group"),

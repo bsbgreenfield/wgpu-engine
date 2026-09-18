@@ -10,6 +10,7 @@ use crate::common::instance::InstanceHandle;
 use crate::renderer::RenderConstant::DataRef;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
 use crate::renderer::gpu_allocator::{GPUUploadJob, GPUUploadResult};
+use crate::world::InstanceResidency;
 use crate::{
     renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
     util::types::{GlobalTransform, ModelVertex},
@@ -75,64 +76,98 @@ impl RenderPacket {
         }
     }
 
-    pub fn reset(&mut self, group_len: usize, record_len: usize) {
+    pub fn reset(&mut self, size: usize, record_len: usize) {
         use cgmath::SquareMatrix;
         if self.global_transforms.len() < record_len {
             self.global_transforms
                 .resize(record_len, cgmath::Matrix4::<f32>::identity().into());
         }
-        self.draw_packet.reset(group_len, record_len);
+        self.draw_packet.reset(size, record_len);
     }
 
     pub fn count_sort(
         &mut self,
         handles: &[InstanceHandle],
-        record_idxs: &[u32],
+        record_idxs: &[InstanceResidency],
         sparse_entity_group: &[usize],
         positions: &Vec<GlobalTransform>,
     ) {
-        self.draw_packet.count_sort(handles, sparse_entity_group);
+        self.draw_packet
+            .count_sort(handles, record_idxs, sparse_entity_group);
 
         // finally, for each record index on the gpu, and each corresponding index handle,
         // create an indirection list where indirection_list[i] = the gpu record slot
         // and i = instance idx
         // this effectively is a translation from instance_idx -> instance record idx
         // also update global_transforms such that global_transforms[i] = the transform instance i
-        for (i, (record_index, handle)) in record_idxs.iter().zip(handles).enumerate() {
-            let group_id = sparse_entity_group[handle.entity_handle.0 as usize];
-            self.draw_packet.indirection_list[self.draw_packet.cursors[group_id] as usize] =
-                *record_index;
-            self.global_transforms[self.draw_packet.cursors[group_id] as usize] = positions[i];
-            self.draw_packet.cursors[group_id] += 1;
+        for (i, (residency, handle)) in record_idxs.iter().zip(handles).enumerate() {
+            let group_id = sparse_entity_group[handle.entity_handle.0 as usize] as u64;
+            let res = residency.bind_key as u64;
+            let key = ((group_id << 32) | res) as u64;
+            let bucket_idx = self.draw_packet.bucket_map[&key];
+            self.draw_packet.indirection_list[self.draw_packet.cursors[bucket_idx] as usize] =
+                residency.record_index;
+            self.global_transforms[self.draw_packet.cursors[bucket_idx] as usize] = positions[i];
+            self.draw_packet.cursors[bucket_idx] += 1;
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct DrawBucket {
+    pub group_idx: usize,
+    pub start: u32,
+    pub count: u32,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct DrawPacket {
     pub(crate) pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
     pub(crate) pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
-    entity_count: Vec<usize>,
+    counts: Vec<usize>,
     cursors: Vec<u32>,
-    pub(crate) instance_ranges: Vec<Range<u32>>,
+    bucket_map: HashMap<u64, usize>,
+    pub(crate) draw_buckets: Vec<DrawBucket>,
+
     pub(crate) indirection_list: Vec<u32>,
 }
 
 impl DrawPacket {
-    pub fn count_sort(&mut self, handles: &[InstanceHandle], sparse_entity_group: &[usize]) {
+    pub fn count_sort(
+        &mut self,
+        handles: &[InstanceHandle],
+        residencies: &[InstanceResidency],
+        sparse_entity_group: &[usize],
+    ) {
         // build entity_count list, where entity_count[i] = number of entities
-        // and i = render group index
-        for handle in handles {
-            let group_id = sparse_entity_group[handle.entity_handle.0 as usize];
-            self.entity_count[group_id] += 1;
+        // and i = render group index + instance bind key
+        for (handle, res) in handles.iter().zip(residencies) {
+            if res.is_pending() {
+                continue;
+            }
+            let group_id = sparse_entity_group[handle.entity_handle.0 as usize] as u64;
+            let bind_key = res.bind_key as u64;
+            let bucket_key = ((group_id << 32) | bind_key) as u64;
+            if let Some(bucket_idx) = self.bucket_map.get(&bucket_key) {
+                self.counts[*bucket_idx] += 1;
+            } else {
+                self.counts[self.draw_buckets.len()] += 1;
+                self.bucket_map.insert(bucket_key, self.draw_buckets.len());
+                self.draw_buckets.push(DrawBucket {
+                    group_idx: group_id as usize,
+                    start: 0,
+                    count: 0,
+                });
+            }
         }
         // build instance_ranges, where instance_ranges[i] = the GPU shader instance idx range
-        // and i = render group idx
+        // and i = group + bind key index
         // cusors keeps track of the first instance of the entity associated with render_groups[i]
         let mut sum = 0;
-        for (group_id, count) in self.entity_count.iter_mut().enumerate() {
-            self.instance_ranges[group_id] = Range::from(sum..(sum + *count as u32));
-            self.cursors[group_id] = sum;
+        for (bucket_idx, count) in self.counts.iter_mut().enumerate() {
+            self.draw_buckets[bucket_idx].start = sum;
+            self.draw_buckets[bucket_idx].count = *count as u32;
+            self.cursors[bucket_idx] = sum;
             sum += *count as u32;
             *count = 0;
         }
@@ -142,13 +177,12 @@ impl DrawPacket {
         self.pnu.is_empty() && self.pnujw.is_empty()
     }
 
-    pub fn reset(&mut self, group_len: usize, record_len: usize) {
+    pub fn reset(&mut self, group_bindings_count: usize, record_len: usize) {
         self.pnu.clear();
         self.pnujw.clear();
-        self.entity_count.resize(group_len, usize::MIN);
-        self.cursors.resize(group_len, u32::MAX);
-        self.instance_ranges
-            .resize(group_len, Range::<u32> { start: 0, end: 0 });
+        // TODO: this isnt right unless group -> binding is 1:1
+        self.counts.resize(group_bindings_count, usize::MIN);
+        self.cursors.resize(group_bindings_count, u32::MAX);
         self.indirection_list.resize(record_len, u32::MAX);
     }
 
@@ -162,6 +196,23 @@ impl DrawPacket {
         &self.pnujw
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct InstanceBindKey {
+    lt: u16,
+    jt: u16,
+}
+
+impl InstanceBindKey {
+    pub fn as_u32(self) -> u32 {
+        (((self.lt as u32) << 16) | self.jt as u32) as u32
+    }
+
+    pub fn from_u32(val: u32) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum RenderUpdateDelta {
     AssetUnloaded {
@@ -172,20 +223,14 @@ pub(crate) enum RenderUpdateDelta {
         key: u64,
         alloc_handle: GPUAllocationHandle,
     },
-    TextureGPULoaded {
-        key: u64,
-        alloc_handle: GPUAllocationHandle,
-    },
     EntitySpawned {
         instance_key: u64,
         gpu_instance_handle: GPUInstanceHandle,
         record_offset: u32,
+        binding_key: InstanceBindKey,
     },
     InstanceDespawn(GPUInstanceHandle),
 }
-
-#[derive(Clone, Hash, PartialEq, Eq)]
-pub struct GPUTextureHandle(u32);
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct GPUInstanceHandle {

@@ -3,8 +3,8 @@ use std::{fmt::Debug, marker::PhantomData};
 use crate::{
     animation::EntityAnimationData,
     asset_manager::{
-        Asset, AssetHandle, MaterialRenderables, ProvidesAnimationData, ProvidesMaterialData,
-        ProvidesMeshData, ProvidesTextureData,
+        Asset, AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
+        ProvidesTextureData,
     },
 };
 
@@ -121,11 +121,11 @@ impl MeshCollectionDescriptor {
         let resource: ResourceBacking<dyn ProvidesMaterialData> = match material_descriptor {
             MaterialComponentDescriptor::Embedded => self.resource_backing.clone().erase(),
             MaterialComponentDescriptor::External {
-                resource_backing,
-                material_accessor,
+                resource_backing: _,
+                material_accessor: _,
             } => todo!(),
         };
-        self.materials.insert(MaterialPalleteComponent {
+        let _ = self.materials.insert(MaterialPalleteComponent {
             resource_backing: resource,
             material_accessor: ComponentAccessor::All,
         });
@@ -276,32 +276,3 @@ impl<M: ProvidesMaterialData + ?Sized> Component for MaterialPalleteComponent<M>
         asset.material_palette(&self.material_accessor)
     }
 }
-
-//pub struct TextureComponent<T: ProvidesTextureData + ?Sized> {
-//    pub resource_backing: ResourceBacking<T>,
-//}
-//
-//impl<T: ProvidesTextureData + ?Sized> Debug for TextureComponent<T> {
-//    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//        f.debug_struct("TextureComponent").finish()
-//    }
-//}
-//
-//impl<T: ProvidesTextureData + ?Sized> Component for TextureComponent<T> {
-//    type AssetType = T;
-//
-//    type Output = DynamicImage;
-//
-//    type Erased = TextureComponent<dyn ProvidesTextureData>;
-//
-//    fn erase(self) -> Self::Erased {
-//        TextureComponent {
-//            resource_backing: self.resource_backing.erase(),
-//        }
-//    }
-//
-//    fn get_output_data(&self, asset: &Self::AssetType) -> Self::Output {
-//        //TODO: do we need a component accessor here?
-//        asset.texture_data(&ComponentAccessor::All)
-//    }
-//}

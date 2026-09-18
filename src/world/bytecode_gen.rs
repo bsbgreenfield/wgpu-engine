@@ -4,8 +4,7 @@ use crate::{
     app::{GPUAssetUploadJob, GPUTextureBinding},
     asset_manager::AssetHandle,
     renderer::{
-        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction,
-        Operations::{self, TexureDefault},
+        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction, Operations,
         RenderConstant, TexDim,
     },
     util::types::{GPUMaterialData, PNUJWVertex, PNUVertex, VIndex},

@@ -3,10 +3,14 @@ use std::{iter::Peekable, slice::Iter};
 
 use crate::{
     renderer::{
-        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, InstanceUploadJob,
-        Instruction, Operations, PrototypeHandle, RenderConstant, RenderUpdateDelta,
-        RenderUpdateError, StackValue, TexDim, UploadMeshJob, VertexArenaSelector,
-        gpu_allocator::{GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob},
+        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, InstanceBindKey,
+        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderConstant,
+        RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, UploadMeshJob,
+        VertexArenaSelector,
+        gpu_allocator::{
+            GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
+            instance_arena::InstanceAllocationResult,
+        },
         renderer::Renderer,
     },
     util::types::{GPUMaterialData, InstanceRecordData, PNUJWVertex, PNUVertex},
@@ -51,6 +55,9 @@ impl<'frame> Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
+        for i in instructions.iter() {
+            println!("{i:?}");
+        }
         let mut stack = Vec::<StackValue>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
@@ -196,17 +203,23 @@ impl<'frame> Renderer {
 
                         let gpu_instance_handle =
                             stack.pop().expect("should be payload").as_instance_handle();
-                        let joint_offset: Option<u32> =
-                            if bind_mask.contains(GPUBindings::JOINT_TRANSFORM) {
-                                Some(stack.pop().expect("should be offset").as_offset())
-                            } else {
-                                None
-                            };
+                        let joint_result: Option<(u32, u32)> = if bind_mask
+                            .contains(GPUBindings::JOINT_TRANSFORM)
+                        {
+                            let jt_offset = stack.pop().expect("should be data offset").as_offset();
+                            let chunk_index =
+                                stack.pop().expect("should be chunk offset").as_offset();
+                            Some((chunk_index, jt_offset))
+                        } else {
+                            None
+                        };
                         let lt_offset = stack.pop().expect("should be offset").as_offset();
+                        let lt_buffer_index =
+                            stack.pop().expect("should be chunk offset").as_offset();
 
                         let record_data: Vec<u8> = bytemuck::pod_collect_to_vec(&[
                             lt_offset,
-                            joint_offset.unwrap_or_default(),
+                            joint_result.map(|j| j.1).unwrap_or(0),
                             0,
                             0,
                         ]);
@@ -225,6 +238,10 @@ impl<'frame> Renderer {
                             instance_key,
                             gpu_instance_handle,
                             record_offset: buffer_element_offset,
+                            binding_key: InstanceBindKey {
+                                lt: lt_buffer_index as u16,
+                                jt: joint_result.map(|jr| jr.0).unwrap_or(0) as u16,
+                            },
                         });
                     }
                     Operations::LocalTransformUpload => {
@@ -235,12 +252,14 @@ impl<'frame> Renderer {
                         let lt_upload_job = InstanceUploadJob::new(lt, gpu_instance_handle.clone());
                         let GPUUploadResult::BindGroupUploadResult {
                             buffer_element_offset,
-                            alloc_meta_idx: _,
+                            chunk_idx,
+                            ..
                         } = self.upload_local_transforms(lt_upload_job, queue, device)?
                         else {
                             panic!("expected bing group upload")
                         };
 
+                        stack.push(StackValue::Offset(chunk_idx));
                         stack.push(StackValue::Offset(buffer_element_offset));
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }
@@ -279,12 +298,14 @@ impl<'frame> Renderer {
                         let GPUUploadResult::BindGroupUploadResult {
                             buffer_element_offset,
                             alloc_meta_idx: _,
+                            chunk_idx,
                         } = self.upload_skin_data(jt_upload_job, ibm_upload_job, queue, device)?
                         else {
                             panic!("expected bin group upload");
                         };
 
                         // NOTE: ibm offset should always be the same as joint offset
+                        stack.push(StackValue::Offset(chunk_idx));
                         stack.push(StackValue::Offset(buffer_element_offset));
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }
@@ -313,22 +334,27 @@ impl<'frame> Renderer {
                                 BufferType::LocalTransform => {
                                     let slot =
                                         self.bind_groups.get_slot(&new_handle.prototype, *bt);
-                                    let lt_offset = self
+                                    let InstanceAllocationResult {
+                                        data_offset: lt_offset,
+                                        chunk_index,
+                                    } = self
                                         .bind_groups
                                         .local_transforms
                                         .register_shared_binding(slot, &new_handle)
                                         .expect("register shared lt fail");
+                                    stack.push(StackValue::Offset(chunk_index));
                                     stack.push(StackValue::Offset(lt_offset));
                                 }
                                 BufferType::JointTransform => {
                                     let slot =
                                         self.bind_groups.get_slot(&new_handle.prototype, *bt);
-                                    let (jt_offset, _ibm_offset) = self
+                                    let (jt_result, _ibm_result) = self
                                         .bind_groups
                                         .skinning
                                         .register_shared_binding(slot, &new_handle)
                                         .expect("register shared skin fail");
-                                    stack.push(StackValue::Offset(jt_offset));
+                                    stack.push(StackValue::Offset(jt_result.chunk_index));
+                                    stack.push(StackValue::Offset(jt_result.data_offset));
                                 }
                             }
                             stack.push(StackValue::Instance(new_handle));
@@ -346,22 +372,27 @@ impl<'frame> Renderer {
                                 BufferType::LocalTransform => {
                                     let slot =
                                         self.bind_groups.get_slot(&new_handle.prototype, *bt);
-                                    let lt_offset = self
+                                    let InstanceAllocationResult {
+                                        data_offset: lt_offset,
+                                        chunk_index,
+                                    } = self
                                         .bind_groups
                                         .local_transforms
                                         .register_copy_binding(slot, &new_handle, queue, device)
                                         .expect("register shared lt fail");
+                                    stack.push(StackValue::Offset(chunk_index));
                                     stack.push(StackValue::Offset(lt_offset));
                                     stack.push(StackValue::Instance(new_handle));
                                 }
                                 BufferType::JointTransform => {
                                     let slot =
                                         self.bind_groups.get_slot(&new_handle.prototype, *bt);
-                                    let (jt_offset, _ibm_offset) = self
+                                    let (jt_result, _ibm_result) = self
                                         .bind_groups
                                         .skinning
                                         .register_copy_binding(slot, &new_handle, queue, device)?;
-                                    stack.push(StackValue::Offset(jt_offset));
+                                    stack.push(StackValue::Offset(jt_result.chunk_index));
+                                    stack.push(StackValue::Offset(jt_result.data_offset));
                                     stack.push(StackValue::Instance(new_handle));
                                 }
                             }

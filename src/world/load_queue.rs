@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    asset_manager::{AssetHandle, AssetLoadError, AssetResidency, asset_manager::AssetManager},
-    common::entity::EntityHandle,
-    world::{entity_manager::entity_manager::EntityManager, scene::SceneLoadLevel},
+    asset_manager::{AssetHandle, AssetLoadError, asset_manager::AssetManager},
+    world::scene::SceneLoadLevel,
 };
 
 #[derive(Clone)]
@@ -17,13 +16,6 @@ pub struct AssetTransition {
     pub old: SceneLoadLevel,
     pub new: SceneLoadLevel,
 }
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-struct AssetJobKey {
-    entity_handle: EntityHandle,
-    asset_handle: AssetHandle,
-}
-
 #[derive(Default)]
 pub struct LoadQueue {
     jobs: HashMap<AssetHandle, AssetLoadJob>,

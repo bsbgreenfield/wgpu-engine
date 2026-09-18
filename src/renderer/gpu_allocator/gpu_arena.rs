@@ -144,6 +144,7 @@ impl<T: StorageData> GPUUploadable for T {
             arena.chunks[chunk_id].allocator.resolve(node_id).start / size_of::<T>() as u32;
         return GPUUploadResult::BindGroupUploadResult {
             buffer_element_offset,
+            chunk_idx: chunk_id as u32,
             alloc_meta_idx: slot_idx,
         };
     }
@@ -247,7 +248,7 @@ impl GPUUploadable for GPUMaterialData {
 
     fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {
         let default_data = &[GPUMaterialData {
-            base_color_factors: [0.2, 0.6, 0.5, 1.],
+            base_color_factors: [1., 0.3, 0.2, 1.],
             roughness: 1.,
             metallic: 1.,
             tex_mod: 0,

@@ -1,3 +1,5 @@
+use std::range::Range;
+
 use crate::{
     renderer::{DrawItem, RenderPacket},
     world::instance_manager::instance_manager::InstanceManager,
@@ -8,7 +10,13 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
         // adjust as archetype tables are added
         let record_len = self.pos.positions.len();
 
-        packet.reset(self.render_groups.len(), record_len);
+        // TODO: this is NOT the correct number to use for the number of buckets,
+        // because not every render group will use every binding.
+        // also active_bindings leaks, because its never removed
+        packet.reset(
+            self.gpu_bind_registry.active_bindings.len() * self.render_groups.len(),
+            record_len,
+        );
 
         packet.count_sort(
             &self.pos.arena.handles,
@@ -17,11 +25,9 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
             &self.pos.positions,
         );
 
-        for (group_idx, group) in self.render_groups.iter().enumerate() {
-            let instance_range = packet.draw_packet.instance_ranges[group_idx];
-            if instance_range.is_empty() {
-                continue;
-            }
+        for bucket in packet.draw_packet.draw_buckets.iter() {
+            let instance_range = Range::from(bucket.start..(bucket.start + bucket.count));
+            let group = &self.render_groups[bucket.group_idx];
             for view in group.views().iter() {
                 if let Some(pnu) = &view.pnu_draws {
                     for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {

@@ -9,19 +9,27 @@ use crate::{
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
 };
 
+#[derive(Debug)]
+pub(crate) struct InstanceAllocationResult {
+    /// the offset of the allocated data within the chunk
+    pub data_offset: u32,
+    /// the index of the buffer (chunk) in which this data was placed
+    pub chunk_index: u32,
+}
+
 pub(in crate::renderer) trait SharedInstanceArena<T: SharedInstanceData + Debug + bytemuck::Pod> {
     fn register_shared_binding(
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError>;
+    ) -> Result<InstanceAllocationResult, VertexArenaError>;
     fn register_copy_binding(
         &mut self,
         slot_idx: usize,
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError>;
+    ) -> Result<InstanceAllocationResult, VertexArenaError>;
 }
 
 impl<T: SharedInstanceData + bytemuck::Pod + Debug> SharedInstanceArena<T> for GPUArena<T> {
@@ -29,9 +37,14 @@ impl<T: SharedInstanceData + bytemuck::Pod + Debug> SharedInstanceArena<T> for G
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<InstanceAllocationResult, VertexArenaError> {
         self.register_instance(*new_handle, slot_index);
-        Ok(self.resolve(new_handle).0.start)
+        let data_offset = self.resolve(new_handle).0.start;
+        let chunk_index = self.get_meta(slot_index)?.chunk_id as u32;
+        Ok(InstanceAllocationResult {
+            data_offset,
+            chunk_index,
+        })
     }
 
     fn register_copy_binding(
@@ -40,7 +53,7 @@ impl<T: SharedInstanceData + bytemuck::Pod + Debug> SharedInstanceArena<T> for G
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<u32, VertexArenaError> {
+    ) -> Result<InstanceAllocationResult, VertexArenaError> {
         // get the chunk and node id of the slot stored by the prototype
         let AllocMetaData {
             chunk_id, node_id, ..
@@ -88,11 +101,17 @@ impl<T: SharedInstanceData + bytemuck::Pod + Debug> SharedInstanceArena<T> for G
         self.allocate_copy_data(*new_handle, dst_chunk_id, dst_node_id);
         // self.alloc_table.register_instance(*new_handle, slot_idx);
 
-        Ok(self.get_chunks()[dst_chunk_id]
+        let data_offset = self.get_chunks()[dst_chunk_id]
             .allocator
             .resolve(dst_node_id)
             .start
-            / size_of::<T>() as u32)
+            / size_of::<T>() as u32;
+        let chunk_index = dst_chunk_id as u32;
+
+        Ok(InstanceAllocationResult {
+            data_offset,
+            chunk_index,
+        })
     }
 }
 

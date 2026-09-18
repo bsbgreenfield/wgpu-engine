@@ -1,8 +1,11 @@
 use crate::{
     common::instance::InstanceHandle,
     renderer::GPUInstanceHandle,
-    world::instance_manager::{
-        ArchetypeId, archetype_table::ArchetypeTable, instance_manager::InstanceManager,
+    world::{
+        InstanceResidency,
+        instance_manager::{
+            ArchetypeId, archetype_table::ArchetypeTable, instance_manager::InstanceManager,
+        },
     },
 };
 
@@ -10,15 +13,18 @@ impl InstanceManager {
     pub fn add_record_index(
         &mut self,
         instance_handle: &InstanceHandle,
-        record_index: u32,
+        residency: InstanceResidency,
         gpu_instance_handle: GPUInstanceHandle,
     ) {
         self.gpu_bind_registry
             .registered_instances
             .insert(gpu_instance_handle, instance_handle.clone());
+        self.gpu_bind_registry
+            .active_bindings
+            .insert(residency.bind_key);
         match instance_handle.archetype {
             ArchetypeId::Position => {
-                self.pos.write_record_index(instance_handle, record_index);
+                self.pos.write_record_index(instance_handle, residency);
             }
         }
 

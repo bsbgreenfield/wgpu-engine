@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     common::entity::EntityHandle,
@@ -11,6 +11,7 @@ pub(super) struct GPUBindRegistry {
     pub(super) next_prototype: u32,
     pub(super) registered_prototypes: HashMap<EntityHandle, PrototypeHandle>,
     pub(super) registered_instances: HashMap<GPUInstanceHandle, InstanceHandle>,
+    pub(super) active_bindings: HashSet<u32>,
 }
 
 impl GPUBindRegistry {

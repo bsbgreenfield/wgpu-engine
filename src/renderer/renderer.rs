@@ -51,8 +51,8 @@ impl EngineRenderPass {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.3,
-                        g: 0.6,
+                        r: 0.7,
+                        g: 0.9,
                         b: 1.,
                         a: 1.,
                     }),

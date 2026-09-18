@@ -2,7 +2,6 @@ use crate::{
     common::instance::InstanceHandle,
     renderer::{
         GPUInstanceHandle, InstanceUploadJob,
-        bind_groups::BGBufferType,
         gpu_allocator::{GPUUploadResult, VertexArenaError, gpu_arena::GPUArena},
     },
 };
@@ -26,7 +25,7 @@ impl BindGroupProvider for InstanceDataBindGroup {
         self.bind_groups.first().expect("bind group does not exist")
     }
 
-    fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType) {
+    fn add_bind_group(&mut self, device: &wgpu::Device) {
         // TODO: formalize the system for lazy allocating all bg buffers
         self.allocate_buffers(device);
 
@@ -150,7 +149,7 @@ impl InstanceDataBindGroup {
     ) -> Result<GPUUploadResult, VertexArenaError> {
         let upload_result = self.record_arena.upload(job, queue, device)?;
         if self.bind_groups.is_empty() {
-            self.add_bind_group(device, BGBufferType::InstanceRecordData);
+            self.add_bind_group(device);
         }
         Ok(upload_result)
     }

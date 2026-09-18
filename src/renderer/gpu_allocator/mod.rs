@@ -8,12 +8,10 @@ use std::error::Error;
 
 use crate::renderer::GPUAllocationHandle;
 use crate::renderer::GPUInstanceHandle;
-use crate::renderer::GPUTextureHandle;
 use crate::renderer::GPUUploadable;
 use crate::renderer::StorageData;
 use crate::renderer::TexDim;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
-use crate::util::types::GPUTextureData;
 use crate::util::types::ModelVertex;
 use crate::util::types::{
     GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
@@ -83,6 +81,7 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
 pub(crate) enum GPUUploadResult {
     BindGroupUploadResult {
         buffer_element_offset: u32,
+        chunk_idx: u32,
         alloc_meta_idx: usize,
     },
     VertexDataUploadSuccess,

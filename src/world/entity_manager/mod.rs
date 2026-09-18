@@ -23,12 +23,6 @@ impl Display for EntityManagerError {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct MaterialBinding {
-    alloc_handle: GPUAllocationHandle,
-    pub index: u32,
-}
-
 // TODO: both mesh renderables and material palette are a Vec<(alloc, data)>
 // in anticipation of a future in which multiple mesh components and material components
 // are allowed, which is not currently the case

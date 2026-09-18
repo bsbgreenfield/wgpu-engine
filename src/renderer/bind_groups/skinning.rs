@@ -6,10 +6,11 @@ use crate::{
     common::instance::InstanceHandle,
     renderer::{
         GPUInstanceHandle, InstanceUploadJob,
-        bind_groups::{BGBufferType, BindGroupProvider},
+        bind_groups::BindGroupProvider,
         gpu_allocator::{
-            GPUAllocator, GPUUploadResult, VertexArenaError, gpu_arena::GPUArena,
-            instance_arena::SharedInstanceArena,
+            GPUAllocator, GPUUploadResult, VertexArenaError,
+            gpu_arena::GPUArena,
+            instance_arena::{InstanceAllocationResult, SharedInstanceArena},
         },
     },
     util::types::{InverseBindMatrix, JointTransform, Mat4F32},
@@ -55,7 +56,7 @@ impl SkinningBindGroup {
         let jt_result = self.joint_arena.upload(joint_job, queue, device)?;
         let _ibm_offset = self.ibm_arena.upload(ibm_job, queue, device)?;
         if self.bind_groups.is_empty() {
-            self.add_bind_group(device, BGBufferType::JointData);
+            self.add_bind_group(device);
         }
         Ok(jt_result)
     }
@@ -64,23 +65,15 @@ impl SkinningBindGroup {
         &mut self,
         slot_index: usize,
         new_handle: &GPUInstanceHandle,
-    ) -> Result<(u32, u32), VertexArenaError> {
-        let jt = self
+    ) -> Result<(InstanceAllocationResult, InstanceAllocationResult), VertexArenaError> {
+        let jt_alloc_result = self
             .joint_arena
-            .register_shared_binding(slot_index, new_handle);
-        let ibm = self
+            .register_shared_binding(slot_index, new_handle)?;
+        let imb_alloc_result = self
             .ibm_arena
-            .register_shared_binding(slot_index, new_handle);
+            .register_shared_binding(slot_index, new_handle)?;
 
-        if let Ok(jt) = jt {
-            if let Ok(ibm) = ibm {
-                return Ok((jt, ibm));
-            } else {
-                return Err(ibm.unwrap_err());
-            }
-        } else {
-            return Err(jt.unwrap_err());
-        }
+        return Ok((jt_alloc_result, imb_alloc_result));
     }
 
     pub(in crate::renderer) fn register_copy_binding(
@@ -89,19 +82,14 @@ impl SkinningBindGroup {
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<(u32, u32), VertexArenaError> {
+    ) -> Result<(InstanceAllocationResult, InstanceAllocationResult), VertexArenaError> {
         let jt = self
             .joint_arena
-            .register_copy_binding(slot_index, new_handle, queue, device);
+            .register_copy_binding(slot_index, new_handle, queue, device)?;
         let ibm = self
             .ibm_arena
-            .register_shared_binding(slot_index, new_handle);
-        if let Ok(jt) = jt {
-            if let Ok(ibm) = ibm {
-                return Ok((jt, ibm));
-            }
-        }
-        return Err(jt.unwrap_err());
+            .register_shared_binding(slot_index, new_handle)?;
+        return Ok((jt, ibm));
     }
 
     pub(in crate::renderer) fn get_first_bg(&self) -> &wgpu::BindGroup {
@@ -109,7 +97,7 @@ impl SkinningBindGroup {
     }
 }
 impl BindGroupProvider for SkinningBindGroup {
-    fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType) {
+    fn add_bind_group(&mut self, device: &wgpu::Device) {
         let bgl = Self::get_bind_group_layout(device);
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Skinning Bind Group"),

@@ -126,9 +126,6 @@ mod integration_tests {
                 ) | (
                     RenderUpdateDelta::AssetUnloaded { .. },
                     RenderDeltaKind::AssetUnloaded
-                ) | (
-                    RenderUpdateDelta::TextureGPULoaded { .. },
-                    RenderDeltaKind::TextureGPULoaded
                 )
             );
             assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);

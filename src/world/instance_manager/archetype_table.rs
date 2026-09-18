@@ -1,10 +1,13 @@
 use crate::{
     common::entity::EntityHandle,
     util::types::GlobalTransform,
-    world::instance_manager::{
-        InstanceHandle,
-        archetypes::{APosition, APositionRef, Archetype},
-        instance_arena::InstanceArena,
+    world::{
+        InstanceResidency,
+        instance_manager::{
+            InstanceHandle,
+            archetypes::{APosition, APositionRef, Archetype},
+            instance_arena::InstanceArena,
+        },
     },
 };
 
@@ -20,7 +23,7 @@ pub trait ArchetypeTable {
 
     fn remove(&mut self, handle: InstanceHandle);
 
-    fn write_record_index(&mut self, handle: &InstanceHandle, index: u32);
+    fn write_record_index(&mut self, handle: &InstanceHandle, residency: InstanceResidency);
 
     fn query<'a>(&'a self, handle: &InstanceHandle) -> Option<Self::Ref<'a>>;
 }
@@ -28,7 +31,7 @@ pub trait ArchetypeTable {
 pub struct APositionTable {
     pub(super) positions: Vec<GlobalTransform>,
     pub(super) arena: InstanceArena<APosition>,
-    pub(super) record_indices: Vec<u32>,
+    pub(super) record_indices: Vec<InstanceResidency>,
 }
 #[cfg(test)]
 impl APositionTable {
@@ -53,12 +56,12 @@ impl ArchetypeTable for APositionTable {
         }
     }
 
-    fn write_record_index(&mut self, handle: &InstanceHandle, index: u32) {
+    fn write_record_index(&mut self, handle: &InstanceHandle, residency: InstanceResidency) {
         let dense_idx = self
             .arena
             .resolve(handle)
             .expect("cannot resolve the dense idx of this instance");
-        self.record_indices[dense_idx] = index;
+        self.record_indices[dense_idx] = residency;
     }
 
     fn new() -> Self {
@@ -71,7 +74,7 @@ impl ArchetypeTable for APositionTable {
 
     fn insert(&mut self, data: APosition, entity_handle: EntityHandle) -> InstanceHandle {
         self.positions.push(data.position);
-        self.record_indices.push(0); // allocate a dummy value (dangerous to be 0?)
+        self.record_indices.push(InstanceResidency::pending()); // place holder res value
         self.arena.insert(entity_handle)
     }
 

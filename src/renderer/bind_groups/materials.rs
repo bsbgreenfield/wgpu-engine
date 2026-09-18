@@ -5,7 +5,7 @@ use wgpu::BufferBinding;
 use crate::{
     renderer::{
         GPUAllocationHandle,
-        bind_groups::{BGBufferType, BindGroupProvider},
+        bind_groups::BindGroupProvider,
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, UploadMaterialJob, UploadTextureJob, VertexArenaError,
             gpu_arena::GPUArena, texture_arena::TextureArena,
@@ -76,7 +76,7 @@ impl MaterialBindGroup {
 
         self.texture_arena.ensure_chunks(device, queue);
         self.material_arena.ensure_initialized(queue, device);
-        self.add_bind_group(device, BGBufferType::Texture1);
+        self.add_bind_group(device);
     }
 
     pub(in crate::renderer) fn unload(
@@ -174,7 +174,7 @@ impl BindGroupProvider for MaterialBindGroup {
         })
     }
 
-    fn add_bind_group(&mut self, device: &wgpu::Device, ty: BGBufferType) {
+    fn add_bind_group(&mut self, device: &wgpu::Device) {
         let view = self.texture_arena.get_views();
         let mut entries: Vec<wgpu::BindGroupEntry> = view
             .iter()
@@ -204,11 +204,7 @@ impl BindGroupProvider for MaterialBindGroup {
             layout: &bgl,
             entries: &entries,
         });
-        let idx = self.bind_groups.len();
         self.bind_groups.push(bg);
-        if let Some(dim) = ty.u32_from_dim() {
-            self.texture_type_map.insert(dim, idx);
-        }
     }
 
     fn new() -> Self {

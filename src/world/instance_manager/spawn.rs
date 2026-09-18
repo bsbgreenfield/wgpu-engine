@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    iter::{repeat, repeat_n},
-};
+use std::{collections::HashMap, iter::repeat_n};
 
 use crate::{
     animation::EntityAnimations,

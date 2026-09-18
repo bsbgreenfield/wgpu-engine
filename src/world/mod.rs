@@ -108,3 +108,27 @@ pub trait RenderKey {
     fn as_key(&self) -> u64;
     fn from_key(key: u64) -> Self;
 }
+
+pub struct InstanceResidency {
+    pub record_index: u32,
+    pub bind_key: u32,
+}
+
+impl InstanceResidency {
+    #[inline(always)]
+    pub const fn is_pending(&self) -> bool {
+        self.bind_key == u32::MAX
+    }
+    fn pending() -> Self {
+        Self {
+            record_index: u32::MAX,
+            bind_key: u32::MAX,
+        }
+    }
+    fn new(record_idx: u32, binding_key: u32) -> Self {
+        Self {
+            record_index: record_idx,
+            bind_key: binding_key,
+        }
+    }
+}
