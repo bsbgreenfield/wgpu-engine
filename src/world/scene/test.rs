@@ -93,7 +93,7 @@ mod scene_tests {
                 builder = builder.add_entity(entity);
             }
             manager
-                .add_scene(builder, &self.entities)
+                .add_scene(builder, &self.entities, &self.assets)
                 .expect("scene registers")
         }
 
@@ -123,9 +123,7 @@ mod scene_tests {
     }
 
     /// `asset_requests` drains into an unordered Vec; a map is what assertions want.
-    fn requests(
-        manager: &mut SceneManager,
-    ) -> HashMap<(EntityHandle, AssetHandle), SceneLoadLevel> {
+    fn requests(manager: &mut SceneManager) -> HashMap<AssetHandle, SceneLoadLevel> {
         manager.asset_requests().into_iter().collect()
     }
 
@@ -164,7 +162,9 @@ mod scene_tests {
         let other = fixture.unloaded();
         // three entities, but only two distinct assets between them
         let scene = fixture.raw_scene(&[shared, shared, other], &[SceneId(1), SceneId(2)]);
-        graph.add_scene(&scene, &fixture.entities).expect("added");
+        graph
+            .add_scene(&scene, &fixture.entities, &fixture.assets)
+            .expect("added");
 
         let assets = graph.required_assets_of(SceneId(0));
         assert_eq!(
@@ -172,9 +172,7 @@ mod scene_tests {
             2,
             "two entities backed by the same asset must collapse to one dependency"
         );
-        assert!(
-            assets.iter().any(|(e, a)| a == &shared) && assets.iter().any(|(e, a)| a == &other)
-        );
+        assert!(assets.iter().any(|a| a == &shared) && assets.iter().any(|a| a == &other));
 
         assert_eq!(graph.children_of(SceneId(0)), &[SceneId(1), SceneId(2)]);
         assert!(
@@ -194,8 +192,12 @@ mod scene_tests {
 
         let first = fixture.raw_scene(&[shared], &[]);
         let second = fixture.raw_scene(&[shared, solo], &[]);
-        graph.add_scene(&first, &fixture.entities).expect("added");
-        graph.add_scene(&second, &fixture.entities).expect("added");
+        graph
+            .add_scene(&first, &fixture.entities, &fixture.assets)
+            .expect("added");
+        graph
+            .add_scene(&second, &fixture.entities, &fixture.assets)
+            .expect("added");
 
         let mut holders: Vec<usize> = graph.holders_of(&shared).into_iter().map(|s| s.0).collect();
         holders.sort();
@@ -253,7 +255,7 @@ mod scene_tests {
             "the already-CPU-resident asset must not be requested again"
         );
         assert_eq!(
-            requested[requested.keys().find(|(e, a)| a == &cold).as_ref().unwrap()],
+            requested[requested.keys().find(|a| *a == &cold).as_ref().unwrap()],
             SceneLoadLevel::CPU
         );
         assert_eq!(

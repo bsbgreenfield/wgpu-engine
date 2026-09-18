@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    asset_manager::AssetHandle,
+    asset_manager::{AssetHandle, asset_manager::AssetManager},
     common::{entity::EntityHandle, instance::InstanceHandle},
     world::{
         entity_manager::entity_manager::EntityManager,
@@ -90,29 +90,26 @@ impl DependencyGraph {
             .map(|d| d.holders.as_slice())
             .unwrap_or(&[])
     }
-    pub fn required_assets_of(&self, scene_id: SceneId) -> Vec<(EntityHandle, AssetHandle)> {
+    pub fn required_assets_of(&self, scene_id: SceneId) -> Vec<AssetHandle> {
         let mut assets = HashSet::new();
-        let mut entities = Vec::new();
         for entity in self.scenes.get(&scene_id).unwrap().entities.iter() {
             for asset in &self.entities.get(entity.0 as usize).unwrap().assets {
-                if assets.insert(*asset) {
-                    entities.push(*entity);
-                }
+                assets.insert(*asset);
             }
         }
-        entities.drain(..).zip(assets.into_iter()).collect()
+        assets.into_iter().collect()
     }
     pub fn recompute_asset_levels(
         &mut self,
         scene_id: SceneId,
         prev: SceneLoadLevel,
         new: SceneLoadLevel,
-    ) -> Vec<(EntityHandle, AssetHandle)> {
+    ) -> Vec<AssetHandle> {
         let mut assets = self.required_assets_of(scene_id);
         if prev == new {
             return assets;
         }
-        for (_, asset) in assets.iter_mut() {
+        for asset in assets.iter_mut() {
             let d = self.asset_demand.get_mut(&asset).unwrap();
             if prev == SceneLoadLevel::CPU {
                 d.cpu -= 1;
@@ -144,6 +141,7 @@ impl DependencyGraph {
         &mut self,
         scene: &Scene,
         entity_manager: &EntityManager,
+        asset_manager: &AssetManager,
     ) -> Result<(), DependencyGraphError> {
         let mut children: Vec<SceneId> = Vec::new();
         for child in scene.desc.children.iter() {
@@ -160,7 +158,8 @@ impl DependencyGraph {
                         instances: HashMap::new(),
                     });
             }
-            self.entities[entity.0 as usize].assets = entity_manager.rbcs_of(*entity);
+            self.entities[entity.0 as usize].assets =
+                entity_manager.rbcs_of(*entity, asset_manager);
             for asset in self.entities.get(entity.0 as usize).unwrap().assets.iter() {
                 if !self.asset_demand.contains_key(asset) {
                     self.asset_demand.insert(

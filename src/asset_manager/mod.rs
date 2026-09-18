@@ -1,5 +1,6 @@
 use std::{
     fmt::{Debug, Display},
+    marker::PhantomData,
     ops::Deref,
     path::PathBuf,
     range::Range,
@@ -13,12 +14,16 @@ use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
         asset_manager::AssetManager,
-        gltf_asset::{AssetSources, GltfAsset, GltfLoadError, GltfValidationError},
+        gltf_asset::{AssetSources, GltfAsset, GltfLoadError, GltfValidationError, TextureSource},
         texture::TextureAsset,
     },
     renderer::GPUAllocationHandle,
     util::types::{GPUMaterialData, LocalTransform, Mat4F32},
-    world::{RenderKey, entity_manager::components::ComponentAccessor, scene::SceneLoadLevel},
+    world::{
+        RenderKey,
+        entity_manager::components::{ComponentAccessor, ResourceBacking},
+        scene::SceneLoadLevel,
+    },
 };
 
 pub mod asset_manager;
@@ -105,7 +110,7 @@ impl RenderKey for AssetHandle {
     }
 }
 
-struct BinaryData {
+pub struct BinaryData {
     buffer_offsets: Vec<usize>,
     data: Vec<u8>,
 }
@@ -113,6 +118,7 @@ pub enum UnloadedAssetData {
     Gltf {
         sources: AssetSources,
         gltf: gltf::Gltf,
+        extenal_textures: Vec<Option<AssetHandle>>,
     },
     Texture(PathBuf),
 
@@ -130,10 +136,73 @@ impl Debug for UnloadedAssetData {
     }
 }
 
+struct ExternalResource<A: Asset + AssetSource + ?Sized> {
+    path: PathBuf,
+    _t: PhantomData<A>,
+}
+
 impl UnloadedAssetData {
+    fn set_external_paths(&mut self, handles: Vec<Option<AssetHandle>>) {
+        if handles.is_empty() {
+            return;
+        }
+        match self {
+            UnloadedAssetData::Gltf {
+                sources,
+                gltf,
+                extenal_textures,
+            } => *extenal_textures = handles,
+            UnloadedAssetData::Texture(path_buf) => todo!(),
+            #[cfg(test)]
+            UnloadedAssetData::Mock => {}
+        }
+    }
+
+    //TODO: either make this generic over A, or add other methods to get other types of external resource
+    fn external_textures(&self) -> Vec<Option<ExternalResource<TextureAsset>>> {
+        match self {
+            Self::Gltf {
+                sources,
+                gltf,
+                extenal_textures,
+            } => {
+                let mut res = Vec::<Option<ExternalResource<TextureAsset>>>::new();
+                for source in sources.textures.iter() {
+                    match source {
+                        TextureSource::ExternalFile(path) => {
+                            res.push(Some(ExternalResource::<TextureAsset> {
+                                path: path.clone(),
+                                _t: PhantomData,
+                            }));
+                        }
+                        TextureSource::BinarySource(_) => res.push(None),
+                    }
+                }
+                res
+            }
+            Self::Texture(path) => {
+                return vec![];
+            }
+            #[cfg(test)]
+            Self::Mock => return vec![],
+        }
+    }
+
+    fn get_external_asset_deps(&self) -> Option<&[Option<AssetHandle>]> {
+        match self {
+            UnloadedAssetData::Gltf {
+                sources,
+                gltf,
+                extenal_textures,
+            } => Some(&extenal_textures),
+            UnloadedAssetData::Texture(path_buf) => None,
+            #[cfg(test)]
+            UnloadedAssetData::Mock => None,
+        }
+    }
     fn load_binary(&self) -> Result<BinaryData, AssetLoadError> {
         match self {
-            UnloadedAssetData::Gltf { sources, gltf } => {
+            UnloadedAssetData::Gltf { sources, gltf, .. } => {
                 return GltfAsset::load_binary_data(gltf, sources)
                     .map_err(|e| AssetLoadError::Gltf(e));
             }
@@ -145,13 +214,13 @@ impl UnloadedAssetData {
             UnloadedAssetData::Mock => todo!(),
         }
     }
-    fn load(
-        &self,
-        bin: &BinaryData,
-        asset_manager: &AssetManager,
-    ) -> Result<Box<dyn Asset>, ModelBuilderError> {
+    fn load(&self, bin: &BinaryData) -> Result<Box<dyn Asset>, ModelBuilderError> {
         match self {
-            Self::Gltf { sources, gltf } => GltfAsset::load(gltf, bin, asset_manager),
+            Self::Gltf {
+                sources,
+                gltf,
+                extenal_textures,
+            } => GltfAsset::load(gltf, bin, &extenal_textures),
             Self::Texture(path) => TextureAsset::load(path),
             #[cfg(test)]
             Self::Mock => Ok(Box::new(

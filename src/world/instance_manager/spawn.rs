@@ -94,10 +94,11 @@ impl InstanceManager {
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
         // TODO: change raw u32 to a structure in which a GPUAllocHandle can be included for an
         // external material
-        for (alloc_handle, mesh_data) in renderables.mesh_renderables.drain(..) {
-            println!("PALETTE: {:?}", renderables.material_palette);
-            println!("PNU: {:?}", mesh_data.pnu_materials);
-            println!("PNUJW: {:?}", mesh_data.pnujw_materials);
+        for ((alloc_handle, mesh_data), (material_alloc, material_indices)) in renderables
+            .mesh_renderables
+            .drain(..)
+            .zip(renderables.material_palette.drain(..))
+        {
             let view = RenderView {
                 alloc_handle: alloc_handle,
                 pnu_draws: mesh_data.pnu_vertex_ranges.map(|pnu| DrawSet {
@@ -108,12 +109,8 @@ impl InstanceManager {
                     material_indices: mesh_data
                         .pnu_materials
                         .iter()
-                        .map(|i| {
-                            if let Some(idx) = *i {
-                                return Some(renderables.material_palette[idx as usize].index);
-                            } else {
-                                return None;
-                            }
+                        .map(|primitive_mat_idx| {
+                            primitive_mat_idx.map(|i| material_indices[i as usize])
                         })
                         .collect(),
                 }),
@@ -125,12 +122,8 @@ impl InstanceManager {
                     material_indices: mesh_data
                         .pnujw_materials
                         .iter()
-                        .map(|i| {
-                            if let Some(idx) = *i {
-                                return Some(renderables.material_palette[idx as usize].index);
-                            } else {
-                                return None;
-                            }
+                        .map(|primitive_mat_idx| {
+                            primitive_mat_idx.map(|i| material_indices[i as usize])
                         })
                         .collect(),
                 }),

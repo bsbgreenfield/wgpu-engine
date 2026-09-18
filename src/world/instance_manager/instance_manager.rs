@@ -53,22 +53,42 @@ impl InstanceManager {
     pub fn update(&mut self, commands: &mut Vec<AppCommand>) {
         if let Some(command) = commands.pop() {
             let mut idx: isize = -1;
-            match command {
-                AppCommand::One => idx = 0,
-                AppCommand::Two => idx = 1,
-                AppCommand::Three => idx = 2,
-                _ => {}
-            }
-            let dummy = InstanceHandle {
-                archetype: ArchetypeId::Position,
-                entity_handle: EntityHandle(1),
-                instance_id: 1,
-                generation: 0,
+            let dummy = match command {
+                AppCommand::One => {
+                    idx = 0;
+                    Some(InstanceHandle {
+                        archetype: ArchetypeId::Position,
+                        entity_handle: EntityHandle(0),
+                        instance_id: 0,
+                        generation: 0,
+                    })
+                }
+
+                AppCommand::Two => {
+                    idx = 1;
+                    Some(InstanceHandle {
+                        archetype: ArchetypeId::Position,
+                        entity_handle: EntityHandle(0),
+                        instance_id: 1,
+                        generation: 0,
+                    })
+                }
+
+                AppCommand::Three => {
+                    idx = 2;
+                    Some(InstanceHandle {
+                        archetype: ArchetypeId::Position,
+                        entity_handle: EntityHandle(0),
+                        instance_id: 2,
+                        generation: 0,
+                    })
+                }
+                _ => None,
             };
-            if idx >= 0 {
-                match self.pos.query(&dummy) {
+            if idx >= 0 && dummy.is_some() {
+                match self.pos.query(dummy.as_ref().unwrap()) {
                     Some(_) => {
-                        self.activate_animation(&dummy, idx as usize, None);
+                        self.activate_animation(&dummy.unwrap(), idx as usize, None);
                     }
                     None => commands.push(command),
                 }

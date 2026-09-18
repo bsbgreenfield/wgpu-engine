@@ -3,8 +3,8 @@ use std::{collections::HashMap, fmt::Debug, marker::PhantomData, path::PathBuf};
 use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
-        Asset, AssetHandle, AssetLoadError, AssetResidency, AssetSource, LoadedAsset,
-        UnloadedAssetData,
+        Asset, AssetHandle, AssetLoadError, AssetResidency, AssetSource, ExternalResource,
+        LoadedAsset, UnloadedAssetData,
     },
     renderer::GPUAllocationHandle,
     world::{entity_manager::components::ResourceBacking, scene::SceneLoadLevel},
@@ -56,11 +56,6 @@ impl<A: Asset + ?Sized> RegisteredAsset<A> {
     }
 }
 
-#[derive(Default)]
-pub struct TextureRegistry {
-    registered_textures: HashMap<PathBuf, AssetHandle>,
-}
-
 #[derive(Clone, Copy)]
 pub struct InternedAssetKey {
     pub owner: AssetHandle,
@@ -70,7 +65,7 @@ pub struct InternedAssetKey {
 pub struct AssetManager {
     registered_assets: HashMap<AssetHandle, RegisteredAsset<dyn Asset>>,
     loaded_assets: Vec<(AssetHandle, Box<dyn Asset>)>,
-    path_registry: HashMap<String, AssetHandle>,
+    path_registry: HashMap<PathBuf, AssetHandle>,
 }
 
 impl AssetManager {
@@ -86,7 +81,7 @@ impl AssetManager {
     }
 
     pub(super) fn get_registered_path(&self, path: &PathBuf) -> Option<&AssetHandle> {
-        self.path_registry.get(path.to_str().unwrap())
+        self.path_registry.get(path)
     }
     pub(crate) fn res_level_of(
         &self,
@@ -144,7 +139,7 @@ impl AssetManager {
             RegisteredAsset::Unloaded { data, _t } => {
                 let bin = data.load_binary()?;
 
-                let loaded = data.load(&bin, &self)?;
+                let loaded = data.load(&bin)?;
                 let la_index = self.loaded_assets.len().clone();
                 self.loaded_assets.push((asset_handle.clone(), loaded));
                 self.registered_assets.insert(
@@ -217,11 +212,29 @@ impl AssetManager {
         }
     }
 
+    fn intern_asset<A: Asset + AssetSource + 'static>(
+        &mut self,
+        resource: ExternalResource<A>,
+    ) -> AssetHandle {
+        if self.path_registry.contains_key(&resource.path) {
+            self.path_registry.get(&resource.path).unwrap().clone()
+        } else {
+            self.register_asset::<A>(resource.path.to_str().expect("should be valid path"))
+                .unwrap()
+                .asset_handle
+        }
+    }
     pub fn register_asset<A>(&mut self, source: &str) -> Result<ResourceBacking<A>, AssetLoadError>
     where
         A: Asset + AssetSource + 'static,
     {
-        let asset = A::new(source)?;
+        let mut asset = A::new(source)?;
+        let handles = asset
+            .external_textures()
+            .into_iter()
+            .map(|p| p.map(|p| self.intern_asset(p)))
+            .collect();
+        asset.set_external_paths(handles);
         let handle = self.gen_handle();
         self.registered_assets.insert(
             handle,
@@ -230,9 +243,51 @@ impl AssetManager {
                 _t: PhantomData,
             },
         );
-        self.path_registry
-            .insert(String::from(source), handle.clone());
         Ok(ResourceBacking::new(handle))
+    }
+
+    pub fn external_dependencies_of(
+        &self,
+        handle: &AssetHandle,
+    ) -> Option<impl Iterator<Item = AssetHandle> + '_> {
+        let registered = self.registered_assets.get(handle).expect("shoudl exist");
+        match registered {
+            RegisteredAsset::Unloaded { data, .. } | RegisteredAsset::Loaded { data, .. } => {
+                if let Some(deps) = data.get_external_asset_deps() {
+                    return Some(deps.iter().filter(|e| e.is_some()).map(|e| e.unwrap()));
+                } else {
+                    return None;
+                }
+            }
+        }
+    }
+    pub fn deps_gpu_ready(&self, handle: &AssetHandle) -> bool {
+        let registered = self
+            .registered_assets
+            .get(handle)
+            .expect("this asset should exist");
+
+        match registered {
+            RegisteredAsset::Unloaded { data, .. } | RegisteredAsset::Loaded { data, .. } => {
+                if let Some(external_deps) = data.get_external_asset_deps() {
+                    for dep in external_deps {
+                        if dep.is_none() {
+                            continue;
+                        }
+                        match self
+                            .res_level_of(dep.as_ref().unwrap())
+                            .expect("should be registered")
+                        {
+                            AssetResidency::GPU(_, _) => continue,
+                            _ => return false,
+                        }
+                    }
+                    return true;
+                } else {
+                    return true;
+                }
+            }
+        }
     }
 
     pub(crate) fn register_asset_gpu_residency(
@@ -405,7 +460,7 @@ pub(super) mod asset_mocks {
                 indices: None,
                 embedded_materials: MaterialPaletteJob {
                     records: vec![],
-                    tex_bindings: vec![],
+                    textures: vec![],
                 },
             })
         }

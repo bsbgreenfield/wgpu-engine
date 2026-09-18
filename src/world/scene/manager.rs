@@ -49,7 +49,7 @@ pub struct SceneManager {
     dependency_graph: DependencyGraph,
     pub spawn_queue: HashMap<SceneId, Vec<Spawn<dyn Archetype>>>,
     pub despawn_queue: Vec<InstanceHandle>,
-    asset_requests: HashMap<(EntityHandle, AssetHandle), SceneLoadLevel>,
+    asset_requests: HashMap<AssetHandle, SceneLoadLevel>,
     pending: Vec<usize>,
     ready: Vec<SceneId>,
     pub load_queue_new: LoadQueue,
@@ -87,9 +87,7 @@ impl SceneManager {
         //}
     }
 
-    pub fn asset_requests<'frame>(
-        &'frame mut self,
-    ) -> Vec<((EntityHandle, AssetHandle), SceneLoadLevel)> {
+    pub fn asset_requests<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
         self.asset_requests.drain().collect()
     }
     pub fn process_scene_events(&mut self) -> Result<(), SceneManagerError> {
@@ -120,6 +118,7 @@ impl SceneManager {
         &mut self,
         scene: SceneBuilder,
         entity_manager: &EntityManager,
+        asset_manager: &AssetManager,
     ) -> Result<SceneId, SceneManagerError> {
         let id = SceneId(self.scenes.len());
         let new_scene = Scene {
@@ -128,7 +127,7 @@ impl SceneManager {
             runtime: SceneRuntime::default(),
         };
         self.dependency_graph
-            .add_scene(&new_scene, entity_manager)
+            .add_scene(&new_scene, entity_manager, asset_manager)
             .map_err(|de| SceneManagerError::DependencyGraph(de))?;
         self.scenes.push(new_scene);
         self.pending.push(0);
@@ -164,12 +163,12 @@ impl SceneManager {
             // raising one holder can only raise each asset's max, so no other
             // scene's request needs consulting
             let mut count = 0;
-            for (entity, asset) in assets {
+            for asset in assets {
                 let residency = asset_manager
                     .res_level_of(&asset)
                     .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
                 if SceneLoadLevel::from(&residency) < level {
-                    asset_requests.insert((entity, asset), level);
+                    asset_requests.insert(asset, level);
                     count += 1;
                 }
             }

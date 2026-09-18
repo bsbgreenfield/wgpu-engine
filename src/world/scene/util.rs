@@ -1,15 +1,12 @@
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
 use crate::{
-    asset_manager::{
-        gltf_asset::{GltfAsset, TextureSource},
-        texture::TextureAsset,
-    },
+    asset_manager::{gltf_asset::GltfAsset, texture::TextureAsset},
     common::entity::EntityHandle,
     world::{
         entity_manager::components::{
             AnimationComponentDescriptor, AnimationMode, ComponentAccessor,
-            MaterialComponentDescriptor, MaterialTextureSource, MeshCollectionDescriptor,
+            MaterialComponentDescriptor, MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
         scene::{Scene, SceneId, SceneLoadLevel, builder::SceneBuilder, scene::Spawn},
@@ -78,7 +75,42 @@ impl Scene {
         let buggy_entity = world.entity_manager.new_entity()?;
         world.entity_manager.add_mesh_collection_for_entity(
             &buggy_entity,
-            MeshCollectionDescriptor::new(buggy_asset.into(), ComponentAccessor::All),
+            MeshCollectionDescriptor::new(buggy_asset.into(), ComponentAccessor::All)
+                .with_material(MaterialComponentDescriptor::Embedded),
+        );
+
+        let mut builder = SceneBuilder::new();
+        builder = builder.add_entity(buggy_entity);
+
+        let scene_id = builder.create(world)?;
+
+        world
+            .add_instances(
+                scene_id,
+                vec![Spawn {
+                    entity: buggy_entity,
+                    data: Box::new(APosition {
+                        position: (cgmath::Matrix4::<f32>::from_scale(0.02)).into(),
+                    }),
+                }],
+            )
+            .map_err(|e| crate::world::WorldInitError::SceneCreationFailure(e))?;
+
+        world
+            .scene_manager
+            .set_load_level(scene_id, SceneLoadLevel::GPU, &world.asset_manager)?;
+
+        Ok(())
+    }
+    pub fn buggy_brain(
+        world: &mut crate::world::world::World,
+    ) -> Result<(), crate::world::WorldInitError> {
+        let buggy_asset = world.register_asset::<GltfAsset>("buggy")?;
+        let buggy_entity = world.entity_manager.new_entity()?;
+        world.entity_manager.add_mesh_collection_for_entity(
+            &buggy_entity,
+            MeshCollectionDescriptor::new(buggy_asset.into(), ComponentAccessor::All)
+                .with_material(MaterialComponentDescriptor::Embedded),
         );
 
         let mut builder = SceneBuilder::new();
@@ -94,7 +126,8 @@ impl Scene {
                     accessor: ComponentAccessor::All,
                     rigid_animation_mode: AnimationMode::Shared,
                     skinned_animation_mode: AnimationMode::Shared,
-                }),
+                })
+                .with_material(MaterialComponentDescriptor::Embedded),
         );
         builder = builder.add_entity(brain_entity);
         let scene_id = builder.create(world)?;
@@ -252,7 +285,6 @@ impl Scene {
         world: &mut crate::world::world::World,
     ) -> Result<(), crate::world::WorldInitError> {
         let fox_asset = world.register_asset::<GltfAsset>("fox")?; // asset
-        let fox_texture = world.register_asset::<TextureAsset>("Texture.png")?;
         let fox_entity = world.entity_manager.new_entity()?;
 
         let mcc = MeshCollectionDescriptor::new(fox_asset.clone().into(), ComponentAccessor::All)
@@ -261,9 +293,7 @@ impl Scene {
                 rigid_animation_mode: AnimationMode::Shared,
                 skinned_animation_mode: AnimationMode::Independent,
             })
-            .with_material(MaterialComponentDescriptor::Embedded {
-                texture: Some(MaterialTextureSource::External(fox_texture.into())),
-            });
+            .with_material(MaterialComponentDescriptor::Embedded);
 
         world
             .entity_manager
@@ -394,7 +424,8 @@ impl Scene {
                 accessor: ComponentAccessor::All,
                 rigid_animation_mode: AnimationMode::Independent,
                 skinned_animation_mode: AnimationMode::Independent,
-            });
+            })
+            .with_material(MaterialComponentDescriptor::Embedded);
 
         world
             .entity_manager

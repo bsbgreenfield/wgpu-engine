@@ -27,32 +27,32 @@ pub enum GPUTextureBinding {
     Embedded(Arc<GPUTextureData>),
     Resolved(GPUAllocationHandle),
 }
+
 #[derive(Clone, Debug, Default)]
 pub struct MaterialPaletteJob {
     pub records: Vec<GPUMaterialData>,
-    pub tex_bindings: Vec<GPUTextureBinding>,
+    pub textures: Vec<GPUTextureBinding>,
 }
 
 impl MaterialPaletteJob {
     pub fn from_gltf(materials: &[GltfMaterial], asset_manager: &AssetManager) -> Self {
-        let mut records = Vec::with_capacity(materials.len());
-        let mut tex_bindings = Vec::with_capacity(materials.len());
-
+        let mut records: Vec<GPUMaterialData> = Vec::with_capacity(materials.len());
+        let mut textures: Vec<GPUTextureBinding> = Vec::with_capacity(materials.len());
         for material in materials {
             let pbr = &material.pbr_metallic_roughness;
-            records.push(GPUMaterialData {
+            let material_data = GPUMaterialData {
                 base_color_factors: pbr.base_color_factor,
                 roughness: pbr.roughness,
                 metallic: pbr.metallicness,
                 tex_mod: 0,
                 _pad: 0,
-            });
-            tex_bindings.push(match &pbr.texture {
+            };
+            let texture = match &pbr.texture {
                 None => GPUTextureBinding::None,
                 Some(GltfTexture::External(handle)) => GPUTextureBinding::Resolved(
                     asset_manager
                         .alloc_handle_of(handle)
-                        .expect("dependency gate should have made this texture GPU resident"),
+                        .expect("this should already be gpu resident"),
                 ),
                 Some(GltfTexture::Embedded(image)) => {
                     GPUTextureBinding::Embedded(Arc::new(GPUTextureData {
@@ -62,12 +62,11 @@ impl MaterialPaletteJob {
                         pixels: image.to_rgba8().into_raw().into(),
                     }))
                 }
-            });
+            };
+            records.push(material_data);
+            textures.push(texture);
         }
-        Self {
-            records,
-            tex_bindings,
-        }
+        Self { records, textures }
     }
 }
 

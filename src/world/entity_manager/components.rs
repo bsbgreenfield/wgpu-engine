@@ -118,28 +118,17 @@ impl MeshCollectionDescriptor {
         }
     }
     pub fn with_material(mut self, material_descriptor: MaterialComponentDescriptor) -> Self {
-        let (resource, texture_source): (
-            ResourceBacking<dyn ProvidesMaterialData>,
-            Option<MaterialTextureSource>,
-        ) = match material_descriptor {
-            MaterialComponentDescriptor::Embedded { texture } => {
-                (self.resource_backing.clone().erase(), texture.map(|t| t))
-            }
+        let resource: ResourceBacking<dyn ProvidesMaterialData> = match material_descriptor {
+            MaterialComponentDescriptor::Embedded => self.resource_backing.clone().erase(),
             MaterialComponentDescriptor::External {
                 resource_backing,
-                texture,
+                material_accessor,
             } => todo!(),
         };
-        if let Some(material_palette) = &mut self.materials {
-            material_palette.resource_backings.push(resource);
-            material_palette.textures.push(texture_source);
-        } else {
-            self.materials = Some(MaterialPalleteComponent {
-                resource_backings: vec![resource],
-                material_accessor: ComponentAccessor::All,
-                textures: vec![texture_source],
-            })
-        }
+        self.materials.insert(MaterialPalleteComponent {
+            resource_backing: resource,
+            material_accessor: ComponentAccessor::All,
+        });
         self
     }
 
@@ -247,24 +236,17 @@ impl<A: ProvidesAnimationData + ?Sized> Component for AnimationComponent<A> {
         asset.entity_animation(&self.animation_accessor, &self.mesh_accessor)
     }
 }
-pub enum MaterialTextureSource {
-    External(ResourceBacking<dyn ProvidesTextureData>),
-    Embedded,
-}
 
 pub struct MaterialPalleteComponent<T: ProvidesMaterialData + ?Sized> {
-    pub resource_backings: Vec<ResourceBacking<T>>,
+    pub resource_backing: ResourceBacking<T>,
     pub material_accessor: ComponentAccessor,
-    pub textures: Vec<Option<MaterialTextureSource>>,
 }
 
 pub enum MaterialComponentDescriptor {
-    Embedded {
-        texture: Option<MaterialTextureSource>,
-    },
+    Embedded,
     External {
+        material_accessor: ComponentAccessor,
         resource_backing: ResourceBacking<dyn ProvidesMaterialData>,
-        texture: Option<MaterialTextureSource>,
     },
 }
 
@@ -285,13 +267,8 @@ impl<M: ProvidesMaterialData + ?Sized> Component for MaterialPalleteComponent<M>
 
     fn erase(self) -> Self::Erased {
         MaterialPalleteComponent {
-            resource_backings: self
-                .resource_backings
-                .iter()
-                .map(|rb| rb.clone().erase())
-                .collect(),
+            resource_backing: self.resource_backing.erase(),
             material_accessor: self.material_accessor,
-            textures: self.textures,
         }
     }
 

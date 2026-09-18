@@ -16,7 +16,9 @@ use crate::asset_manager::gltf_asset::{
     AssetSources, GltfAnimation, GltfAsset, GltfLoadError, GltfMaterial, GltfTexture,
     NodeTransforms, NodeType, PBRMetallicRoughness, loader,
 };
-use crate::asset_manager::{Asset, BinaryData, GltfValidationError, ModelBuilderError, texture};
+use crate::asset_manager::{
+    Asset, AssetHandle, BinaryData, GltfValidationError, ModelBuilderError, texture,
+};
 use crate::util::types::{Mat4F32, ModelVertex, PrimitiveVerticesData, VIndex};
 use crate::{
     asset_manager::{
@@ -279,7 +281,7 @@ fn get_ibms(
 fn get_materials(
     gltf: &gltf::Gltf,
     bin: &BinaryData,
-    asset_manager: &AssetManager,
+    external_textures: &[Option<AssetHandle>],
 ) -> Result<Arc<[GltfMaterial]>, ModelBuilderError> {
     let mut materials: Vec<GltfMaterial> = Vec::new();
 
@@ -295,9 +297,8 @@ fn get_materials(
                     Some(GltfTexture::Embedded(Arc::new(image)))
                 }
                 gltf::image::Source::Uri { uri, mime_type } => Some(GltfTexture::External(
-                    *asset_manager
-                        .get_registered_path(&PathBuf::from(uri))
-                        .unwrap(),
+                    external_textures[texture.texture().index()]
+                    .expect("index of the texture should correspond to the correct texture in the asset data"),
                 )),
             }
         } else {
@@ -399,14 +400,14 @@ impl GltfAsset {
     pub fn load(
         gltf: &gltf::Gltf,
         bin: &BinaryData,
-        asset_manager: &AssetManager,
+        textures: &[Option<AssetHandle>],
     ) -> Result<Box<dyn Asset>, ModelBuilderError> {
         let binary_data = &bin.data;
         let buffer_offsets = &bin.buffer_offsets;
         let skins = get_skins(gltf);
         let node_tree = build_node_trees(gltf, &skins)?;
 
-        let material_palette = get_materials(gltf, bin, asset_manager)?;
+        let material_palette = get_materials(gltf, bin, textures)?;
         let ibms = get_ibms(&gltf, binary_data, buffer_offsets)?;
         let primitive_data = get_primitive_data_map(&gltf, &node_tree)?;
         let index_range_vec = get_index_range_vec(&primitive_data, buffer_offsets)?;

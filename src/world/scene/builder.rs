@@ -32,6 +32,8 @@ impl SceneBuilder {
     }
 
     pub fn create(self, world: &mut World) -> Result<SceneId, SceneManagerError> {
-        world.scene_manager.add_scene(self, &world.entity_manager)
+        world
+            .scene_manager
+            .add_scene(self, &world.entity_manager, &world.asset_manager)
     }
 }

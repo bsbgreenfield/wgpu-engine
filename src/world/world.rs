@@ -261,7 +261,7 @@ impl World {
         for transition in self
             .scene_manager
             .load_queue_new
-            .poll_jobs(&mut self.asset_manager, &self.entity_manager)?
+            .poll_jobs(&mut self.asset_manager)?
         {
             if matches!(transition.new, SceneLoadLevel::PendingGPU) {
                 let job: GPUAssetUploadJob =

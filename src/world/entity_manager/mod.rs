@@ -28,10 +28,14 @@ pub(crate) struct MaterialBinding {
     alloc_handle: GPUAllocationHandle,
     pub index: u32,
 }
+
+// TODO: both mesh renderables and material palette are a Vec<(alloc, data)>
+// in anticipation of a future in which multiple mesh components and material components
+// are allowed, which is not currently the case
 pub(crate) struct Renderables {
     pub instance_handle: InstanceHandle,
     pub(crate) mesh_renderables: Vec<(GPUAllocationHandle, MeshRenderables)>,
     pub animations: Option<EntityAnimationData>,
-    pub material_palette: Vec<MaterialBinding>,
+    pub material_palette: Vec<(GPUAllocationHandle, Vec<u32>)>,
 }
 impl Error for EntityManagerError {}

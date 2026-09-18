@@ -37,7 +37,6 @@ struct Material {
 	metallic: f32,
 	tex_mod: u32,
 	pad_2: u32,
-
 }
 
 var<immediate> pc: DrawPushConstants;

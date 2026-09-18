@@ -7,6 +7,7 @@ use crate::{
         PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderUpdateDelta,
         RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
         bind_groups::BindGroupCollection,
+        depth_tex::DepthTexture,
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
             gpu_arena::GPUArena,
@@ -30,12 +31,20 @@ impl EngineRenderPass {
         label: &'frame str,
         encoder: &'frame mut wgpu::CommandEncoder,
         view: &'frame wgpu::TextureView,
+        depth_view: &'frame wgpu::TextureView,
     ) -> Result<RenderPass<'frame>, wgpu::CreateSurfaceError> {
         // TODO match on render cat OR add generics to method call
         // TODO: customize render pass output
         let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some(label),
-            depth_stencil_attachment: None, // TODO: depth stencil
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
                 depth_slice: None,
@@ -43,9 +52,9 @@ impl EngineRenderPass {
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
                         r: 0.3,
-                        g: 0.3,
-                        b: 0.7,
-                        a: 1.0,
+                        g: 0.6,
+                        b: 1.,
+                        a: 1.,
                     }),
                     store: wgpu::StoreOp::Store,
                 },
@@ -107,6 +116,7 @@ pub(crate) struct Renderer {
     pub(super) bind_groups: BindGroupCollection,
     pipelines: Option<PipelineCollection>,
     passes: Vec<EngineRenderPass>,
+    depth_texture: Option<DepthTexture>,
 }
 
 impl Renderer {
@@ -141,15 +151,31 @@ impl Renderer {
             bind_groups: BindGroupCollection::new(),
             pipelines: None,
             passes: Vec::new(),
+            depth_texture: None,
         }
     }
 
     pub(crate) fn init(&mut self, config: &AppConfig) {
         let pipeline_collection = PipelineCollection::new(config);
         self.pipelines = Some(pipeline_collection);
+        self.depth_texture = Some(DepthTexture::new(
+            &config.device,
+            config.size.width,
+            config.size.height,
+        ));
         self.bind_groups
             .material_bind_group
             .ensure_defaults(&config.queue, &config.device);
+    }
+
+    pub(crate) fn resize(&mut self, config: &AppConfig) {
+        if self.depth_texture.is_some() {
+            self.depth_texture = Some(DepthTexture::new(
+                &config.device,
+                config.size.width,
+                config.size.height,
+            ));
+        }
     }
 
     pub(crate) fn add_pass(&mut self, label: String, categories: Vec<RenderCategory>) {
@@ -350,6 +376,7 @@ impl Renderer {
         draw_packet: &DrawPacket,
     ) -> Result<(), RenderError> {
         let pipeline_collection = self.pipelines.as_ref().unwrap();
+        let depth_view = &self.depth_texture.as_ref().unwrap().view;
         for pass in &self.passes {
             let texture = match config.surface.as_ref().unwrap().get_current_texture() {
                 CurrentSurfaceTexture::Success(texture) => texture,
@@ -366,7 +393,8 @@ impl Renderer {
                         label: Some(format!("Render Encoder for {}", pass.label).as_str()),
                     });
             {
-                let mut render_pass = EngineRenderPass::create_pass("pass", &mut encoder, &view)?;
+                let mut render_pass =
+                    EngineRenderPass::create_pass("pass", &mut encoder, &view, depth_view)?;
 
                 // camera bind group
                 render_pass.set_bind_group(0, camera.get_bind_group(), &[]);
@@ -377,11 +405,6 @@ impl Renderer {
                     &[],
                 );
                 render_pass.set_bind_group(2, self.bind_groups.instance_data.get_first_bg(), &[]);
-                render_pass.set_bind_group(
-                    4,
-                    self.bind_groups.material_bind_group.get_default_bg(),
-                    &[],
-                );
                 for render_category in pass.categories.iter() {
                     match render_category {
                         RenderCategory::OpaqueStatic => {
@@ -400,10 +423,24 @@ impl Renderer {
                                     i_buffer.slice(..),
                                     wgpu::IndexFormat::Uint16,
                                 );
+                                let (material_alloc_range, _material_buf) =
+                                    self.bind_groups.material_bind_group.resolve(draw_entry.0);
+                                render_pass.set_bind_group(
+                                    3,
+                                    self.bind_groups.material_bind_group.get_default_bg(),
+                                    &[],
+                                );
 
                                 for draw in draw_entry.1.iter() {
-                                    render_pass
-                                        .set_immediates(0, bytemuck::cast_slice(&[draw.lt_idx]));
+                                    render_pass.set_immediates(
+                                        0,
+                                        bytemuck::cast_slice(&[
+                                            draw.lt_idx,
+                                            draw.material
+                                                .map(|mi| mi + material_alloc_range.start)
+                                                .unwrap_or(0),
+                                        ]),
+                                    );
                                     if let Some(indices) = &draw.indices {
                                         render_pass.draw_indexed(
                                             DrawSet::within(indices, &index_alloc_range).into(),
@@ -439,13 +476,22 @@ impl Renderer {
 
                                 render_pass.set_vertex_buffer(0, v_buffer.slice(..));
 
+                                let (material_alloc_range, _material_buf) =
+                                    self.bind_groups.material_bind_group.resolve(draw_entry.0);
+                                render_pass.set_bind_group(
+                                    4,
+                                    self.bind_groups.material_bind_group.get_default_bg(),
+                                    &[],
+                                );
                                 for draw in draw_entry.1.iter() {
                                     render_pass.set_immediates(
                                         0,
                                         bytemuck::cast_slice(&[
                                             draw.lt_idx,
                                             draw.joint_offset.unwrap(),
-                                            draw.material.unwrap_or(0),
+                                            draw.material
+                                                .map(|mi| mi + material_alloc_range.start)
+                                                .unwrap_or(0),
                                         ]),
                                     );
                                     if let Some(indices) = &draw.indices {

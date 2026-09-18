@@ -111,7 +111,6 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Alloc(texture_alloc_handle));
                     }
                     Operations::MaterialUpload => {
-                        println!(" material upload: {stack:?}");
                         let gac = stack.pop().expect("should be gac").as_alloc();
                         let material_data = constants
                             [Self::get_constant_idx(&mut instr_peek) as usize]

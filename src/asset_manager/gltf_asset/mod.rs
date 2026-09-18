@@ -60,7 +60,11 @@ impl AssetSource for GltfAsset {
     {
         let (gltf, sources) =
             crate::asset_manager::gltf_asset::loader::load_gltf_from_resource(dir_name)?;
-        Ok(super::UnloadedAssetData::Gltf { gltf, sources })
+        Ok(super::UnloadedAssetData::Gltf {
+            gltf,
+            sources,
+            extenal_textures: vec![],
+        })
     }
 }
 

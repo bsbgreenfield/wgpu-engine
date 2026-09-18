@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZero};
+use std::{collections::HashMap, num::NonZero, range::Range};
 
 use wgpu::BufferBinding;
 
@@ -30,13 +30,16 @@ impl MaterialBindGroup {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, VertexArenaError> {
-        let a = bytemuck::cast_slice::<u8, GPUMaterialData>(job.data);
-        println!("JOB: {:?}", a);
-        println!("BUCKET 1 and layer 0 equals {}", (1 << 16) | 0);
         let res = self.material_arena.upload(job, queue, device);
         res
     }
 
+    pub(in crate::renderer) fn resolve(
+        &self,
+        alloc_handle: &GPUAllocationHandle,
+    ) -> (Range<u32>, &wgpu::Buffer) {
+        self.material_arena.resolve(alloc_handle)
+    }
     pub(in crate::renderer) fn resolve_texture_slot(
         &self,
         alloc_handle: &GPUAllocationHandle,

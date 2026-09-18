@@ -10,7 +10,6 @@ use crate::common::instance::InstanceHandle;
 use crate::renderer::RenderConstant::DataRef;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
 use crate::renderer::gpu_allocator::{GPUUploadJob, GPUUploadResult};
-use crate::util::types::{GPUMaterialData, GPUTextureData};
 use crate::{
     renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
     util::types::{GlobalTransform, ModelVertex},
@@ -18,6 +17,7 @@ use crate::{
 };
 
 mod bind_groups;
+mod depth_tex;
 mod gpu_allocator;
 mod pipeline;
 pub(crate) mod renderer;

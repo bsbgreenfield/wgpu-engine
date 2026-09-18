@@ -7,6 +7,7 @@ use crate::{
             local_transforms::LocalTransformBindGroup, materials::MaterialBindGroup,
             skinning::SkinningBindGroup,
         },
+        depth_tex::DepthTexture,
     },
     util::types::{ModelVertex, PNUJWVertex, PNUVertex},
     world::camera::Camera,
@@ -39,8 +40,9 @@ impl PipelineCollection {
                 Some(&Camera::get_bind_group_layout(device)),
                 Some(&LocalTransformBindGroup::get_bind_group_layout(device)),
                 Some(&InstanceDataBindGroup::get_bind_group_layout(device)),
+                Some(&MaterialBindGroup::get_bind_group_layout(device)),
             ],
-            immediate_size: 4,
+            immediate_size: 8,
         })
     }
     fn opaque_skinned_layout(device: &wgpu::Device) -> wgpu::PipelineLayout {
@@ -105,7 +107,7 @@ impl PipelineCollection {
                                 conservative: false,
                                 polygon_mode: wgpu::PolygonMode::Fill,
                             },
-                            depth_stencil: None,
+                            depth_stencil: Some(DepthTexture::depth_stencil_state()),
                             multisample: wgpu::MultisampleState {
                                 count: 1,
                                 mask: !0,
@@ -169,7 +171,7 @@ impl PipelineCollection {
                                 conservative: false,
                                 polygon_mode: wgpu::PolygonMode::Fill,
                             },
-                            depth_stencil: None,
+                            depth_stencil: Some(DepthTexture::depth_stencil_state()),
                             multisample: wgpu::MultisampleState {
                                 count: 1,
                                 mask: !0,

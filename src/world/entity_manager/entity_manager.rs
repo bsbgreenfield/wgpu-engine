@@ -1,13 +1,9 @@
-use std::{
-    collections::{HashMap, HashSet},
-    mem::MaybeUninit,
-    ops::Range,
-};
+use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
 
 use crate::{
     asset_manager::{
-        AssetHandle, MaterialRenderables, ProvidesAnimationData, ProvidesMaterialData,
-        ProvidesMeshData, asset_manager::AssetManager,
+        AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
+        asset_manager::AssetManager,
     },
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::PrototypeHandle,
@@ -16,7 +12,7 @@ use crate::{
             EntityManagerError, MaterialBinding, Renderables,
             components::{
                 AnimationComponent, AnimationMode, Component, MaterialPalleteComponent,
-                MaterialTextureSource, MeshCollectionComponent, MeshCollectionDescriptor,
+                MeshCollectionComponent, MeshCollectionDescriptor,
             },
         },
         world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},
@@ -31,26 +27,6 @@ pub struct EntityManager {
 }
 
 impl EntityManager {
-    pub fn asset_dependencies_of(
-        &self,
-        entity_handle: &EntityHandle,
-        asset_handle: &AssetHandle,
-    ) -> Vec<AssetHandle> {
-        // TODO: probably store asset dependencies in an easier way
-        let mut res = Vec::new();
-        if let Some(material) = self.materials.get(entity_handle.0 as usize) {
-            for rb in material.resource_backings.iter() {
-                if &rb.asset_handle == asset_handle {
-                    for tex in material.textures.iter().filter(|t| t.is_some()) {
-                        if let MaterialTextureSource::External(rb) = tex.as_ref().unwrap() {
-                            res.push(rb.asset_handle);
-                        }
-                    }
-                }
-            }
-        }
-        res
-    }
     pub fn get_entity_cloned<'frame>(
         &'frame self,
         instance_handles: Vec<InstanceHandle>,
@@ -130,46 +106,43 @@ impl EntityManager {
         if let Some(materials_component) =
             self.materials.get(instance_handle.entity_handle.0 as usize)
         {
-            let mut palette = Vec::<MaterialBinding>::new();
-            for backing in materials_component.resource_backings.iter() {
-                let asset = asset_manager.get_loaded_asset(&backing.asset_handle);
-                let alloc = asset.alloc_handle().clone();
-                palette.extend(
-                    asset
-                        .as_materials_provider()
-                        .unwrap()
-                        .material_palette(&materials_component.material_accessor)
-                        .into_iter()
-                        .map(|idx| MaterialBinding {
-                            alloc_handle: alloc.clone(),
-                            index: idx,
-                        }),
-                );
-            }
-            renderables.material_palette = palette;
+            let asset =
+                asset_manager.get_loaded_asset(&materials_component.resource_backing.asset_handle);
+            let indices =
+                materials_component.get_output_data(asset.as_materials_provider().unwrap());
+            let alloc = asset_manager
+                .alloc_handle_of(&materials_component.resource_backing.asset_handle)
+                .unwrap();
+            renderables.material_palette.push((alloc, indices));
         }
 
         Ok(renderables)
     }
 
-    pub fn rbcs_of(&self, entity_handle: EntityHandle) -> HashSet<AssetHandle> {
+    pub fn rbcs_of(
+        &self,
+        entity_handle: EntityHandle,
+        asset_manager: &AssetManager,
+    ) -> HashSet<AssetHandle> {
         let mut result = HashSet::<AssetHandle>::new();
         if let Some(mesh_collection_component) = self.mesh_collections.get(entity_handle.0 as usize)
         {
             result.insert(mesh_collection_component.resource_backing.asset_handle);
+            if let Some(deps) = asset_manager
+                .external_dependencies_of(&mesh_collection_component.resource_backing.asset_handle)
+            {
+                for dep in deps {
+                    result.insert(dep);
+                }
+            }
         }
         if let Some(material_palette_component) = self.materials.get(entity_handle.0 as usize) {
-            for resource_backing in material_palette_component.resource_backings.iter() {
-                result.insert(resource_backing.asset_handle);
-            }
-            for maybe_texture_dep in material_palette_component.textures.iter() {
-                if let Some(texture_dep) = maybe_texture_dep {
-                    match texture_dep {
-                        super::components::MaterialTextureSource::External(resource_backing) => {
-                            result.insert(resource_backing.asset_handle);
-                        }
-                        super::components::MaterialTextureSource::Embedded => {}
-                    }
+            result.insert(material_palette_component.resource_backing.asset_handle);
+            if let Some(deps) = asset_manager
+                .external_dependencies_of(&material_palette_component.resource_backing.asset_handle)
+            {
+                for dep in deps {
+                    result.insert(dep);
                 }
             }
         }
