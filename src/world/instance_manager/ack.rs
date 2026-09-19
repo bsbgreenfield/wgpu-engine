@@ -18,7 +18,7 @@ impl InstanceManager {
     ) {
         self.gpu_bind_registry
             .registered_instances
-            .insert(gpu_instance_handle, instance_handle.clone());
+            .insert(instance_handle.clone(), gpu_instance_handle);
         self.gpu_bind_registry
             .active_bindings
             .insert(residency.bind_key);
@@ -29,12 +29,12 @@ impl InstanceManager {
         }
 
         // animation
-        if let Some(entity_animations) = self
-            .animation_controller
-            .registered_animations
-            .get_mut(&instance_handle.entity_handle)
-        {
-            entity_animations.gpu_instance_handle = Some(gpu_instance_handle);
-        }
+        //if let Some(entity_animations) = self
+        //    .animation_controller
+        //    .registered_animations
+        //    .get_mut(&instance_handle.entity_handle)
+        //{
+        //    entity_animations.gpu_instance_handle = Some(gpu_instance_handle);
+        //}
     }
 }

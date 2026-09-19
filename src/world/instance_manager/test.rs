@@ -33,7 +33,7 @@ impl InstanceManager {
         &self.gpu_bind_registry.registered_prototypes
     }
     #[cfg(test)]
-    pub fn get_registered_instances(&self) -> &HashMap<GPUInstanceHandle, InstanceHandle> {
+    pub fn get_registered_instances(&self) -> &HashMap<InstanceHandle, GPUInstanceHandle> {
         &self.gpu_bind_registry.registered_instances
     }
 
@@ -65,7 +65,7 @@ impl InstanceManager {
     pub fn get_all_instances(&self) -> Vec<InstanceHandle> {
         self.gpu_bind_registry
             .registered_instances
-            .values()
+            .keys()
             .cloned()
             .collect()
     }

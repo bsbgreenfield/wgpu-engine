@@ -174,7 +174,6 @@ where
 
 #[derive(Debug)]
 pub struct EntityAnimations {
-    pub gpu_instance_handle: Option<GPUInstanceHandle>,
     pub animation: Vec<Arc<dyn Animation>>,
     pub local_transforms: Vec<LocalTransform>,
     pub joint_transforms: Vec<Mat4F32>,

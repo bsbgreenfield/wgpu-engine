@@ -5,6 +5,7 @@ use time::{Duration, ext::InstantExt};
 use crate::{
     animation::{AnimationInstance, EntityAnimations},
     common::entity::EntityHandle,
+    renderer::GPUInstanceHandle,
     util::types::Mat4F32,
     world::instance_manager::{AnimationUpdate, InstanceHandle, RenderFrame},
 };
@@ -91,22 +92,17 @@ impl AnimationController {
     pub(super) fn prepare_animation_frame<'frame>(
         &'frame self,
         render_frame: &mut RenderFrame<'frame>,
+        registry: &HashMap<InstanceHandle, GPUInstanceHandle>,
     ) {
         for animation_instance in self.active_animations.iter() {
-            let gpu_handle = self
-                .registered_animations
-                .get(&animation_instance.instance_handle.entity_handle)
-                .unwrap()
-                .gpu_instance_handle
-                .unwrap();
             render_frame.rigid_animation_data.push(AnimationUpdate {
-                gpu_handle,
+                gpu_handle: registry[&animation_instance.instance_handle],
                 transforms: bytemuck::cast_slice(&animation_instance.mesh_buffer),
             });
 
             if !animation_instance.joint_buffer.is_empty() {
                 render_frame.joint_animation_data.push(AnimationUpdate {
-                    gpu_handle,
+                    gpu_handle: registry[&animation_instance.instance_handle],
                     transforms: bytemuck::cast_slice(&animation_instance.joint_buffer),
                 });
             }

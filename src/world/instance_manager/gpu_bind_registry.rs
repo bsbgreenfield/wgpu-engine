@@ -10,7 +10,7 @@ use crate::{
 pub(super) struct GPUBindRegistry {
     pub(super) next_prototype: u32,
     pub(super) registered_prototypes: HashMap<EntityHandle, PrototypeHandle>,
-    pub(super) registered_instances: HashMap<GPUInstanceHandle, InstanceHandle>,
+    pub(super) registered_instances: HashMap<InstanceHandle, GPUInstanceHandle>,
     pub(super) active_bindings: HashSet<u32>,
 }
 
@@ -33,16 +33,10 @@ impl GPUBindRegistry {
         &mut self,
         instance_handle: &InstanceHandle,
     ) -> Result<GPUInstanceHandle, WorldUpdateError> {
-        let key = self
+        let res = self
             .registered_instances
-            .iter()
-            .find(|(_key, val)| val == &instance_handle)
-            .ok_or(WorldUpdateError::InstancceNotFound(instance_handle.clone()))?
-            .0
-            .clone();
-        self.registered_instances
-            .remove(&key)
+            .remove(&instance_handle)
             .ok_or(WorldUpdateError::InstancceNotFound(instance_handle.clone()))?;
-        Ok(key)
+        Ok(res)
     }
 }

@@ -121,8 +121,10 @@ impl InstanceManager {
         render_frame.indirection_list = &render_packet.draw_packet.indirection_list;
         render_frame.global_transforms = &render_packet.global_transforms;
 
-        self.animation_controller
-            .prepare_animation_frame(&mut render_frame);
+        self.animation_controller.prepare_animation_frame(
+            &mut render_frame,
+            &self.gpu_bind_registry.registered_instances,
+        );
         render_frame
     }
 }

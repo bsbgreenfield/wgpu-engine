@@ -244,7 +244,6 @@ pub trait InstanceSpawn {
     fn get_entity_animations(renderables: Renderables) -> Option<EntityAnimations> {
         if let Some(entity_animation_data) = renderables.animations {
             return Some(EntityAnimations {
-                gpu_instance_handle: None,
                 animation: entity_animation_data.animation,
                 local_transforms: entity_animation_data.local_transforms,
                 joint_transforms: entity_animation_data.joint_transforms,
