@@ -371,7 +371,8 @@ impl World {
                     let instance_handle = InstanceHandle::from_key(instance_key);
                     self.instance_manager.add_record_index(
                         &instance_handle,
-                        InstanceResidency::new(record_offset, binding_key.as_u32()),
+                        record_offset,
+                        binding_key.as_u32(),
                         gpu_instance_handle,
                     );
                 }

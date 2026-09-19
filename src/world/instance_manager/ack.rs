@@ -13,15 +13,19 @@ impl InstanceManager {
     pub fn add_record_index(
         &mut self,
         instance_handle: &InstanceHandle,
-        residency: InstanceResidency,
+        record_offset: u32,
+        bind_key: u32,
         gpu_instance_handle: GPUInstanceHandle,
     ) {
         self.gpu_bind_registry
             .registered_instances
             .insert(instance_handle.clone(), gpu_instance_handle);
-        self.gpu_bind_registry
-            .active_bindings
-            .insert(residency.bind_key);
+        self.gpu_bind_registry.active_bindings.insert(bind_key);
+        let residency = InstanceResidency {
+            bind_key,
+            record_index: record_offset,
+            group_id: self.sparse_entity_group[instance_handle.entity_handle.0 as usize] as u64,
+        };
         match instance_handle.archetype {
             ArchetypeId::Position => {
                 self.pos.write_record_index(instance_handle, residency);

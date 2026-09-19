@@ -110,6 +110,7 @@ pub trait RenderKey {
 }
 
 pub struct InstanceResidency {
+    pub group_id: u64,
     pub record_index: u32,
     pub bind_key: u32,
 }
@@ -121,14 +122,16 @@ impl InstanceResidency {
     }
     fn pending() -> Self {
         Self {
+            group_id: 0,
             record_index: u32::MAX,
             bind_key: u32::MAX,
         }
     }
-    fn new(record_idx: u32, binding_key: u32) -> Self {
+    fn new(record_idx: u32, binding_key: u32, group_id: u64) -> Self {
         Self {
             record_index: record_idx,
             bind_key: binding_key,
+            group_id,
         }
     }
 }

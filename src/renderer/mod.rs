@@ -76,39 +76,40 @@ impl RenderPacket {
         }
     }
 
-    pub fn reset(&mut self, size: usize, record_len: usize) {
+    pub fn reset(&mut self, record_len: usize) {
         use cgmath::SquareMatrix;
         if self.global_transforms.len() < record_len {
             self.global_transforms
                 .resize(record_len, cgmath::Matrix4::<f32>::identity().into());
         }
-        self.draw_packet.reset(size, record_len);
+        self.draw_packet.reset(record_len);
     }
 
     pub fn count_sort(
         &mut self,
-        handles: &[InstanceHandle],
         record_idxs: &[InstanceResidency],
-        sparse_entity_group: &[usize],
         positions: &Vec<GlobalTransform>,
     ) {
-        self.draw_packet
-            .count_sort(handles, record_idxs, sparse_entity_group);
+        self.draw_packet.count_sort(record_idxs);
 
         // finally, for each record index on the gpu, and each corresponding index handle,
         // create an indirection list where indirection_list[i] = the gpu record slot
         // and i = instance idx
         // this effectively is a translation from instance_idx -> instance record idx
         // also update global_transforms such that global_transforms[i] = the transform instance i
-        for (i, (residency, handle)) in record_idxs.iter().zip(handles).enumerate() {
-            let group_id = sparse_entity_group[handle.entity_handle.0 as usize] as u64;
-            let res = residency.bind_key as u64;
-            let key = ((group_id << 32) | res) as u64;
-            let bucket_idx = self.draw_packet.bucket_map[&key];
-            self.draw_packet.indirection_list[self.draw_packet.cursors[bucket_idx] as usize] =
-                residency.record_index;
-            self.global_transforms[self.draw_packet.cursors[bucket_idx] as usize] = positions[i];
-            self.draw_packet.cursors[bucket_idx] += 1;
+        let instance_to_bucket = &self.draw_packet.instance_to_bucket;
+        let cursors = &mut self.draw_packet.cursors;
+        let indirection_list = &mut self.draw_packet.indirection_list;
+
+        for (i, bucket_idx) in instance_to_bucket.iter().enumerate() {
+            let bucket_idx = *bucket_idx;
+            if bucket_idx == u32::MAX {
+                continue;
+            }
+            let slot = cursors[bucket_idx as usize] as usize;
+            indirection_list[slot] = record_idxs[i].record_index;
+            self.global_transforms[slot] = positions[i];
+            cursors[bucket_idx as usize] += 1;
         }
     }
 }
@@ -124,52 +125,62 @@ pub struct DrawBucket {
 pub(crate) struct DrawPacket {
     pub(crate) pnu: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
     pub(crate) pnujw: HashMap<GPUAllocationHandle, Vec<DrawItem>>,
-    counts: Vec<usize>,
     cursors: Vec<u32>,
-    bucket_map: HashMap<u64, usize>,
+    //bucket_map: HashMap<u64, usize>,
+    bucket_keys: Vec<u64>,
     pub(crate) draw_buckets: Vec<DrawBucket>,
-
+    instance_to_bucket: Vec<u32>,
     pub(crate) indirection_list: Vec<u32>,
 }
 
 impl DrawPacket {
-    pub fn count_sort(
-        &mut self,
-        handles: &[InstanceHandle],
-        residencies: &[InstanceResidency],
-        sparse_entity_group: &[usize],
-    ) {
+    // TODO: bucket keys is a linear search through the bucket keys vec
+    // to find bucket idx from bucket_keys<Key>
+    // if the bucket lengths ever start to get really high, itll be better to actually hash
+    pub fn count_sort(&mut self, residencies: &[InstanceResidency]) {
         // build entity_count list, where entity_count[i] = number of entities
         // and i = render group index + instance bind key
-        for (handle, res) in handles.iter().zip(residencies) {
+        self.instance_to_bucket.clear();
+        for res in residencies.iter() {
             if res.is_pending() {
+                self.instance_to_bucket.push(u32::MAX);
                 continue;
             }
-            let group_id = sparse_entity_group[handle.entity_handle.0 as usize] as u64;
             let bind_key = res.bind_key as u64;
-            let bucket_key = ((group_id << 32) | bind_key) as u64;
-            if let Some(bucket_idx) = self.bucket_map.get(&bucket_key) {
-                self.counts[*bucket_idx] += 1;
-            } else {
-                self.counts[self.draw_buckets.len()] += 1;
-                self.bucket_map.insert(bucket_key, self.draw_buckets.len());
-                self.draw_buckets.push(DrawBucket {
-                    group_idx: group_id as usize,
-                    start: 0,
-                    count: 0,
-                });
-            }
+            let bucket_key = ((res.group_id << 32) | bind_key) as u64;
+            let idx = match self.bucket_keys.iter().position(|&k| k == bucket_key) {
+                Some(i) => i,
+                None => {
+                    self.bucket_keys.push(bucket_key);
+                    self.draw_buckets.push(DrawBucket {
+                        group_idx: res.group_id as usize,
+                        start: 0,
+                        count: 0,
+                    });
+                    self.cursors.push(0);
+                    self.draw_buckets.len() - 1
+                }
+            };
+            //let idx = self.bucket_map.entry(bucket_key).or_insert_with(|| {
+            //    self.draw_buckets.push(DrawBucket {
+            //        group_idx: res.group_id as usize,
+            //        start: 0,
+            //        count: 0,
+            //    });
+            //    self.cursors.push(0);
+            //    self.draw_buckets.len() - 1
+            //});
+            self.draw_buckets[idx].count += 1;
+            self.instance_to_bucket.push(idx as u32);
         }
         // build instance_ranges, where instance_ranges[i] = the GPU shader instance idx range
         // and i = group + bind key index
         // cusors keeps track of the first instance of the entity associated with render_groups[i]
         let mut sum = 0;
-        for (bucket_idx, count) in self.counts.iter_mut().enumerate() {
-            self.draw_buckets[bucket_idx].start = sum;
-            self.draw_buckets[bucket_idx].count = *count as u32;
-            self.cursors[bucket_idx] = sum;
-            sum += *count as u32;
-            *count = 0;
+        for (i, bucket) in self.draw_buckets.iter_mut().enumerate() {
+            bucket.start = sum;
+            self.cursors[i] = sum;
+            sum += bucket.count;
         }
     }
 
@@ -177,12 +188,13 @@ impl DrawPacket {
         self.pnu.is_empty() && self.pnujw.is_empty()
     }
 
-    pub fn reset(&mut self, group_bindings_count: usize, record_len: usize) {
+    pub fn reset(&mut self, record_len: usize) {
         self.pnu.clear();
         self.pnujw.clear();
-        // TODO: this isnt right unless group -> binding is 1:1
-        self.counts.resize(group_bindings_count, usize::MIN);
-        self.cursors.resize(group_bindings_count, u32::MAX);
+        self.cursors.clear();
+        self.draw_buckets.clear();
+        self.bucket_keys.clear();
+        //self.bucket_map.clear();
         self.indirection_list.resize(record_len, u32::MAX);
     }
 

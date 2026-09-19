@@ -13,17 +13,9 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
         // TODO: this is NOT the correct number to use for the number of buckets,
         // because not every render group will use every binding.
         // also active_bindings leaks, because its never removed
-        packet.reset(
-            self.gpu_bind_registry.active_bindings.len() * self.render_groups.len(),
-            record_len,
-        );
+        packet.reset(record_len);
 
-        packet.count_sort(
-            &self.pos.arena.handles,
-            &self.pos.record_indices,
-            &self.sparse_entity_group,
-            &self.pos.positions,
-        );
+        packet.count_sort(&self.pos.record_indices, &self.pos.positions);
 
         for bucket in packet.draw_packet.draw_buckets.iter() {
             let instance_range = Range::from(bucket.start..(bucket.start + bucket.count));
