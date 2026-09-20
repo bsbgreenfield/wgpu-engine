@@ -71,11 +71,16 @@ where
 
 pub(super) struct AllocationTable<H: Eq + Hash + Clone> {
     free_list: Vec<usize>,
-    alloc_meta: Vec<AllocMetaData>,
+    pub(super) alloc_meta: Vec<AllocMetaData>,
     table: HashMap<H, usize>,
 }
 
 impl<H: Clone + Hash + Eq> AllocationTable<H> {
+    #[cfg(test)]
+    pub(super) fn get_table(&self) -> &HashMap<H, usize> {
+        &self.table
+    }
+
     pub(super) fn get_meta(&mut self, slot_idx: usize) -> Option<&mut AllocMetaData> {
         self.alloc_meta.get_mut(slot_idx)
     }

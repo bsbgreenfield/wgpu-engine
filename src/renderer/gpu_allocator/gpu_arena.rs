@@ -1,3 +1,6 @@
+#[cfg(test)]
+use std::collections::HashMap;
+
 use bytemuck::Pod;
 
 use crate::{
@@ -20,6 +23,25 @@ pub(crate) struct GPUArena<T: GPUUploadable> {
     chunks: Vec<GPUChunk<T>>,
     alloc_table: AllocationTable<T::GPUHandle>,
     label: Option<String>,
+}
+
+#[allow(private_bounds)]
+#[cfg(test)]
+impl<T: GPUUploadable<GPUHandle = GPUInstanceHandle>> GPUArena<T> {
+    pub(crate) fn get_instance_table(&self) -> &HashMap<GPUInstanceHandle, usize> {
+        self.alloc_table.get_table()
+    }
+    #[cfg(test)]
+    pub fn buffer_offset_of(&self, handle: GPUInstanceHandle) -> u32 {
+        self.resolve_byte_offset(&handle)
+    }
+}
+#[allow(private_bounds)]
+#[cfg(test)]
+impl<T: GPUUploadable<GPUHandle = GPUAllocationHandle>> GPUArena<T> {
+    pub(crate) fn get_alloc_table(&self) -> &HashMap<GPUAllocationHandle, usize> {
+        self.alloc_table.get_table()
+    }
 }
 
 impl<T: GPUUploadable> GPUArena<T> {

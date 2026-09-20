@@ -27,7 +27,7 @@ pub(super) mod texture_arena;
 static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
 
 #[derive(Debug, Clone)]
-struct AllocMetaData {
+pub(crate) struct AllocMetaData {
     chunk_id: usize,
     node_id: usize,
     ref_count: usize,

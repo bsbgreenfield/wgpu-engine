@@ -24,6 +24,11 @@ pub(in crate::renderer) struct SkinningBindGroup {
 
 impl SkinningBindGroup {
     #[cfg(test)]
+    pub fn get_joint_arena(&self) -> &GPUArena<JointTransform> {
+        &self.joint_arena
+    }
+
+    #[cfg(test)]
     pub(super) fn get_first_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
         (
             self.joint_arena.get_first_buffer(),

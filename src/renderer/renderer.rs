@@ -1,5 +1,7 @@
 use wgpu::{CurrentSurfaceTexture, RenderPass};
 
+#[cfg(test)]
+use crate::renderer::bind_groups::skinning::SkinningBindGroup;
 use crate::{
     app::app_config::AppConfig,
     renderer::{
@@ -51,8 +53,8 @@ impl EngineRenderPass {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.7,
-                        g: 0.9,
+                        r: 0.5,
+                        g: 0.7,
                         b: 1.,
                         a: 1.,
                     }),
@@ -120,6 +122,10 @@ pub(crate) struct Renderer {
 }
 
 impl Renderer {
+    #[cfg(test)]
+    pub(crate) fn get_joint_arena(&self) -> &GPUArena<JointTransform> {
+        &self.bind_groups.skinning.get_joint_arena()
+    }
     #[cfg(test)]
     pub(crate) fn get_prototype_count(&self) -> usize {
         self.bind_groups.get_prototype_count()

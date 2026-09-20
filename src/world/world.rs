@@ -10,7 +10,7 @@ use crate::{
     renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
     util::types::{LocalTransform, Mat4F32},
     world::{
-        InstanceResidency, RenderKey, WorldUpdateError,
+        RenderKey, WorldUpdateError,
         camera::Camera,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{
