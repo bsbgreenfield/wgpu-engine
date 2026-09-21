@@ -5,17 +5,19 @@ use cgmath::SquareMatrix;
 use crate::{
     animation::{Animation, EntityAnimationData},
     asset_manager::{
-        AssetLoadError, MaterialRenderables, MeshRenderables, ProvidesAnimationData,
-        ProvidesMaterialData, ProvidesMeshData,
+        AssetLoadError, MeshRenderables, ProvidesAnimationData, ProvidesMaterialData,
+        ProvidesMeshData,
         gltf_asset::{
-            GltfAsset, GltfMaterial,
+            GltfAsset,
             util::{
                 collect_mesh_instances, collect_mesh_instances_with_jts, get_root_node,
                 skin_offset_of,
             },
         },
     },
-    util::types::{LocalTransform, Mat4F32, PNUJWVertex, PNUVertex},
+    util::types::{
+        InverseBindMatrix, JointTransform, LocalTransform, Mat4F32, PNUJWVertex, PNUVertex,
+    },
     world::entity_manager::components::ComponentAccessor,
 };
 
@@ -107,16 +109,28 @@ impl ProvidesMeshData for GltfAsset {
             local_transforms.push(mesh_instance.local_transform);
             relative_lt_offset += 1;
         }
-        let joint_transforms: Option<Vec<Mat4F32>> = if jts.is_empty() {
+        let joint_transforms: Option<Vec<JointTransform>> = if jts.is_empty() {
             None
         } else {
-            Some(jts.drain(..).flatten().collect())
+            Some(
+                jts.drain(..)
+                    .flatten()
+                    .map(|j| JointTransform::from(j))
+                    .collect(),
+            )
         };
 
         let inverse_bind_matrices = if self.ibms.is_empty() {
             None
         } else {
-            Some(self.ibms.iter().cloned().flatten().collect())
+            Some(
+                self.ibms
+                    .iter()
+                    .cloned()
+                    .flatten()
+                    .map(|i| InverseBindMatrix::from(i))
+                    .collect(),
+            )
         };
         MeshRenderables {
             joint_map,

@@ -55,9 +55,6 @@ impl<'frame> Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
-        for i in instructions.iter() {
-            println!("{i:?}");
-        }
         let mut stack = Vec::<StackValue>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
@@ -250,17 +247,12 @@ impl<'frame> Renderer {
                         let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_ref();
                         let lt_upload_job = InstanceUploadJob::new(lt, gpu_instance_handle.clone());
-                        let GPUUploadResult::BindGroupUploadResult {
-                            buffer_element_offset,
-                            chunk_idx,
-                            ..
-                        } = self.upload_local_transforms(lt_upload_job, queue, device)?
+                        let GPUUploadResult::PrototypeUploaded =
+                            self.upload_local_transforms(lt_upload_job, queue, device)?
                         else {
                             panic!("expected bing group upload")
                         };
 
-                        stack.push(StackValue::Offset(chunk_idx));
-                        stack.push(StackValue::Offset(buffer_element_offset));
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }
                     Operations::CreatePrototype => {
@@ -293,18 +285,12 @@ impl<'frame> Renderer {
                         let jt_upload_job = InstanceUploadJob::new(jt, gpu_instance_handle.clone());
                         let ibm_upload_job =
                             InstanceUploadJob::new(ibms, gpu_instance_handle.clone());
-                        let GPUUploadResult::BindGroupUploadResult {
-                            buffer_element_offset,
-                            alloc_meta_idx: _,
-                            chunk_idx,
-                        } = self.upload_skin_data(jt_upload_job, ibm_upload_job, queue, device)?
+                        let GPUUploadResult::PrototypeUploaded =
+                            self.upload_skin_data(jt_upload_job, ibm_upload_job, queue, device)?
                         else {
                             panic!("expected bin group upload");
                         };
 
-                        // NOTE: ibm offset should always be the same as joint offset
-                        stack.push(StackValue::Offset(chunk_idx));
-                        stack.push(StackValue::Offset(buffer_element_offset));
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }
                     Operations::SpawnFromPrototype => {

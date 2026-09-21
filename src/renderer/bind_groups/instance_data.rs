@@ -1,3 +1,5 @@
+use wgpu::util::DeviceExt;
+
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
@@ -15,8 +17,8 @@ use crate::{
 pub(in crate::renderer) struct InstanceDataBindGroup {
     bind_groups: Vec<wgpu::BindGroup>,
     record_arena: GPUArena<InstanceRecordData>,
-    offsets: GPUArena<InstanceOffset>,
-    global_transforms: GPUArena<GlobalTransform>,
+    offsets: Option<wgpu::Buffer>,
+    global_transforms: Option<wgpu::Buffer>,
 }
 
 impl BindGroupProvider for InstanceDataBindGroup {
@@ -45,7 +47,7 @@ impl BindGroupProvider for InstanceDataBindGroup {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: self.offsets.get_first_buffer(),
+                        buffer: self.offsets.as_ref().unwrap(),
                         offset: 0,
                         size: None,
                     }),
@@ -53,7 +55,7 @@ impl BindGroupProvider for InstanceDataBindGroup {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: self.global_transforms.get_first_buffer(),
+                        buffer: self.global_transforms.as_ref().unwrap(),
                         offset: 0,
                         size: None,
                     }),
@@ -102,14 +104,12 @@ impl BindGroupProvider for InstanceDataBindGroup {
 
     fn new() -> Self {
         let instance_records = GPUArena::<InstanceRecordData>::new();
-        let instance_offsets = GPUArena::<InstanceOffset>::new();
-        let global_transforms = GPUArena::<GlobalTransform>::new();
 
         Self {
             bind_groups: vec![],
             record_arena: instance_records,
-            offsets: instance_offsets,
-            global_transforms,
+            offsets: None,
+            global_transforms: None,
         }
     }
 
@@ -134,11 +134,15 @@ impl InstanceDataBindGroup {
         &self.bind_groups[0]
     }
     fn allocate_buffers(&mut self, device: &wgpu::Device) {
-        self.offsets.add_buffer(device);
-        self.global_transforms.add_buffer(device);
+        let offset_buf =
+            crate::renderer::gpu_allocator::get_per_frame_buffer::<InstanceOffset>(device);
+        let gt_buff =
+            crate::renderer::gpu_allocator::get_per_frame_buffer::<GlobalTransform>(device);
+        self.offsets = Some(offset_buf);
+        self.global_transforms = Some(gt_buff)
     }
     pub(in crate::renderer) fn write_gt_data(&self, data: &[u8], queue: &wgpu::Queue) {
-        let buf = self.global_transforms.get_first_buffer();
+        let buf = self.global_transforms.as_ref().unwrap();
         queue.write_buffer(buf, 0, data);
     }
     pub(in crate::renderer) fn upload_instance_record<'frame>(
@@ -159,7 +163,7 @@ impl InstanceDataBindGroup {
         queue: &wgpu::Queue,
     ) {
         queue.write_buffer(
-            self.offsets.get_first_buffer(),
+            self.offsets.as_ref().unwrap(),
             0,
             bytemuck::cast_slice(offset_data),
         );

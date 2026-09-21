@@ -9,6 +9,7 @@ use std::error::Error;
 use crate::renderer::GPUAllocationHandle;
 use crate::renderer::GPUInstanceHandle;
 use crate::renderer::TexDim;
+use crate::renderer::gpu_allocator::allocation_tables::StorageData;
 use crate::renderer::gpu_allocator::allocation_tables::TAllocationTable;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
@@ -21,12 +22,18 @@ pub(super) mod texture_arena;
 
 static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
 
-#[derive(Debug, Clone)]
-pub(crate) struct AllocMetaData {
-    chunk_id: usize,
-    node_id: usize,
-    ref_count: usize,
+pub(super) fn get_per_frame_buffer<S>(device: &wgpu::Device) -> wgpu::Buffer
+where
+    S: StorageData,
+{
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("instance offset buffer"),
+        size: 1024 * 4,
+        usage: <S as StorageData>::BUFFER_USAGES,
+        mapped_at_creation: false,
+    })
 }
+
 // pub(crate): return type of `GPUUploadable::get_chunk`, which is pub(crate).
 pub(crate) struct GPUChunk<T: bytemuck::Pod + Debug> {
     remaining_space: u32,
@@ -81,9 +88,9 @@ pub(crate) enum GPUUploadResult {
     BindGroupUploadResult {
         buffer_element_offset: u32,
         chunk_idx: u32,
-        alloc_meta_idx: usize,
     },
     InstanceRecordUpload,
+    PrototypeUploaded,
     VertexDataUploadSuccess,
     MaterialUploadSucess,
     TextureUploadSuccess,

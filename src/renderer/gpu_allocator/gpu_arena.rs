@@ -5,11 +5,8 @@ use crate::{
             CHUNK_SIZE, GPUAllocator, GPUChunk, GPUUploadJob, GPUUploadResult, GPUUploadable,
             TAllocationTable, UploadIndexJob, UploadMaterialJob, UploadMeshJob, VertexArenaError,
             allocation_tables::{
-                AllocationSlot, FrameStorageData, PerInstanceStorage, SharedInstanceData,
-                StorageData,
-                asset_alloc_table::{AssetAllocationMeta, AssetAlocationTable},
-                instance_alloc_table::InstanceAllocTable,
-                per_frame_storage::FrameStorageDataTable,
+                AllocationSlot, SharedInstanceData, StorageData,
+                asset_alloc_table::{AssetAllocationMeta, SingleAlocationTable},
                 shared_instance_alloc_table::{
                     InstanceAllocationTable, SharedInstanceAllocTable, SharedInstanceAllocationSlot,
                 },
@@ -104,13 +101,9 @@ impl<T: SharedInstanceData> GPUArena<T> {
         &mut self,
         new_handle: &GPUInstanceHandle,
     ) -> Result<InstanceAllocationResult, AllocationTableError> {
-        let (chunk_index, node_index) = self.alloc_table.get_prototype_meta(new_handle);
-        self.alloc_table.allocate(
-            new_handle.clone(),
-            SharedInstanceAllocationSlot::Shared {
-                slot: AssetAllocationMeta::new(chunk_index, node_index),
-            },
-        );
+        self.alloc_table
+            .allocate(new_handle.clone(), SharedInstanceAllocationSlot::Shared);
+        let (chunk_index, _) = self.alloc_table.get_prototype_meta(new_handle);
         let data_offset = self.resolve(new_handle).0.start;
         Ok(InstanceAllocationResult {
             data_offset,
@@ -253,16 +246,11 @@ impl GPUUploadable for LocalTransform {
         chunk_id: usize,
         node_id: usize,
     ) -> GPUUploadResult {
-        let meta = SharedInstanceAllocationSlot::Shared {
+        let meta = SharedInstanceAllocationSlot::Prototype {
             slot: AssetAllocationMeta::new(chunk_id, node_id),
         };
-        let meta_idx = arena.alloc_table.allocate(handle, meta);
-        let element_offset = arena.resolve_element_offset(&handle);
-        GPUUploadResult::BindGroupUploadResult {
-            buffer_element_offset: element_offset as u32,
-            chunk_idx: chunk_id as u32,
-            alloc_meta_idx: meta_idx,
-        }
+        arena.alloc_table.allocate(handle, meta);
+        GPUUploadResult::PrototypeUploaded
     }
 }
 impl GPUUploadable for JointTransform {
@@ -290,16 +278,11 @@ impl GPUUploadable for JointTransform {
         chunk_id: usize,
         node_id: usize,
     ) -> GPUUploadResult {
-        let meta = SharedInstanceAllocationSlot::Shared {
+        let meta = SharedInstanceAllocationSlot::Prototype {
             slot: AssetAllocationMeta::new(chunk_id, node_id),
         };
-        let meta_idx = arena.alloc_table.allocate(handle, meta);
-        let element_offset = arena.resolve_element_offset(&handle);
-        GPUUploadResult::BindGroupUploadResult {
-            buffer_element_offset: element_offset as u32,
-            chunk_idx: chunk_id as u32,
-            alloc_meta_idx: meta_idx,
-        }
+        arena.alloc_table.allocate(handle, meta);
+        GPUUploadResult::PrototypeUploaded
     }
 }
 impl GPUUploadable for InverseBindMatrix {
@@ -327,56 +310,19 @@ impl GPUUploadable for InverseBindMatrix {
         chunk_id: usize,
         node_id: usize,
     ) -> GPUUploadResult {
-        let meta = SharedInstanceAllocationSlot::Shared {
+        let meta = SharedInstanceAllocationSlot::Prototype {
             slot: AssetAllocationMeta::new(chunk_id, node_id),
         };
-        let meta_idx = arena.alloc_table.allocate(handle, meta);
+        arena.alloc_table.allocate(handle, meta);
 
-        let element_offset = arena.resolve_element_offset(&handle);
-
-        GPUUploadResult::BindGroupUploadResult {
-            buffer_element_offset: element_offset as u32,
-            chunk_idx: chunk_id as u32,
-            alloc_meta_idx: meta_idx,
-        }
-    }
-}
-
-impl GPUUploadable for GlobalTransform {
-    type GPUHandle = GPUInstanceHandle;
-
-    type AllocTable = FrameStorageDataTable;
-
-    type UploadJob<'a> = InstanceUploadJob<'a, GlobalTransform>;
-
-    const LABEL: &'static str = "Global TRansform upload";
-
-    const USAGE: wgpu::BufferUsages = <GlobalTransform as StorageData>::BUFFER_USAGES;
-
-    const CHUNK_SIZE: u32 = 1024 * 16;
-
-    const MIN_ALLOC_SIZE: u32 = size_of::<GlobalTransform>() as u32;
-
-    fn arena_label() -> String {
-        String::from("Global transform alloc arena")
-    }
-
-    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {}
-
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        panic!("direct upload of global transforms is not currently allowed")
+        GPUUploadResult::PrototypeUploaded
     }
 }
 
 impl GPUUploadable for InstanceRecordData {
     type GPUHandle = GPUInstanceHandle;
 
-    type AllocTable = InstanceAllocTable;
+    type AllocTable = SingleAlocationTable<GPUInstanceHandle>;
 
     type UploadJob<'a> = InstanceUploadJob<'a, InstanceRecordData>;
 
@@ -400,53 +346,21 @@ impl GPUUploadable for InstanceRecordData {
         chunk_id: usize,
         node_id: usize,
     ) -> GPUUploadResult {
-        let meta_idx = arena
+        arena
             .alloc_table
             .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
         let element_offset = arena.resolve_element_offset(&handle);
         return GPUUploadResult::BindGroupUploadResult {
             buffer_element_offset: element_offset as u32,
             chunk_idx: chunk_id as u32,
-            alloc_meta_idx: meta_idx,
         };
-    }
-}
-impl GPUUploadable for InstanceOffset {
-    type GPUHandle = GPUInstanceHandle;
-
-    type AllocTable = FrameStorageDataTable;
-
-    type UploadJob<'a> = InstanceUploadJob<'a, Self>;
-
-    const LABEL: &'static str = "Instance offset upload";
-
-    const USAGE: wgpu::BufferUsages = <Self as StorageData>::BUFFER_USAGES;
-
-    const CHUNK_SIZE: u32 = 1024;
-
-    const MIN_ALLOC_SIZE: u32 = 64;
-
-    fn arena_label() -> String {
-        String::from("instance offset arena")
-    }
-
-    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {}
-
-    #[allow(unused)]
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        panic!("direct upload of instance offsets is not allowed currently")
     }
 }
 
 impl GPUUploadable for VIndex {
     type UploadJob<'a> = UploadIndexJob<'a>;
     type GPUHandle = GPUAllocationHandle;
-    type AllocTable = AssetAlocationTable;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
     const CHUNK_SIZE: u32 = CHUNK_SIZE;
     const MIN_ALLOC_SIZE: u32 = 1024;
     const LABEL: &'static str = "Vertex indices";
@@ -472,7 +386,7 @@ impl GPUUploadable for VIndex {
 impl GPUUploadable for PNUJWVertex {
     type GPUHandle = GPUAllocationHandle;
     type UploadJob<'a> = UploadMeshJob<'a, PNUJWVertex>;
-    type AllocTable = AssetAlocationTable;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
     const CHUNK_SIZE: u32 = CHUNK_SIZE;
     const MIN_ALLOC_SIZE: u32 = 2048;
     const LABEL: &'static str = "PNUJW";
@@ -498,7 +412,7 @@ impl GPUUploadable for PNUVertex {
     type GPUHandle = GPUAllocationHandle;
     const MIN_ALLOC_SIZE: u32 = 2048;
     type UploadJob<'a> = UploadMeshJob<'a, PNUVertex>;
-    type AllocTable = AssetAlocationTable;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
     const CHUNK_SIZE: u32 = CHUNK_SIZE;
     const LABEL: &'static str = "PNU";
     const USAGE: wgpu::BufferUsages =
@@ -523,7 +437,7 @@ impl GPUUploadable for GPUMaterialData {
     type GPUHandle = GPUAllocationHandle;
 
     type UploadJob<'a> = UploadMaterialJob<'a>;
-    type AllocTable = AssetAlocationTable;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
 
     const LABEL: &'static str = "Material Data";
 

@@ -68,7 +68,8 @@ impl InstanceManager {
             .gen_prototype(renderables.instance_handle.entity_handle.clone());
 
         // simlutaneously generate the render group of the new entity and the new instance upload data
-        let (render_group, new_instance_data) = Self::new_instance(&mut renderables, prototype);
+        let (render_group, new_instance_data) =
+            Self::new_instance(entity_manager, &mut renderables, prototype);
 
         self.push_render_group(render_group, &renderables);
 
@@ -86,14 +87,15 @@ impl InstanceManager {
     }
 
     pub(super) fn new_instance(
+        entity_manager: &EntityManager,
         renderables: &mut Renderables,
         prototype: PrototypeHandle,
     ) -> (RenderGroup, NewInstanceData) {
-        let mut new_instance_data =
-            NewInstanceData::new(renderables.instance_handle.clone(), prototype);
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
         // TODO: change raw u32 to a structure in which a GPUAllocHandle can be included for an
         // external material
+        //
+        let mut new_instance_data: Option<NewInstanceData> = None;
         for ((alloc_handle, mesh_data), maybe_material) in renderables
             .mesh_renderables
             .drain(..)
@@ -146,32 +148,18 @@ impl InstanceManager {
             };
 
             views.push(view);
-
-            new_instance_data
-                .local_transforms
-                .extend(mesh_data.local_transforms);
-
-            if let Some(joint_transforms) = mesh_data.joint_transforms {
-                match &mut new_instance_data.joint_transforms {
-                    Some(jts) => {
-                        jts.extend(joint_transforms);
-                        new_instance_data
-                            .ibms
-                            .as_mut()
-                            .expect("ibms")
-                            .extend(mesh_data.ibms.expect("must have ibms"));
-                    }
-                    None => {
-                        new_instance_data.joint_transforms = Some(joint_transforms);
-                        new_instance_data.ibms = Some(mesh_data.ibms.expect("must have ibms"))
-                    }
-                }
-            }
+            new_instance_data = Some(entity_manager.get_entity_new(
+                &renderables.instance_handle,
+                prototype,
+                mesh_data.local_transforms,
+                mesh_data.joint_transforms,
+                mesh_data.ibms,
+            ));
         }
 
         (
             RenderGroup::new(views, renderables.instance_handle.entity_handle),
-            new_instance_data,
+            new_instance_data.expect("there must be at least one new instance data"),
         )
     }
 

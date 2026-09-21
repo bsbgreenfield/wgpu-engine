@@ -4,7 +4,14 @@ use wgpu::TextureFormat;
 
 use crate::renderer::{
     GPUAllocationHandle, TexDim,
-    gpu_allocator::{AllocMetaData, GPUUploadResult, UploadTextureJob, VertexArenaError},
+    gpu_allocator::{
+        GPUUploadResult, UploadTextureJob, VertexArenaError,
+        allocation_tables::{
+            AllocationSlot, TAllocationTable,
+            asset_alloc_table::AssetAllocationMeta,
+            texture_alloc_table::{GPUTextureHandle, TextureAllocTable},
+        },
+    },
 };
 
 #[derive(Debug)]
@@ -146,7 +153,7 @@ impl TextureChunk {
 
 pub struct TextureArena {
     chunks: [Option<TextureChunk>; 5],
-    alloc_table: MultiAllocTable<GPUAllocationHandle>,
+    alloc_table: TextureAllocTable,
 }
 
 impl<'frame> UploadTextureJob<'frame> {
@@ -159,7 +166,7 @@ impl TextureArena {
     pub fn new() -> Self {
         Self {
             chunks: [None, None, None, None, None],
-            alloc_table: MultiAllocTable::new(),
+            alloc_table: TextureAllocTable::new(),
         }
     }
 
@@ -168,8 +175,10 @@ impl TextureArena {
         alloc_handle: &GPUAllocationHandle,
         alloc_index: usize,
     ) -> Option<(u32, u32)> {
-        let meta = self.alloc_table.resolve(alloc_handle, alloc_index)?;
-        Some((meta.chunk_id as u32, meta.node_id as u32))
+        let meta = self
+            .alloc_table
+            .resolve(&GPUTextureHandle::new(alloc_handle.clone(), alloc_index))?;
+        Some((meta.chunk() as u32, meta.node() as u32))
     }
     const fn idx_from_tex_dim(dimension: TexDim) -> usize {
         match dimension {
@@ -230,8 +239,10 @@ impl TextureArena {
 
         match chunk.gpu_alloc(job.pixels, job.dim, queue) {
             Ok(layer) => {
-                self.alloc_table
-                    .allocate(job.texture_handle, chunk_idx, layer);
+                self.alloc_table.allocate(
+                    GPUTextureHandle::new(job.texture_handle, 0),
+                    AssetAllocationMeta::new(chunk_idx, layer),
+                );
                 return GPUUploadResult::TextureUploadSuccess;
             }
             Err(_) => {
@@ -248,72 +259,5 @@ impl TextureArena {
             &self.chunks[3].as_ref().unwrap().view,
             &self.chunks[4].as_ref().unwrap().view,
         ]
-    }
-}
-
-pub(super) struct MultiAllocTable<H: Eq + std::hash::Hash + Clone> {
-    free_list: Vec<usize>,
-    alloc_meta: Vec<AllocMetaData>,
-    table: HashMap<H, Vec<usize>>,
-}
-impl<H> MultiAllocTable<H>
-where
-    H: Eq + std::hash::Hash + Clone + std::fmt::Debug,
-{
-    pub(super) fn allocate(&mut self, handle: H, chunk_id: usize, node_id: usize) -> usize {
-        let meta = AllocMetaData {
-            chunk_id,
-            node_id,
-            ref_count: 1,
-        };
-        let slot = match self.free_list.pop() {
-            Some(free_idx) => {
-                self.alloc_meta[free_idx] = meta;
-                free_idx
-            }
-            None => {
-                self.alloc_meta.push(meta);
-                self.alloc_meta.len() - 1
-            }
-        };
-        let slots = self.table.entry(handle).or_default();
-        slots.push(slot);
-        slots.len() - 1
-    }
-
-    pub(super) fn resolve(&self, handle: &H, alloc_index: usize) -> Option<&AllocMetaData> {
-        let slot = *self.table.get(handle)?.get(alloc_index)?;
-        self.alloc_meta.get(slot)
-    }
-
-    pub(super) fn allocation_count(&self, handle: &H) -> usize {
-        self.table.get(handle).map_or(0, |slots| slots.len())
-    }
-
-    pub(super) fn remove(&mut self, handle: &H) -> Result<Vec<AllocMetaData>, VertexArenaError> {
-        let Some(slots) = self.table.remove(handle) else {
-            return Ok(vec![]);
-        };
-        let mut freed = Vec::new();
-        for slot in slots {
-            let meta = self
-                .alloc_meta
-                .get_mut(slot)
-                .ok_or(VertexArenaError::MetadataNotFound)?;
-            meta.ref_count -= 1;
-            if meta.ref_count == 0 {
-                freed.push(self.alloc_meta[slot].clone());
-                self.free_list.push(slot);
-            }
-        }
-        Ok(freed)
-    }
-
-    pub(super) fn new() -> Self {
-        Self {
-            free_list: vec![],
-            alloc_meta: vec![],
-            table: HashMap::new(),
-        }
     }
 }

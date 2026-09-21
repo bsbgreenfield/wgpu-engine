@@ -26,13 +26,6 @@ pub(super) trait BindGroupProvider {
     fn despawn(&mut self, handle: &GPUInstanceHandle);
 }
 
-#[derive(Debug)]
-struct PrototypeEntry {
-    ref_count: usize,
-    local_transforms_slot: usize,
-    joint_transforms_slot: Option<usize>,
-}
-
 pub(super) struct BindGroupCollection {
     next_handle: u32,
     pub(super) local_transforms: LocalTransformBindGroup,
@@ -60,12 +53,7 @@ impl BindGroupCollection {
         let res = self
             .local_transforms
             .upload_local_transforms(job, queue, device)?;
-        if let GPUUploadResult::BindGroupUploadResult {
-            buffer_element_offset: _,
-            alloc_meta_idx,
-            chunk_idx: _,
-        } = res
-        {
+        if let GPUUploadResult::PrototypeUploaded = res {
         } else {
             panic!("wrong upload type");
         }
@@ -80,15 +68,9 @@ impl BindGroupCollection {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, VertexArenaError> {
-        let prototype = joint_job.gpu_instance_handle.prototype.clone();
         let res = self.skinning.upload(joint_job, ibm_job, queue, device)?;
 
-        let GPUUploadResult::BindGroupUploadResult {
-            buffer_element_offset: _,
-            chunk_idx: _,
-            alloc_meta_idx,
-        } = res
-        else {
+        let GPUUploadResult::PrototypeUploaded = res else {
             panic!("wrong upload type");
         };
         Ok(res)

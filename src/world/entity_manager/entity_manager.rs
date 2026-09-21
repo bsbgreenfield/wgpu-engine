@@ -2,11 +2,12 @@ use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
 
 use crate::{
     asset_manager::{
-        AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
-        asset_manager::AssetManager,
+        AssetHandle, MeshRenderables, ProvidesAnimationData, ProvidesMaterialData,
+        ProvidesMeshData, asset_manager::AssetManager,
     },
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::PrototypeHandle,
+    util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
     world::{
         entity_manager::{
             EntityManagerError, Renderables,
@@ -15,7 +16,10 @@ use crate::{
                 MeshCollectionComponent, MeshCollectionDescriptor,
             },
         },
-        world::{CopiedInstanceData, InstanceUploadData, JointTransforms, LocalTransforms},
+        world::{
+            CopiedInstanceData, InstanceUploadData, InverseBindMatrices, JointTransforms,
+            LocalTransforms, NewInstanceData,
+        },
     },
 };
 
@@ -27,34 +31,82 @@ pub struct EntityManager {
 }
 
 impl EntityManager {
+    pub fn get_entity_new<'frame>(
+        &'frame self,
+        instance_handle: &InstanceHandle,
+        prototype_handle: PrototypeHandle,
+        local_transform_data: Vec<LocalTransform>,
+        joint_transform_data: Option<Vec<JointTransform>>,
+        ibm_data: Option<Vec<InverseBindMatrix>>,
+    ) -> NewInstanceData {
+        let anim = self
+            .animations
+            .get(instance_handle.entity_handle.0 as usize);
+        let rigid_mode = anim
+            .map(|a| &a.rigid_animation_mode)
+            .unwrap_or(&AnimationMode::None);
+        let skinned_mode = anim
+            .map(|a| &a.skinned_animation_mode)
+            .unwrap_or(&AnimationMode::None);
+        let local_transforms = match rigid_mode {
+            AnimationMode::Independent => LocalTransforms::OwnedCopy {
+                data: local_transform_data,
+            },
+            AnimationMode::Shared | AnimationMode::None => LocalTransforms::OwnedShared {
+                data: local_transform_data,
+            },
+        };
+        let (joint_transforms, ibms) = if let Some(joints) = joint_transform_data {
+            let jt_res = match skinned_mode {
+                AnimationMode::Shared | AnimationMode::None => {
+                    Some(JointTransforms::OwnedShared { data: joints })
+                }
+                AnimationMode::Independent => Some(JointTransforms::OwnedCopy { data: joints }),
+            };
+            let ibm_res = Some(InverseBindMatrices::Owned {
+                data: ibm_data.expect("must have ibms"),
+            });
+            (jt_res, ibm_res)
+        } else {
+            (None, None)
+        };
+
+        NewInstanceData {
+            handle: instance_handle.clone(),
+            prototype: prototype_handle,
+            local_transforms,
+            joint_transforms,
+            ibms,
+        }
+    }
     pub fn get_entity_cloned<'frame>(
         &'frame self,
         instance_handles: Vec<InstanceHandle>,
         prototype_handle: PrototypeHandle,
         has_joints: bool,
     ) -> InstanceUploadData {
-        let mut local_transforms = LocalTransforms::NeedsShared;
-        let mut joint_transforms = JointTransforms::None;
-
-        if let Some(anim) = self
+        let anim = self
             .animations
-            .get(instance_handles.get(0).as_ref().unwrap().entity_handle.0 as usize)
-        {
-            match anim.rigid_animation_mode {
-                AnimationMode::Shared => local_transforms = LocalTransforms::NeedsShared,
-                AnimationMode::Independent => local_transforms = LocalTransforms::NeedsCopy,
-                AnimationMode::None => local_transforms = LocalTransforms::NeedsShared,
+            .get(instance_handles[0].entity_handle.0 as usize);
+        let rigid_mode = anim
+            .map(|a| &a.rigid_animation_mode)
+            .unwrap_or(&AnimationMode::None);
+        let skinned_mode = anim
+            .map(|a| &a.skinned_animation_mode)
+            .unwrap_or(&AnimationMode::None);
+        let local_transforms = match rigid_mode {
+            AnimationMode::Shared | AnimationMode::None => LocalTransforms::NeedsShared,
+            AnimationMode::Independent => LocalTransforms::NeedsCopy,
+        };
+        let joint_transforms = if has_joints {
+            match skinned_mode {
+                AnimationMode::Shared | AnimationMode::None => JointTransforms::NeedsShared,
+                AnimationMode::Independent => JointTransforms::NeedsCopy,
             }
-            joint_transforms = if has_joints {
-                match anim.skinned_animation_mode {
-                    AnimationMode::Shared => JointTransforms::NeedsShared,
-                    AnimationMode::Independent => JointTransforms::NeedsCopy,
-                    AnimationMode::None => JointTransforms::None,
-                }
-            } else {
-                JointTransforms::None
-            };
-        }
+        } else {
+            JointTransforms::None
+        };
+
         let copied = CopiedInstanceData {
             handles: instance_handles,
             prototype_handle,

@@ -11,8 +11,8 @@ use crate::{
     world::{
         RenderKey,
         world::{
-            CopiedInstanceData, JointTransforms, LocalTransforms, NewInstanceData, World,
-            WorldUpdateDelta,
+            CopiedInstanceData, InverseBindMatrices, JointTransforms, LocalTransforms,
+            NewInstanceData, World, WorldUpdateDelta,
         },
     },
 };
@@ -152,24 +152,61 @@ pub trait BytecodeGenerator<'frame> {
         // local transforms
         bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
         instructions.push(Instruction::Op(Operations::LocalTransformUpload));
-        let data_bytes: &[u8] = bytemuck::cast_slice(&new_instance.local_transforms);
-        constants.push(RenderConstant::DataRef(data_bytes));
-        Self::emit_const_last(constants, instructions);
+        if let LocalTransforms::OwnedCopy { data } | LocalTransforms::OwnedShared { data } =
+            &new_instance.local_transforms
+        {
+            let data_bytes: &[u8] = bytemuck::cast_slice(data);
+            constants.push(RenderConstant::DataRef(data_bytes));
+            Self::emit_const_last(constants, instructions);
+        } else {
+            panic!("must be lt data")
+        }
+        match &new_instance.local_transforms {
+            LocalTransforms::OwnedShared { .. } => {
+                instructions.push(Instruction::Op(Operations::ShareData));
+                instructions.push(Instruction::Buffer(BufferType::LocalTransform));
+            }
+            LocalTransforms::OwnedCopy { .. } => {
+                instructions.push(Instruction::Op(Operations::CopyData));
+                instructions.push(Instruction::Buffer(BufferType::LocalTransform));
+            }
+            _ => panic!(
+                "no local transforms given: {:?}",
+                new_instance.local_transforms
+            ),
+        }
 
         // joints and ibms
-        if let Some(jt_bytes) = &new_instance.joint_transforms {
+        if let Some(joint_transforms) = &new_instance.joint_transforms {
             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
             instructions.push(Instruction::Op(Operations::JointTransformUpload));
-            let jt_bytes: &[u8] = bytemuck::cast_slice(jt_bytes);
-            let ibm_bytes: &[u8] = if let Some(data) = &new_instance.ibms {
+            let ibm_bytes = if let Some(InverseBindMatrices::Owned { data }) = &new_instance.ibms {
                 bytemuck::cast_slice(data)
             } else {
                 panic!("joint transforms must be accompanied by ibms");
             };
-            constants.push(RenderConstant::DataRef(jt_bytes));
-            Self::emit_const_last(constants, instructions);
-            constants.push(RenderConstant::DataRef(ibm_bytes));
-            Self::emit_const_last(constants, instructions);
+            if let JointTransforms::OwnedCopy { data } | JointTransforms::OwnedShared { data } =
+                joint_transforms
+            {
+                let jt_bytes: &[u8] = bytemuck::cast_slice(data);
+                constants.push(RenderConstant::DataRef(jt_bytes));
+                Self::emit_const_last(constants, instructions);
+                constants.push(RenderConstant::DataRef(ibm_bytes));
+                Self::emit_const_last(constants, instructions);
+            } else {
+                panic!("must be joint data")
+            }
+            match joint_transforms {
+                JointTransforms::OwnedShared { .. } => {
+                    instructions.push(Instruction::Op(Operations::ShareData));
+                    instructions.push(Instruction::Buffer(BufferType::JointTransform));
+                }
+                JointTransforms::OwnedCopy { .. } => {
+                    instructions.push(Instruction::Op(Operations::CopyData));
+                    instructions.push(Instruction::Buffer(BufferType::JointTransform));
+                }
+                _ => panic!("joint transforms must be sent with entity spawn"),
+            }
         }
 
         instructions.push(Instruction::Op(Operations::EmitEntitySpawn));

@@ -8,7 +8,7 @@ use crate::{
     asset_manager::{Asset, AssetHandle, AssetLoadError, AssetSource, asset_manager::AssetManager},
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
-    util::types::{LocalTransform, Mat4F32},
+    util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
     world::{
         RenderKey, WorldUpdateError,
         camera::Camera,
@@ -72,7 +72,8 @@ impl RenderGroup {
 #[derive(Debug, Clone)]
 pub enum LocalTransforms {
     Uninit,
-    Owned { data: Vec<LocalTransform> },
+    OwnedShared { data: Vec<LocalTransform> },
+    OwnedCopy { data: Vec<LocalTransform> },
     CopiedFrom { donor: InstanceHandle },
     NeedsCopy,
     SharedWith { donor: InstanceHandle },
@@ -82,15 +83,16 @@ pub enum LocalTransforms {
 #[derive(Debug, Clone)]
 pub enum JointTransforms {
     None,
-    Owned { data: Vec<Mat4F32> },
+    OwnedShared { data: Vec<JointTransform> },
+    OwnedCopy { data: Vec<JointTransform> },
     NeedsCopy,
     NeedsShared,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InverseBindMatrices {
     None,
-    Owned { data: Vec<Mat4F32> },
+    Owned { data: Vec<InverseBindMatrix> },
     NeedsCopy,
     NeedsShared,
 }
@@ -99,21 +101,9 @@ pub enum InverseBindMatrices {
 pub struct NewInstanceData {
     pub handle: InstanceHandle,
     pub prototype: PrototypeHandle,
-    pub local_transforms: Vec<LocalTransform>,
-    pub joint_transforms: Option<Vec<Mat4F32>>,
-    pub ibms: Option<Vec<Mat4F32>>,
-}
-
-impl NewInstanceData {
-    pub fn new(handle: InstanceHandle, prototype: PrototypeHandle) -> Self {
-        Self {
-            handle,
-            prototype,
-            local_transforms: Vec::new(),
-            joint_transforms: None,
-            ibms: None,
-        }
-    }
+    pub local_transforms: LocalTransforms,
+    pub joint_transforms: Option<JointTransforms>,
+    pub ibms: Option<InverseBindMatrices>,
 }
 
 #[derive(Debug, Clone)]

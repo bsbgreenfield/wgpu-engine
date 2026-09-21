@@ -17,16 +17,11 @@ pub(in crate::renderer::gpu_allocator) trait InstanceAllocationTable:
     ) -> Result<Option<Self::MetaData>, AllocationTableError>;
 }
 
-struct PrototypeSlot {
-    meta_idx: usize,
-    ref_count: usize,
-}
 #[derive(Default)]
 pub(in crate::renderer) struct SharedInstanceAllocTable {
     meta: Vec<SharedInstanceAllocationSlot>,
     table: HashMap<GPUInstanceHandle, usize>,
-    prototype_registry: HashMap<PrototypeHandle, PrototypeSlot>,
-    free_list: Vec<usize>,
+    prototype_registry: HashMap<PrototypeHandle, usize>,
 }
 impl InstanceAllocationTable for SharedInstanceAllocTable {
     fn release(
@@ -41,14 +36,15 @@ impl InstanceAllocationTable for SharedInstanceAllocTable {
             .prototype_registry
             .get(&handle.prototype)
             .expect("could not find registered prototype");
-        let meta = &self.meta[prototype_slot.meta_idx];
+        let meta = &self.meta[*prototype_slot];
         (meta.chunk(), meta.node())
     }
 }
 
 #[derive(Clone)]
 pub enum SharedInstanceAllocationSlot {
-    Shared { slot: AssetAllocationMeta },
+    Prototype { slot: AssetAllocationMeta },
+    Shared,
     Copied { slot: AssetAllocationMeta },
 }
 
@@ -59,15 +55,17 @@ impl AllocationSlot for SharedInstanceAllocationSlot {
 
     fn chunk(&self) -> usize {
         match self {
-            Self::Shared { slot, .. } => slot.chunk(),
+            Self::Prototype { slot, .. } => slot.chunk(),
             Self::Copied { slot, .. } => slot.chunk(),
+            _ => unreachable!(),
         }
     }
 
     fn node(&self) -> usize {
         match self {
-            Self::Shared { slot, .. } => slot.node(),
+            Self::Prototype { slot, .. } => slot.node(),
             Self::Copied { slot, .. } => slot.node(),
+            _ => unreachable!(),
         }
     }
 }
@@ -81,62 +79,31 @@ impl TAllocationTable for SharedInstanceAllocTable {
         Self::default()
     }
 
-    fn allocate(&mut self, handle: Self::Handle, upload_meta: Self::MetaData) -> usize {
+    fn allocate(&mut self, handle: Self::Handle, upload_meta: Self::MetaData) {
         match &upload_meta {
-            SharedInstanceAllocationSlot::Shared { slot } => {
-                // if the prototype has already been uploaded
-                let meta_idx = if let Some(PrototypeSlot {
-                    meta_idx,
-                    ref_count,
-                }) = self.prototype_registry.get_mut(&handle.prototype)
-                {
-                    let SharedInstanceAllocationSlot::Shared { .. } = &mut self.meta[*meta_idx]
-                    else {
-                        panic!();
-                    };
-                    *ref_count += 1;
-                    *meta_idx
+            SharedInstanceAllocationSlot::Prototype { .. } => {
+                if let Some(meta_idx) = self.prototype_registry.get(&handle.prototype) {
+                    self.table.insert(handle, *meta_idx);
                 } else {
-                    match self.free_list.pop() {
-                        Some(free_idx) => {
-                            self.meta.insert(free_idx, upload_meta);
-                            free_idx
-                        }
-                        None => {
-                            self.meta
-                                .push(SharedInstanceAllocationSlot::Shared { slot: slot.clone() });
-                            self.prototype_registry.insert(
-                                handle.prototype.clone(),
-                                PrototypeSlot {
-                                    meta_idx: self.meta.len() - 1,
-                                    ref_count: 1,
-                                },
-                            );
-                            self.meta.len() - 1
-                        }
-                    }
-                };
-                self.table.insert(handle, meta_idx);
-                meta_idx
-            }
-            SharedInstanceAllocationSlot::Copied { slot } => {
-                let prototype_slot = self
-                    .prototype_registry
-                    .get_mut(&handle.prototype)
-                    .expect("cant copy if there isnt a prototype");
-                prototype_slot.ref_count += 1;
-                match self.free_list.pop() {
-                    Some(free_idx) => {
-                        self.meta.insert(free_idx, upload_meta);
-                        free_idx
-                    }
-                    None => {
-                        self.meta
-                            .push(SharedInstanceAllocationSlot::Copied { slot: slot.clone() });
-                        self.table.insert(handle, self.meta.len() - 1);
-                        self.meta.len() - 1
-                    }
+                    self.prototype_registry
+                        .insert(handle.prototype, self.meta.len());
+                    self.meta.push(upload_meta.clone());
                 }
+            }
+            SharedInstanceAllocationSlot::Shared => {
+                let prototype_slot = *self
+                    .prototype_registry
+                    .get(&handle.prototype)
+                    .expect("cannot share a prototype tha doesnt exist");
+                self.table.insert(handle, prototype_slot);
+            }
+            SharedInstanceAllocationSlot::Copied { .. } => {
+                assert!(
+                    self.prototype_registry.contains_key(&handle.prototype),
+                    "Copy slot for a prototype that is not registered here"
+                );
+                self.table.insert(handle, self.meta.len());
+                self.meta.push(upload_meta.clone());
             }
         }
     }
