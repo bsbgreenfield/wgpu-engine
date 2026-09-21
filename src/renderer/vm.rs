@@ -9,7 +9,7 @@ use crate::{
         VertexArenaSelector,
         gpu_allocator::{
             GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
-            instance_arena::InstanceAllocationResult,
+            gpu_arena::InstanceAllocationResult,
         },
         renderer::Renderer,
     },
@@ -269,7 +269,6 @@ impl<'frame> Renderer {
                             constants[prototype_idx as usize].unwrap_key(),
                         );
 
-                        self.add_prototype(prototype_handle.clone());
                         let handle_idx = Self::get_constant_idx(&mut instr_peek);
                         let instance_handle_key = constants[handle_idx as usize].clone();
 
@@ -280,7 +279,6 @@ impl<'frame> Renderer {
                         let prototype_key =
                             stack.pop().expect("should be prototype key").as_raw_key();
                         let prototype_handle = PrototypeHandle::from_key(prototype_key);
-                        self.add_prototype_instance(&prototype_handle);
                         let gpu_instance_handle = self.get_gpu_instance_handle(&prototype_handle);
                         // TODO: GPU instance handle should be a payload
                         stack.push(StackValue::Instance(gpu_instance_handle));
@@ -313,7 +311,6 @@ impl<'frame> Renderer {
                         let prototype_key =
                             stack.pop().expect("should be prototype key").as_raw_key();
                         let prototype_handle = PrototypeHandle::from_key(prototype_key);
-                        self.add_prototype_instance(&prototype_handle);
                         let new_gpu_handle = self.get_gpu_instance_handle(&prototype_handle);
 
                         // instance handle
@@ -332,26 +329,22 @@ impl<'frame> Renderer {
                         if let Some(Instruction::Buffer(bt)) = instr_peek.next() {
                             match bt {
                                 BufferType::LocalTransform => {
-                                    let slot =
-                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
                                     let InstanceAllocationResult {
                                         data_offset: lt_offset,
                                         chunk_index,
                                     } = self
                                         .bind_groups
                                         .local_transforms
-                                        .register_shared_binding(slot, &new_handle)
+                                        .register_shared_binding(&new_handle)
                                         .expect("register shared lt fail");
                                     stack.push(StackValue::Offset(chunk_index));
                                     stack.push(StackValue::Offset(lt_offset));
                                 }
                                 BufferType::JointTransform => {
-                                    let slot =
-                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
                                     let (jt_result, _ibm_result) = self
                                         .bind_groups
                                         .skinning
-                                        .register_shared_binding(slot, &new_handle)
+                                        .register_shared_binding(&new_handle)
                                         .expect("register shared skin fail");
                                     stack.push(StackValue::Offset(jt_result.chunk_index));
                                     stack.push(StackValue::Offset(jt_result.data_offset));
@@ -370,27 +363,23 @@ impl<'frame> Renderer {
                         if let Some(Instruction::Buffer(bt)) = instr_peek.next() {
                             match bt {
                                 BufferType::LocalTransform => {
-                                    let slot =
-                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
                                     let InstanceAllocationResult {
                                         data_offset: lt_offset,
                                         chunk_index,
                                     } = self
                                         .bind_groups
                                         .local_transforms
-                                        .register_copy_binding(slot, &new_handle, queue, device)
+                                        .register_copy_binding(&new_handle, queue, device)
                                         .expect("register shared lt fail");
                                     stack.push(StackValue::Offset(chunk_index));
                                     stack.push(StackValue::Offset(lt_offset));
                                     stack.push(StackValue::Instance(new_handle));
                                 }
                                 BufferType::JointTransform => {
-                                    let slot =
-                                        self.bind_groups.get_slot(&new_handle.prototype, *bt);
                                     let (jt_result, _ibm_result) = self
                                         .bind_groups
                                         .skinning
-                                        .register_copy_binding(slot, &new_handle, queue, device)?;
+                                        .register_copy_binding(&new_handle, queue, device)?;
                                     stack.push(StackValue::Offset(jt_result.chunk_index));
                                     stack.push(StackValue::Offset(jt_result.data_offset));
                                     stack.push(StackValue::Instance(new_handle));

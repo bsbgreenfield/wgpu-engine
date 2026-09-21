@@ -6,7 +6,6 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData}
 
 use bytemuck::Pod;
 
-use crate::common::instance::InstanceHandle;
 use crate::renderer::RenderConstant::DataRef;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
 use crate::renderer::gpu_allocator::{GPUUploadJob, GPUUploadResult};
@@ -40,27 +39,6 @@ impl RenderKey for PrototypeHandle {
     fn from_key(key: u64) -> Self {
         Self(key as u32)
     }
-}
-
-trait GPUUploadable: Debug + bytemuck::Pod {
-    type GPUHandle: Debug + Clone + Hash + Eq;
-    type UploadJob<'a>: GPUUploadJob<GPUHandle = Self::GPUHandle>;
-    const LABEL: &'static str;
-    const USAGE: wgpu::BufferUsages;
-    const CHUNK_SIZE: u32;
-    const MIN_ALLOC_SIZE: u32;
-    const SIZE: usize = size_of::<Self>();
-    fn arena_label() -> String;
-    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
-        GPUChunk::new(device, Self::CHUNK_SIZE, Self::LABEL, Self::USAGE)
-    }
-    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device);
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult;
 }
 
 pub struct RenderPacket {
@@ -466,14 +444,20 @@ impl<'frame> RenderConstant<'frame> {
 
 #[derive(Debug)]
 pub enum RenderUpdateError {
-    GpuUploadFailure(VertexArenaError),
+    GpuUploadFailure(Box<dyn Error>),
 }
 
 impl From<VertexArenaError> for RenderUpdateError {
     fn from(value: VertexArenaError) -> Self {
         match value {
-            _ => Self::GpuUploadFailure(value),
+            _ => Self::GpuUploadFailure(Box::new(value)),
         }
+    }
+}
+
+impl From<AllocationTableError> for RenderUpdateError {
+    fn from(value: AllocationTableError) -> Self {
+        return Self::GpuUploadFailure(Box::new(value));
     }
 }
 
@@ -508,6 +492,18 @@ impl Display for RenderError {
 
 impl Error for RenderUpdateError {}
 impl Error for RenderError {}
+
+#[derive(Debug)]
+pub enum AllocationTableError {
+    AllocationNotFound,
+    MaxAllocationReached,
+}
+impl std::fmt::Display for AllocationTableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("alloc table error")
+    }
+}
+impl std::error::Error for AllocationTableError {}
 
 trait VertexArenaSelector<V: ModelVertex> {
     fn upload_mesh(
@@ -555,9 +551,4 @@ bitflags! {
         const LOCAL_TRANSFORM = 0b01;
         const JOINT_TRANSFORM = 0b10;
     }
-}
-
-trait StorageData: bytemuck::Pod + std::fmt::Debug + Sized {
-    const LABEL: &'static str;
-    const CHUNK_SIZE: u32;
 }

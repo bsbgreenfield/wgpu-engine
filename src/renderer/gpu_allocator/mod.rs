@@ -8,20 +8,15 @@ use std::error::Error;
 
 use crate::renderer::GPUAllocationHandle;
 use crate::renderer::GPUInstanceHandle;
-use crate::renderer::GPUUploadable;
-use crate::renderer::StorageData;
 use crate::renderer::TexDim;
+use crate::renderer::gpu_allocator::allocation_tables::TAllocationTable;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
+use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
 use crate::util::types::ModelVertex;
-use crate::util::types::{
-    GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix, JointTransform,
-    LocalTransform,
-};
 
-mod allocation_table;
+mod allocation_tables;
 mod free_list;
 pub(super) mod gpu_arena;
-pub(super) mod instance_arena;
 pub(super) mod texture_arena;
 
 static CHUNK_SIZE: u32 = 1_048_576 * 8; //4 mb
@@ -52,7 +47,11 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
         let node_idx: usize = if self.remaining_space >= size {
             self.allocator.alloc_first(size)?
         } else {
-            return Err(VertexArenaError::DataTooLarge(size, label.to_string()));
+            return Err(VertexArenaError::DataTooLarge(
+                size,
+                label.to_string(),
+                T::CHUNK_SIZE,
+            ));
         };
         // for datum in data.iter().take(10) {
         //     println!("{:?}", datum);
@@ -84,6 +83,7 @@ pub(crate) enum GPUUploadResult {
         chunk_idx: u32,
         alloc_meta_idx: usize,
     },
+    InstanceRecordUpload,
     VertexDataUploadSuccess,
     MaterialUploadSucess,
     TextureUploadSuccess,
@@ -109,7 +109,7 @@ pub(super) trait GPUAllocator<T: GPUUploadable> {
 
 // pub(crate): wrapped by `VertexArenaError::FreeListError`, which is pub(crate).
 #[derive(Debug)]
-pub enum FreeListAllocError {
+pub(crate) enum FreeListAllocError {
     NoRoomLeft(u32, u32),
     NodeNotFount(usize),
 }
@@ -131,8 +131,8 @@ impl Display for FreeListAllocError {
 }
 
 #[derive(Debug)]
-pub enum VertexArenaError {
-    DataTooLarge(u32, String),
+pub(crate) enum VertexArenaError {
+    DataTooLarge(u32, String, u32),
     FreeListError(FreeListAllocError),
     HandleNotFound {
         shared: GPUInstanceHandle,
@@ -152,10 +152,10 @@ impl From<FreeListAllocError> for VertexArenaError {
 impl Display for VertexArenaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::DataTooLarge(size, label) => f.write_str(
+            Self::DataTooLarge(size, label, max_chunk_size) => f.write_str(
                 format!(
                     "cannot allocate into {} mesh of size {}, which exceeds chunk size: {}",
-                    label, size, CHUNK_SIZE
+                    label, size, max_chunk_size
                 )
                 .as_str(),
             ),
@@ -212,43 +212,30 @@ pub(crate) struct UploadIndexJob<'frame> {
     pub(super) alloc_handle: GPUAllocationHandle,
 }
 
-impl StorageData for LocalTransform {
-    const LABEL: &'static str = "Local Transform data";
-
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-}
-impl StorageData for JointTransform {
-    const LABEL: &'static str = "Joint Transform Data";
-
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-}
-impl StorageData for InverseBindMatrix {
-    const LABEL: &'static str = "IBM Data";
-
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-}
-
-impl StorageData for GlobalTransform {
-    const LABEL: &'static str = " GlobalTransform data";
-
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-}
-
-impl StorageData for InstanceRecordData {
-    const LABEL: &'static str = " Instance Record Data";
-
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-}
-
-impl StorageData for InstanceOffset {
-    const LABEL: &'static str = "Instance Offset data";
-
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-}
-
 // pub(crate): bound on `GPUUploadable::UploadJob`, which is pub(crate).
 pub(crate) trait GPUUploadJob {
     type GPUHandle: Eq + Debug + Clone + Hash;
     fn get_data(&self) -> &[u8];
     fn get_handle(&self) -> Self::GPUHandle;
+}
+pub(in crate::renderer) trait GPUUploadable: Debug + bytemuck::Pod {
+    type GPUHandle: Debug + Clone + Hash + Eq;
+    type AllocTable: TAllocationTable<Handle = Self::GPUHandle>;
+    type UploadJob<'a>: GPUUploadJob<GPUHandle = Self::GPUHandle>;
+    const LABEL: &'static str;
+    const USAGE: wgpu::BufferUsages;
+    const CHUNK_SIZE: u32;
+    const MIN_ALLOC_SIZE: u32;
+    const SIZE: usize = size_of::<Self>();
+    fn arena_label() -> String;
+    fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
+        GPUChunk::new(device, Self::CHUNK_SIZE, Self::LABEL, Self::USAGE)
+    }
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device);
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult;
 }

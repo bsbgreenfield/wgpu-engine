@@ -893,14 +893,6 @@ mod integration_tests {
                 1
             );
 
-            // Renderer side: the only prototype is registered with ref_count 1.
-            assert_eq!(app.renderer.get_prototype_count(), 1);
-            assert_eq!(
-                app.renderer
-                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
-                Some(1)
-            );
-
             let mock = InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
             app.world
                 .despawn_instance(mock.clone())
@@ -921,17 +913,6 @@ mod integration_tests {
             assert_eq!(
                 app.world.instance_manager.get_registered_prototypes().len(),
                 1
-            );
-
-            assert_eq!(
-                app.renderer.get_prototype_count(),
-                1,
-                "renderer prototype map must be empty after the last instance despawns"
-            );
-            assert_eq!(
-                app.renderer
-                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
-                Some(0)
             );
 
             // After the despawn the draw packet must be empty too.
@@ -984,13 +965,6 @@ mod integration_tests {
             gen_draw_calls(&mut app);
 
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
-            assert_eq!(app.renderer.get_prototype_count(), 1);
-            assert_eq!(
-                app.renderer
-                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
-                Some(2),
-                "two live instances must yield prototype ref_count 2"
-            );
 
             // Despawn the first instance.
             let first = InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 0, 0);
@@ -1006,17 +980,6 @@ mod integration_tests {
                 app.world.instance_manager.get_all_instances().len(),
                 1,
                 "one instance must remain after despawning one of two"
-            );
-            assert_eq!(
-                app.renderer.get_prototype_count(),
-                1,
-                "prototype must remain while one instance still references it"
-            );
-            assert_eq!(
-                app.renderer
-                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
-                Some(1),
-                "ref_count must drop from 2 to 1 after despawning one instance"
             );
 
             // Draw packet should show a single remaining instance for the prototype.
@@ -1083,13 +1046,6 @@ mod integration_tests {
                 .into(),
             );
             assert_eq!(app.world.instance_manager.get_all_instances().len(), 2);
-            assert_eq!(app.renderer.get_prototype_count(), 1);
-            assert_eq!(
-                app.renderer
-                    .get_prototype_ref_count(&PrototypeHandle::new(0)),
-                Some(2),
-                "ref_count must climb back to 2 after respawning"
-            );
 
             gen_draw_calls(&mut app);
             let pnu_items: Vec<&DrawItem> = app
@@ -1505,90 +1461,90 @@ mod integration_tests {
         })
     }
 
-    #[test]
-    fn despawn_copy_instances() {
-        pollster::block_on(async {
-            let mut app = setup_world(TestCases::IndependantFoxes).await;
+    //#[test]
+    //fn despawn_copy_instances() {
+    //    pollster::block_on(async {
+    //        let mut app = setup_world(TestCases::IndependantFoxes).await;
 
-            run_frame_unchecked(&mut app); // load texture
-            run_frame_unchecked(&mut app); // load model
-            run_frame_unchecked(&mut app); // spawn instances
+    //        run_frame_unchecked(&mut app); // load texture
+    //        run_frame_unchecked(&mut app); // load model
+    //        run_frame_unchecked(&mut app); // spawn instances
 
-            let prototypes = app.world.instance_manager.get_registered_prototypes();
-            assert!(prototypes.len() == 1);
-            assert!(*prototypes.get(&EntityHandle(0)).unwrap() == PrototypeHandle::new(0));
+    //        let prototypes = app.world.instance_manager.get_registered_prototypes();
+    //        assert!(prototypes.len() == 1);
+    //        assert!(*prototypes.get(&EntityHandle(0)).unwrap() == PrototypeHandle::new(0));
 
-            let instances = app.world.instance_manager.get_registered_instances();
-            assert_eq!(instances.len(), 3);
+    //        let instances = app.world.instance_manager.get_registered_instances();
+    //        assert_eq!(instances.len(), 3);
 
-            let joint_alloc_table = app.renderer.get_joint_arena().get_instance_table();
+    //        let joint_alloc_table = app.renderer.get_joint_arena().get_instance_table();
 
-            let goner_1 = InstanceHandle {
-                archetype: ArchetypeId::Position,
-                entity_handle: EntityHandle(0),
-                instance_id: 1,
-                generation: 0,
-            };
-            let gpu_handle = app
-                .world
-                .instance_manager
-                .get_registered_instances()
-                .get(&goner_1)
-                .unwrap();
+    //        let goner_1 = InstanceHandle {
+    //            archetype: ArchetypeId::Position,
+    //            entity_handle: EntityHandle(0),
+    //            instance_id: 1,
+    //            generation: 0,
+    //        };
+    //        let gpu_handle = app
+    //            .world
+    //            .instance_manager
+    //            .get_registered_instances()
+    //            .get(&goner_1)
+    //            .unwrap();
 
-            let buf_offset_1 = app.renderer.get_joint_arena().buffer_offset_of(*gpu_handle);
-            app.world.despawn_instance(goner_1.clone());
+    //        let buf_offset_1 = app.renderer.get_joint_arena().buffer_offset_of(*gpu_handle);
+    //        app.world.despawn_instance(goner_1.clone());
 
-            run_frame_unchecked(&mut app);
+    //        run_frame_unchecked(&mut app);
 
-            let instances = app.world.instance_manager.get_registered_instances();
-            assert_eq!(instances.len(), 2);
+    //        let instances = app.world.instance_manager.get_registered_instances();
+    //        assert_eq!(instances.len(), 2);
 
-            let joint_alloc_table = app.renderer.get_joint_arena().get_instance_table();
-            assert_eq!(joint_alloc_table.len(), 2);
+    //        let joint_alloc_table = app.renderer.get_joint_arena().get_instance_table();
+    //        assert_eq!(joint_alloc_table.len(), 2);
 
-            use cgmath::SquareMatrix;
+    //        use cgmath::SquareMatrix;
 
-            app.world.add_instances(
-                SceneId(0),
-                vec![
-                    (
-                        EntityHandle(0),
-                        Box::new(APosition {
-                            position: cgmath::Matrix4::<f32>::identity().into(),
-                        }),
-                    )
-                        .into(),
-                ],
-            );
+    //        app.world.add_instances(
+    //            SceneId(0),
+    //            vec![
+    //                (
+    //                    EntityHandle(0),
+    //                    Box::new(APosition {
+    //                        position: cgmath::Matrix4::<f32>::identity().into(),
+    //                    }),
+    //                )
+    //                    .into(),
+    //            ],
+    //        );
 
-            run_frame_unchecked(&mut app);
+    //        run_frame_unchecked(&mut app);
 
-            assert_eq!(
-                app.world.instance_manager.get_registered_instances().len(),
-                3
-            );
-            for i in app.world.instance_manager.get_registered_instances().iter() {
-                println!("{:?}  {:?}", i.0, i.1);
-            }
+    //        assert_eq!(
+    //            app.world.instance_manager.get_registered_instances().len(),
+    //            3
+    //        );
+    //        for i in app.world.instance_manager.get_registered_instances().iter() {
+    //            println!("{:?}  {:?}", i.0, i.1);
+    //        }
 
-            let gpu_handle = app
-                .world
-                .instance_manager
-                .get_registered_instances()
-                .get(&InstanceHandle {
-                    archetype: ArchetypeId::Position,
-                    instance_id: 1,
-                    generation: 1,
-                    entity_handle: EntityHandle(0),
-                })
-                .unwrap();
+    //        let gpu_handle = app
+    //            .world
+    //            .instance_manager
+    //            .get_registered_instances()
+    //            .get(&InstanceHandle {
+    //                archetype: ArchetypeId::Position,
+    //                instance_id: 1,
+    //                generation: 1,
+    //                entity_handle: EntityHandle(0),
+    //            })
+    //            .unwrap();
 
-            assert_eq!(
-                buf_offset_1,
-                app.renderer.get_joint_arena().buffer_offset_of(*gpu_handle)
-            );
-            panic!()
-        })
-    }
+    //        assert_eq!(
+    //            buf_offset_1,
+    //            app.renderer.get_joint_arena().buffer_offset_of(*gpu_handle)
+    //        );
+    //        panic!()
+    //    })
+    //}
 }

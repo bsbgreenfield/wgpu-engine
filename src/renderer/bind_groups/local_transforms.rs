@@ -3,12 +3,11 @@ use std::num::NonZero;
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
-        GPUInstanceHandle, InstanceUploadJob,
+        AllocationTableError, GPUInstanceHandle, InstanceUploadJob,
         bind_groups::BindGroupProvider,
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, VertexArenaError,
-            gpu_arena::GPUArena,
-            instance_arena::{InstanceAllocationResult, SharedInstanceArena},
+            gpu_arena::{GPUArena, InstanceAllocationResult},
         },
     },
     util::types::{LocalTransform, Mat4F32},
@@ -53,22 +52,19 @@ impl LocalTransformBindGroup {
 
     pub(in crate::renderer) fn register_shared_binding(
         &mut self,
-        slot_index: usize,
         new_handle: &GPUInstanceHandle,
-    ) -> Result<InstanceAllocationResult, VertexArenaError> {
-        self.lt_arena
-            .register_shared_binding(slot_index, new_handle)
+    ) -> Result<InstanceAllocationResult, AllocationTableError> {
+        self.lt_arena.register_shared_binding(new_handle)
     }
 
     pub(in crate::renderer) fn register_copy_binding(
         &mut self,
-        slot_index: usize,
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
-    ) -> Result<InstanceAllocationResult, VertexArenaError> {
+    ) -> Result<InstanceAllocationResult, AllocationTableError> {
         self.lt_arena
-            .register_copy_binding(slot_index, new_handle, queue, device)
+            .register_copy_binding(new_handle, queue, device)
     }
 }
 

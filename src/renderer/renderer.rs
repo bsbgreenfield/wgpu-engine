@@ -126,14 +126,6 @@ impl Renderer {
     pub(crate) fn get_joint_arena(&self) -> &GPUArena<JointTransform> {
         &self.bind_groups.skinning.get_joint_arena()
     }
-    #[cfg(test)]
-    pub(crate) fn get_prototype_count(&self) -> usize {
-        self.bind_groups.get_prototype_count()
-    }
-    #[cfg(test)]
-    pub(crate) fn get_prototype_ref_count(&self, handle: &PrototypeHandle) -> Option<usize> {
-        self.bind_groups.get_prototype_ref_count(handle)
-    }
 
     #[allow(unused)]
     #[cfg(test)]
@@ -200,12 +192,6 @@ impl Renderer {
         self.bind_groups.gen_gpu_instance_handle(prototype)
     }
 
-    pub(super) fn add_prototype(&mut self, prototype: PrototypeHandle) {
-        self.bind_groups.add_prototype(prototype);
-    }
-    pub(super) fn add_prototype_instance(&mut self, prototype: &PrototypeHandle) {
-        self.bind_groups.add_prototype_instance(prototype);
-    }
     pub(crate) fn update(
         &mut self,
         constants: Vec<RenderConstant>,
