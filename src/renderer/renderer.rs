@@ -85,9 +85,9 @@ impl VertexArenaCollection {
     }
 
     fn unload(&mut self, alloc_handle: GPUAllocationHandle) -> Result<(), VertexArenaError> {
-        self.index_arena.remove(&alloc_handle)?;
-        self.static_arena.remove(&alloc_handle)?;
-        self.skinned_arena.remove(&alloc_handle)?;
+        self.index_arena.dealloc(&alloc_handle)?;
+        self.static_arena.dealloc(&alloc_handle)?;
+        self.skinned_arena.dealloc(&alloc_handle)?;
         Ok(())
     }
 }

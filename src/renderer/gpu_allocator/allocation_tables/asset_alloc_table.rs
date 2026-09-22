@@ -1,6 +1,6 @@
-use crate::renderer::{
-    GPUAllocationHandle,
-    gpu_allocator::allocation_tables::{AllocationSlot, AllocationTableError, TAllocationTable},
+use crate::renderer::gpu_allocator::{
+    GPUUploadResult::VertexDataUploadSuccess,
+    allocation_tables::{AllocationSlot, AllocationTableError, TAllocationTable},
 };
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
@@ -34,6 +34,7 @@ impl AllocationSlot for AssetAllocationMeta {
         }
     }
 }
+#[derive(Default)]
 pub(in crate::renderer) struct SingleAlocationTable<H: Eq + Hash + Clone + Debug> {
     table: HashMap<H, AssetAllocationMeta>,
 }
@@ -50,8 +51,15 @@ impl<H: Eq + Hash + Clone + Debug> TAllocationTable for SingleAlocationTable<H> 
         self.table.get(handle).cloned()
     }
 
-    fn dealloc(&mut self, handle: &Self::Handle) -> Result<Self::MetaData, AllocationTableError> {
-        todo!()
+    fn dealloc(
+        &mut self,
+        handle: &Self::Handle,
+    ) -> Result<Option<Self::MetaData>, AllocationTableError> {
+        Ok(Some(
+            self.table
+                .remove(handle)
+                .ok_or(AllocationTableError::AllocationNotFound)?,
+        ))
     }
 
     #[cfg(test)]

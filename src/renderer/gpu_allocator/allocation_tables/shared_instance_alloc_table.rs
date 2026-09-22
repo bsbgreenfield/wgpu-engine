@@ -11,9 +11,9 @@ pub(in crate::renderer::gpu_allocator) trait InstanceAllocationTable:
     TAllocationTable<Handle = GPUInstanceHandle>
 {
     fn get_prototype_meta(&self, handle: &GPUInstanceHandle) -> (usize, usize);
-    fn release(
+    fn release_prototype(
         &mut self,
-        handle: &GPUInstanceHandle,
+        handle: &PrototypeHandle,
     ) -> Result<Option<Self::MetaData>, AllocationTableError>;
 }
 
@@ -22,13 +22,21 @@ pub(in crate::renderer) struct SharedInstanceAllocTable {
     meta: Vec<SharedInstanceAllocationSlot>,
     table: HashMap<GPUInstanceHandle, usize>,
     prototype_registry: HashMap<PrototypeHandle, usize>,
+    free_list: Vec<usize>,
 }
 impl InstanceAllocationTable for SharedInstanceAllocTable {
-    fn release(
+    fn release_prototype(
         &mut self,
-        handle: &GPUInstanceHandle,
+        handle: &PrototypeHandle,
     ) -> Result<Option<Self::MetaData>, AllocationTableError> {
-        todo!()
+        let meta_slot = self
+            .prototype_registry
+            .remove(handle)
+            .ok_or(AllocationTableError::AllocationNotFound)?;
+        self.free_list.push(meta_slot);
+        Ok(Some(
+            self.meta.get(meta_slot).expect("cant find slot").clone(),
+        ))
     }
 
     fn get_prototype_meta(&self, handle: &GPUInstanceHandle) -> (usize, usize) {
@@ -114,8 +122,25 @@ impl TAllocationTable for SharedInstanceAllocTable {
             .map(|idx| self.meta.get(*idx).cloned().unwrap())
     }
 
-    fn dealloc(&mut self, handle: &Self::Handle) -> Result<Self::MetaData, AllocationTableError> {
-        todo!()
+    fn dealloc(
+        &mut self,
+        handle: &Self::Handle,
+    ) -> Result<Option<Self::MetaData>, AllocationTableError> {
+        let meta_idx = self
+            .table
+            .get(handle)
+            .ok_or(AllocationTableError::AllocationNotFound)?;
+        match self.meta.get(*meta_idx).expect("meta index not available") {
+            SharedInstanceAllocationSlot::Prototype { slot: _ } => Ok(None),
+            SharedInstanceAllocationSlot::Shared => unreachable!(),
+            SharedInstanceAllocationSlot::Copied { slot } => {
+                self.free_list.push(*meta_idx);
+                self.table.remove(handle);
+                Ok(Some(SharedInstanceAllocationSlot::Copied {
+                    slot: slot.clone(),
+                }))
+            }
+        }
     }
 
     #[cfg(test)]

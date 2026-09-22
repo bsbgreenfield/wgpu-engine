@@ -57,7 +57,7 @@ impl TAllocationTable for TextureAllocTable {
     fn dealloc(
         &mut self,
         handle: &Self::Handle,
-    ) -> Result<Self::MetaData, crate::renderer::AllocationTableError> {
+    ) -> Result<Option<Self::MetaData>, crate::renderer::AllocationTableError> {
         todo!()
     }
 

@@ -8,7 +8,7 @@ use bytemuck::Pod;
 
 use crate::renderer::RenderConstant::DataRef;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
-use crate::renderer::gpu_allocator::{GPUUploadJob, GPUUploadResult};
+use crate::renderer::gpu_allocator::{FreeListAllocError, GPUUploadJob, GPUUploadResult};
 use crate::world::InstanceResidency;
 use crate::{
     renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
@@ -497,6 +497,8 @@ impl Error for RenderError {}
 pub enum AllocationTableError {
     AllocationNotFound,
     MaxAllocationReached,
+    ProtoypeDeallocation,
+    DeallocationFailed(FreeListAllocError),
 }
 impl std::fmt::Display for AllocationTableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

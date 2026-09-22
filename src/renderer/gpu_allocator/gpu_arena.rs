@@ -1,6 +1,7 @@
 use crate::{
     renderer::{
         AllocationTableError, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob,
+        PrototypeHandle,
         gpu_allocator::{
             CHUNK_SIZE, GPUAllocator, GPUChunk, GPUUploadJob, GPUUploadResult, GPUUploadable,
             TAllocationTable, UploadIndexJob, UploadMaterialJob, UploadMeshJob, VertexArenaError,
@@ -14,8 +15,8 @@ use crate::{
         },
     },
     util::types::{
-        GPUMaterialData, GlobalTransform, InstanceOffset, InstanceRecordData, InverseBindMatrix,
-        JointTransform, LocalTransform, ModelVertex, PNUJWVertex, PNUVertex, VIndex,
+        GPUMaterialData, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
+        ModelVertex, PNUJWVertex, PNUVertex, VIndex,
     },
 };
 
@@ -97,6 +98,23 @@ pub(crate) struct InstanceAllocationResult {
     pub chunk_index: u32,
 }
 impl<T: SharedInstanceData> GPUArena<T> {
+    pub fn remove_prototype_binding(
+        &mut self,
+        prototype: &PrototypeHandle,
+    ) -> Result<(), VertexArenaError> {
+        if let Some(meta) = self
+            .alloc_table
+            .release_prototype(prototype)
+            .map_err(|_| VertexArenaError::AllocationSlotNotFound)?
+        {
+            self.chunks[meta.chunk()]
+                .allocator
+                .dealloc(meta.node())
+                .map_err(|e| VertexArenaError::DeallocError)?;
+        }
+
+        Ok(())
+    }
     pub fn register_shared_binding(
         &mut self,
         new_handle: &GPUInstanceHandle,
@@ -527,25 +545,20 @@ impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
         (range, &self.chunks[meta.chunk()].buffer)
     }
 
-    fn remove(
-        &mut self,
-        handle: &<T as GPUUploadable>::GPUHandle,
-    ) -> Result<(), Self::AllocationError> {
-        todo!()
-        //match self.alloc_table.remove(handle)? {
-        //    Some(meta) => {
-        //        self.chunks[meta.chunk_id].allocator.dealloc(meta.node_id)?;
-        //    }
-        //    None => todo!(),
-        //}
-        //Ok(())
-    }
-
     fn dealloc(
         &mut self,
         handle: &<T as GPUUploadable>::GPUHandle,
     ) -> Result<(), Self::AllocationError> {
-        todo!()
-        //self.alloc_table.dealloc(handle)
+        if let Some(meta) = self
+            .alloc_table
+            .dealloc(handle)
+            .map_err(|_| VertexArenaError::AllocationSlotNotFound)?
+        {
+            self.chunks[meta.chunk()]
+                .allocator
+                .dealloc(meta.node())
+                .map_err(|e| VertexArenaError::DeallocError)?;
+        }
+        Ok(())
     }
 }

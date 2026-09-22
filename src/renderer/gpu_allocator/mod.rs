@@ -8,6 +8,7 @@ use std::error::Error;
 
 use crate::renderer::GPUAllocationHandle;
 use crate::renderer::GPUInstanceHandle;
+use crate::renderer::PrototypeHandle;
 use crate::renderer::TexDim;
 use crate::renderer::gpu_allocator::allocation_tables::StorageData;
 use crate::renderer::gpu_allocator::allocation_tables::TAllocationTable;
@@ -95,6 +96,7 @@ pub(crate) enum GPUUploadResult {
     MaterialUploadSucess,
     TextureUploadSuccess,
 }
+
 pub(super) trait GPUAllocator<T: GPUUploadable> {
     type AllocationError: Error;
 
@@ -106,8 +108,6 @@ pub(super) trait GPUAllocator<T: GPUUploadable> {
     ) -> Result<GPUUploadResult, Self::AllocationError>;
 
     fn resolve(&self, handle: &T::GPUHandle) -> (Range<u32>, &wgpu::Buffer);
-
-    fn remove(&mut self, handle: &T::GPUHandle) -> Result<(), Self::AllocationError>;
 
     fn new() -> Self;
 
@@ -139,6 +139,7 @@ impl Display for FreeListAllocError {
 
 #[derive(Debug)]
 pub(crate) enum VertexArenaError {
+    DeallocError,
     DataTooLarge(u32, String, u32),
     FreeListError(FreeListAllocError),
     HandleNotFound {
@@ -179,6 +180,7 @@ impl Display for VertexArenaError {
             }
             Self::AllocationSlotNotFound => f.write_str("alloc slot not found"),
             Self::MetadataNotFound => f.write_str("No metadaat found at the slot"),
+            Self::DeallocError => f.write_str("dealloc failure"),
         }
     }
 }

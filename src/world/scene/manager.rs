@@ -77,14 +77,13 @@ impl SceneManager {
         let Some(instance) = self.inflight_despawns.remove(&gpu_handle) else {
             return;
         };
-        self.dependency_graph.ack_despawn(instance);
-        //for free_asset in self.dependency_graph.ack_despawn(instance) {
-        //    self.asset_release_queue.remove(&free_asset);
-        //    self.asset_requests.insert(
-        //        free_asset,
-        //        self.dependency_graph.required_asset_level(&free_asset),
-        //    );
-        //}
+        for free_asset in self.dependency_graph.ack_despawn(instance) {
+            self.asset_release_queue.remove(&free_asset);
+            self.asset_requests.insert(
+                free_asset,
+                self.dependency_graph.required_asset_level(&free_asset),
+            );
+        }
     }
 
     pub fn asset_requests<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
@@ -179,17 +178,17 @@ impl SceneManager {
                 ready.push(scene_id);
             }
         } else if level < previous {
-            // for asset in assets {
-            //     let required = dependency_graph.required_asset_level(&asset);
+            for asset in assets {
+                let required = dependency_graph.required_asset_level(&asset);
 
-            //     let residency = asset_manager
-            //         .res_level_of(&asset)
-            //         .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
-            //
-            //     if SceneLoadLevel::from(&residency) > required {
-            //         self.asset_release_queue.insert(asset);
-            //     }
-            // }
+                let residency = asset_manager
+                    .res_level_of(&asset)
+                    .map_err(|_| SceneManagerError::LoadLevelUpdateError)?;
+
+                if SceneLoadLevel::from(&residency) > required {
+                    self.asset_release_queue.insert(asset);
+                }
+            }
             pending[scene_id.0] = 0;
 
             let runtime = &mut scenes[scene_id.0].runtime;
