@@ -80,9 +80,6 @@ impl AssetManager {
         AssetHandle(self.registered_assets.len() as u32)
     }
 
-    pub(super) fn get_registered_path(&self, path: &PathBuf) -> Option<&AssetHandle> {
-        self.path_registry.get(path)
-    }
     pub(crate) fn res_level_of(
         &self,
         asset_handle: &AssetHandle,
@@ -105,7 +102,7 @@ impl AssetManager {
                 .get(new_index)
                 .expect("swap remove failed?");
             match self.registered_assets.get_mut(&stale.0).unwrap() {
-                RegisteredAsset::Unloaded { data, _t } => {}
+                RegisteredAsset::Unloaded { data: _, _t } => {}
                 RegisteredAsset::Loaded { residency, .. } => {
                     residency.update_la_idx(new_index);
                 }
@@ -451,7 +448,7 @@ pub(super) mod asset_mocks {
         fn get_upload_job(
             &self,
             asset_handle: crate::asset_manager::AssetHandle,
-            asset_manager: &AssetManager,
+            _asset_manager: &AssetManager,
         ) -> Result<crate::app::GPUAssetUploadJob, crate::asset_manager::AssetLoadError> {
             Ok(GPUAssetUploadJob::ModelData {
                 asset_handle,

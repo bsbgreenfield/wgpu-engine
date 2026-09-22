@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::range::Range;
 use std::sync::Arc;
 
@@ -7,7 +6,6 @@ use crate::animation::{
     AnimationChannels, AnimationSampler, AnimationTransformType, AnimationTransforms,
     InterpolationType,
 };
-use crate::asset_manager::asset_manager::AssetManager;
 use crate::asset_manager::gltf_asset::mesh::{
     copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
 };
@@ -291,12 +289,12 @@ fn get_materials(
         let gltf_texture: Option<GltfTexture> = if let Some(texture) = pbr_data.base_color_texture()
         {
             match texture.texture().source().source() {
-                gltf::image::Source::View { view, mime_type } => {
+                gltf::image::Source::View { .. } => {
                     let image = texture::decode_embedded(gltf, bin, texture.texture().index())
                         .expect("image load fail");
                     Some(GltfTexture::Embedded(Arc::new(image)))
                 }
-                gltf::image::Source::Uri { uri, mime_type } => Some(GltfTexture::External(
+                gltf::image::Source::Uri { .. } => Some(GltfTexture::External(
                     external_textures[texture.texture().index()]
                     .expect("index of the texture should correspond to the correct texture in the asset data"),
                 )),
@@ -305,7 +303,6 @@ fn get_materials(
             None
         };
         materials.push(GltfMaterial {
-            label: material.name().map(|n| n.to_string()),
             pbr_metallic_roughness: PBRMetallicRoughness {
                 roughness: pbr_data.roughness_factor(),
                 metallicness: pbr_data.metallic_factor(),

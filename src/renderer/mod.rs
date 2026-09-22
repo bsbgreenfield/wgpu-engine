@@ -207,7 +207,6 @@ impl InstanceBindKey {
 pub(crate) enum RenderUpdateDelta {
     AssetUnloaded {
         key: u64,
-        alloc_handle: GPUAllocationHandle,
     },
     AssetGPULoaded {
         key: u64,
@@ -252,7 +251,7 @@ bitflags! {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct GPUAllocationHandle {
+pub struct GPUAllocationHandle {
     global_allocation_id: u32,
     alloc_mask: AllocationMask,
 }

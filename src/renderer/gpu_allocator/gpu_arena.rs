@@ -101,8 +101,6 @@ impl<T: SharedInstanceData> GPUArena<T> {
         &mut self,
         prototype: &PrototypeHandle,
     ) -> Result<(), VertexArenaError> {
-        println!("realease {}", T::LABEL);
-
         if let Some(meta) = self.alloc_table.release_prototype(prototype).unwrap() {
             self.chunks[meta.chunk()]
                 .allocator

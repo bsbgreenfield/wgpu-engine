@@ -415,6 +415,62 @@ impl Scene {
         Ok(())
     }
 
+    pub fn shared_foxes(
+        world: &mut crate::world::world::World,
+    ) -> Result<(), crate::world::WorldInitError> {
+        let fox_asset = world.register_asset::<GltfAsset>("fox")?;
+        let fox_entity = world.entity_manager.new_entity()?;
+        let mcc = MeshCollectionDescriptor::new(fox_asset.clone().into(), ComponentAccessor::All)
+            .with_animation(AnimationComponentDescriptor::Embedded {
+                accessor: ComponentAccessor::All,
+                rigid_animation_mode: AnimationMode::Shared,
+                skinned_animation_mode: AnimationMode::Shared,
+            })
+            .with_material(MaterialComponentDescriptor::Embedded);
+
+        world
+            .entity_manager
+            .add_mesh_collection_for_entity(&fox_entity, mcc); // mesh
+
+        let id = SceneBuilder::new().add_entity(fox_entity).create(world)?;
+        world.add_instances(
+            id,
+            vec![
+                (
+                    EntityHandle(0),
+                    Box::new(APosition {
+                        position: cgmath::Matrix4::<f32>::from_scale(0.05).into(),
+                    }),
+                )
+                    .into(),
+                (
+                    EntityHandle(0),
+                    Box::new(APosition {
+                        position: (cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(
+                            3., 0., 0.,
+                        )) * cgmath::Matrix4::<f32>::from_scale(0.05))
+                        .into(),
+                    }),
+                )
+                    .into(),
+                (
+                    EntityHandle(0),
+                    Box::new(APosition {
+                        position: (cgmath::Matrix4::<f32>::from_translation(cgmath::vec3(
+                            -3., 0., 0.,
+                        )) * cgmath::Matrix4::<f32>::from_scale(0.05))
+                        .into(),
+                    }),
+                )
+                    .into(),
+            ],
+        )?;
+
+        world
+            .scene_manager
+            .set_load_level(id, SceneLoadLevel::GPU, &world.asset_manager)?;
+        Ok(())
+    }
     pub fn independant_foxes(
         world: &mut crate::world::world::World,
     ) -> Result<(), crate::world::WorldInitError> {

@@ -1,8 +1,6 @@
 use std::fmt::Debug;
 use std::range::Range;
 
-use cgmath::vec3;
-
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetHandle, AssetLoadError, AssetSource, asset_manager::AssetManager},
@@ -352,10 +350,7 @@ impl World {
                         )
                         .expect("Asset not found");
                 }
-                RenderUpdateDelta::AssetUnloaded {
-                    alloc_handle: _,
-                    key,
-                } => {
+                RenderUpdateDelta::AssetUnloaded { key } => {
                     let asset_handle = AssetHandle::from_key(key);
                     self.asset_manager
                         .register_asset_gpu_unloaded(asset_handle)?;

@@ -336,6 +336,7 @@ pub(super) fn copy_binary_data_from_gltf(
 
     Ok(copy_dest)
 }
+#[allow(unused)]
 pub fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use base64::prelude::BASE64_STANDARD;
     // Uses standard lib base64 via experimental feature or stable crate if you choose

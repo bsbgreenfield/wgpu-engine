@@ -45,7 +45,7 @@ pub(super) fn decode_embedded(
     let texture = gltf.textures().nth(idx).ok_or(GltfLoadError::BadFile(
         "cannot find texture on the gltf file".to_string(),
     ))?;
-    let gltf::image::Source::View { view, mime_type } = texture.source().source() else {
+    let gltf::image::Source::View { view, mime_type: _ } = texture.source().source() else {
         panic!("texture source does not align with textures in gltf file");
     };
 
@@ -64,7 +64,7 @@ pub struct TextureAsset {
 impl ProvidesTextureData for TextureAsset {
     fn texture_data(
         &self,
-        texture_accessor: &crate::world::entity_manager::components::ComponentAccessor,
+        _texture_accessor: &crate::world::entity_manager::components::ComponentAccessor,
     ) -> DynamicImage {
         self.data.take().unwrap()
     }
@@ -86,7 +86,7 @@ impl Asset for TextureAsset {
     fn get_upload_job(
         &self,
         asset_handle: super::AssetHandle,
-        asset_manager: &AssetManager,
+        _asset_manager: &AssetManager,
     ) -> Result<crate::app::GPUAssetUploadJob, super::AssetLoadError> {
         let image = self.data.take().unwrap();
 

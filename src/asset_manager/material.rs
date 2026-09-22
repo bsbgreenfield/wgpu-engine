@@ -54,29 +54,12 @@ impl From<&GltfMaterial> for MaterialAsset {
 }
 
 impl ProvidesMaterialData for MaterialAsset {
-    fn material_palette<'a>(&self, material_accessor: &'a ComponentAccessor) -> Vec<u32> {
+    fn material_palette<'a>(&self, _material_accessor: &'a ComponentAccessor) -> Vec<u32> {
         todo!()
     }
 }
+#[allow(unused)]
 impl Asset for MaterialAsset {
-    // fn intern_payload(&self, job: &mut GPUAssetUploadJob) -> () {
-    //     match job {
-    //         GPUAssetUploadJob::ModelData {
-    //             embedded_materials, ..
-    //         } => {
-    //             if let Some(material_payloads) = embedded_materials {
-    //                 material_payloads.push(self.clone());
-    //             } else {
-    //                 embedded_materials.insert(vec![self.clone()]);
-    //             }
-    //         }
-    //         GPUAssetUploadJob::MaterialData {
-    //             asset_handle,
-    //             material_data,
-    //         } => todo!(),
-    //         GPUAssetUploadJob::TextureData { .. } => todo!(),
-    //     }
-    // }
     fn get_upload_job(
         &self,
         asset_handle: super::AssetHandle,

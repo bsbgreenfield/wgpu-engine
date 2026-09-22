@@ -403,10 +403,7 @@ impl<'frame> Renderer {
                         let gpu_alloc_handle =
                             GPUAllocationHandle::from_key(gpu_alloc_handle_key.unwrap_key());
                         self.unload_asset(gpu_alloc_handle.clone())?;
-                        res.push(RenderUpdateDelta::AssetUnloaded {
-                            key: asset_key,
-                            alloc_handle: gpu_alloc_handle,
-                        })
+                        res.push(RenderUpdateDelta::AssetUnloaded { key: asset_key })
                     }
                 },
                 Instruction::Byte(_byte) => {}

@@ -187,10 +187,6 @@ pub enum GltfTexture {
     Embedded(Arc<DynamicImage>),
 }
 
-struct TexturePixels<const IMAGE_SIZE: usize> {
-    pixels: [u8; IMAGE_SIZE],
-}
-
 #[derive(Debug, Clone)]
 pub struct PBRMetallicRoughness {
     pub roughness: f32,
@@ -202,13 +198,7 @@ pub struct PBRMetallicRoughness {
 
 #[derive(Clone)]
 pub struct GltfMaterial {
-    label: Option<String>,
     pub pbr_metallic_roughness: PBRMetallicRoughness,
-}
-
-struct MaterialPalette {
-    textures: Arc<[GltfTexture]>,
-    materials: Arc<[GltfMaterial]>,
 }
 
 pub struct GltfAsset {

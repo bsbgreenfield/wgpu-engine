@@ -1,13 +1,11 @@
 use std::{
     error::Error,
     fs::{DirEntry, ReadDir, read_dir},
-    io::Cursor,
     path::PathBuf,
 };
 
 use base64::Engine;
 use gltf::Gltf;
-use image::DynamicImage;
 
 use crate::asset_manager::{
     BinaryData,
@@ -118,7 +116,7 @@ fn get_textures(
     let mut texture_sources = Vec::new();
     for tex in gltf_res.textures() {
         let texture_source: Result<TextureSource, GltfLoadError> = match tex.source().source() {
-            gltf::image::Source::View { view, mime_type } => match view.buffer().source() {
+            gltf::image::Source::View { view, mime_type: _ } => match view.buffer().source() {
                 gltf::buffer::Source::Bin => {
                     Ok(TextureSource::BinarySource(BinarySource::GLTFBuffers))
                 }
@@ -132,7 +130,7 @@ fn get_textures(
                     )))
                 }
             },
-            gltf::image::Source::Uri { uri, mime_type } => {
+            gltf::image::Source::Uri { uri, mime_type: _ } => {
                 // TODO: allow inline uris
                 let dir_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("res")
