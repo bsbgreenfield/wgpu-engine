@@ -1,12 +1,15 @@
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
-        AllocationTableError, GPUInstanceHandle, InstanceUploadJob, PrototypeHandle,
+        GPUInstanceHandle, InstanceUploadJob, PrototypeHandle,
         bind_groups::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
             materials::MaterialBindGroup, skinning::SkinningBindGroup,
         },
-        gpu_allocator::{GPUUploadResult, VertexArenaError, gpu_arena::InstanceAllocationResult},
+        gpu_allocator::{
+            GPUUploadResult, VertexArenaError, allocation_tables::AllocationTableError,
+            gpu_arena::InstanceAllocationResult,
+        },
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
 };

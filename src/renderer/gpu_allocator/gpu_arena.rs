@@ -1,13 +1,12 @@
 use crate::{
     renderer::{
-        AllocationMask, AllocationTableError, GPUAllocationHandle, GPUInstanceHandle,
-        InstanceUploadJob, PrototypeHandle,
+        AllocationMask, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob, PrototypeHandle,
         gpu_allocator::{
             CHUNK_SIZE, DefaultGPUValue, GPUAllocator, GPUChunk, GPUUploadJob, GPUUploadResult,
             GPUUploadable, TAllocationTable, UploadIndexJob, UploadMaterialJob, UploadMeshJob,
             VertexArenaError,
             allocation_tables::{
-                AllocationSlot, SharedInstanceData, StorageData,
+                AllocationSlot, AllocationTableError, SharedInstanceData, StorageData,
                 asset_alloc_table::{AssetAllocationMeta, SingleAlocationTable},
                 shared_instance_alloc_table::{
                     InstanceAllocationTable, SharedInstanceAllocTable, SharedInstanceAllocationSlot,
@@ -102,11 +101,9 @@ impl<T: SharedInstanceData> GPUArena<T> {
         &mut self,
         prototype: &PrototypeHandle,
     ) -> Result<(), VertexArenaError> {
-        if let Some(meta) = self
-            .alloc_table
-            .release_prototype(prototype)
-            .map_err(|_| VertexArenaError::AllocationSlotNotFound)?
-        {
+        println!("realease {}", T::LABEL);
+
+        if let Some(meta) = self.alloc_table.release_prototype(prototype).unwrap() {
             self.chunks[meta.chunk()]
                 .allocator
                 .dealloc(meta.node())

@@ -99,7 +99,7 @@ impl AssetManager {
     }
 
     fn update_registered(&mut self, new_index: usize) {
-        if self.loaded_assets.len() > 0 {
+        if self.loaded_assets.len() > 0 && new_index != self.loaded_assets.len() {
             let stale = self
                 .loaded_assets
                 .get(new_index)

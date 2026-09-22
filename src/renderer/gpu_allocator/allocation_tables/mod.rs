@@ -1,9 +1,10 @@
 #[cfg(test)]
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
 use crate::{
     renderer::{
-        AllocationTableError, GPUInstanceHandle,
+        GPUInstanceHandle,
         gpu_allocator::{
             GPUUploadable, allocation_tables::shared_instance_alloc_table::SharedInstanceAllocTable,
         },
@@ -48,6 +49,31 @@ pub trait AllocationSlot: Clone {
     fn chunk(&self) -> usize;
     fn node(&self) -> usize;
 }
+
+#[derive(Debug)]
+pub enum AllocationTableError {
+    AllocationNotFound,
+    MaxAllocationReached,
+    ProtoypeDeallocation,
+    PrototypeReleaseFailed,
+    DeallocationFailed,
+}
+impl std::fmt::Display for AllocationTableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AllocationTableError::AllocationNotFound => f.write_str("allocation not found"),
+            AllocationTableError::MaxAllocationReached => f.write_str("Max alloc reached"),
+            AllocationTableError::ProtoypeDeallocation => {
+                f.write_str("tried to dealloc a prototype slot")
+            }
+            AllocationTableError::PrototypeReleaseFailed => {
+                f.write_str("could not release prototype")
+            }
+            AllocationTableError::DeallocationFailed => f.write_str("dealloc error"),
+        }
+    }
+}
+impl std::error::Error for AllocationTableError {}
 pub trait TAllocationTable {
     type Handle: Eq + std::hash::Hash + Clone + std::fmt::Debug;
     type MetaData: AllocationSlot;

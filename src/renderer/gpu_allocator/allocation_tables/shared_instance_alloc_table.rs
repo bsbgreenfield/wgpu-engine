@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::renderer::{
-    AllocationTableError, GPUInstanceHandle, PrototypeHandle,
+    GPUInstanceHandle, PrototypeHandle,
     gpu_allocator::allocation_tables::{
-        AllocationSlot, TAllocationTable, asset_alloc_table::AssetAllocationMeta,
+        AllocationSlot, AllocationTableError, TAllocationTable,
+        asset_alloc_table::AssetAllocationMeta,
     },
 };
 
@@ -29,14 +30,16 @@ impl InstanceAllocationTable for SharedInstanceAllocTable {
         &mut self,
         handle: &PrototypeHandle,
     ) -> Result<Option<Self::MetaData>, AllocationTableError> {
-        let meta_slot = self
-            .prototype_registry
-            .remove(handle)
-            .ok_or(AllocationTableError::AllocationNotFound)?;
-        self.free_list.push(meta_slot);
-        Ok(Some(
-            self.meta.get(meta_slot).expect("cant find slot").clone(),
-        ))
+        if let Some(meta_slot) = self.prototype_registry.remove(handle) {
+            self.free_list.push(meta_slot);
+            return Ok(Some(
+                self.meta
+                    .get(meta_slot)
+                    .ok_or(AllocationTableError::AllocationNotFound)?
+                    .clone(),
+            ));
+        }
+        Ok(None)
     }
 
     fn get_prototype_meta(&self, handle: &GPUInstanceHandle) -> (usize, usize) {

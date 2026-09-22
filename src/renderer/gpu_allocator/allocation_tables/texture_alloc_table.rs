@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use crate::renderer::{
-    AllocationTableError, GPUAllocationHandle,
-    gpu_allocator::allocation_tables::{TAllocationTable, asset_alloc_table::AssetAllocationMeta},
+    GPUAllocationHandle,
+    gpu_allocator::allocation_tables::{
+        AllocationTableError, TAllocationTable, asset_alloc_table::AssetAllocationMeta,
+    },
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -95,7 +97,7 @@ impl TAllocationTable for TextureAllocTable {
     fn dealloc(
         &mut self,
         handle: &Self::Handle,
-    ) -> Result<Option<Self::MetaData>, crate::renderer::AllocationTableError> {
+    ) -> Result<Option<Self::MetaData>, AllocationTableError> {
         let alloc = &handle.asset_handle;
         let indices = self
             .table

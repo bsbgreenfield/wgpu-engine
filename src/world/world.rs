@@ -317,12 +317,9 @@ impl World {
                     self.add_instances(
                         SceneId(0),
                         vec![Spawn {
-                            entity: EntityHandle(0),
+                            entity: EntityHandle(1),
                             data: Box::new(APosition {
-                                position: cgmath::Matrix4::<f32>::from_translation(vec3(
-                                    0., 5., 0.,
-                                ))
-                                .into(),
+                                position: cgmath::Matrix4::<f32>::from_scale(0.5).into(),
                             }),
                         }],
                     )?;

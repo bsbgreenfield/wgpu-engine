@@ -15,7 +15,7 @@ use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
 use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
 use crate::util::types::ModelVertex;
 
-mod allocation_tables;
+pub(super) mod allocation_tables;
 mod free_list;
 pub(super) mod gpu_arena;
 pub(super) mod texture_arena;

@@ -32,6 +32,7 @@ impl<'chunk> FreeListNode {
 
 impl FreeListAllocator {
     pub(super) fn dealloc(&mut self, node_id: usize) -> Result<(), FreeListAllocError> {
+        println!("dealloc???");
         let merge_prev = if let Some(prev) = self.nodes[node_id].prev {
             !self.nodes[prev as usize].occupied
         } else {

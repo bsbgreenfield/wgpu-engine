@@ -5,10 +5,11 @@ use wgpu::ShaderStages;
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
-        AllocationTableError, GPUInstanceHandle, InstanceUploadJob,
+        GPUInstanceHandle, InstanceUploadJob,
         bind_groups::{BindGroupProvider, SharedInstanceBindGroup},
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, VertexArenaError,
+            allocation_tables::AllocationTableError,
             gpu_arena::{GPUArena, InstanceAllocationResult},
         },
     },

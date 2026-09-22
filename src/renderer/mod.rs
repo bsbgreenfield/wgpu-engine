@@ -7,6 +7,7 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData}
 use bytemuck::Pod;
 
 use crate::renderer::RenderConstant::DataRef;
+use crate::renderer::gpu_allocator::allocation_tables::AllocationTableError;
 use crate::world::InstanceResidency;
 use crate::{
     renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
@@ -520,21 +521,6 @@ impl Display for RenderError {
 
 impl Error for RenderUpdateError {}
 impl Error for RenderError {}
-
-#[derive(Debug)]
-pub enum AllocationTableError {
-    AllocationNotFound,
-    MaxAllocationReached,
-    ProtoypeDeallocation,
-    PrototypeReleaseFailed,
-    DeallocationFailed,
-}
-impl std::fmt::Display for AllocationTableError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("alloc table error")
-    }
-}
-impl std::error::Error for AllocationTableError {}
 
 trait VertexArenaSelector<V: ModelVertex> {
     fn upload_mesh(
