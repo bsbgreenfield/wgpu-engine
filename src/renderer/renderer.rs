@@ -1,13 +1,11 @@
 use wgpu::{CurrentSurfaceTexture, RenderPass};
 
-#[cfg(test)]
-use crate::renderer::bind_groups::skinning::SkinningBindGroup;
 use crate::{
     app::app_config::AppConfig,
     renderer::{
-        DrawPacket, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob, Instruction,
-        PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderUpdateDelta,
-        RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
+        AllocationMask, DrawPacket, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob,
+        Instruction, PrototypeHandle, RenderCategory, RenderConstant, RenderError,
+        RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
         bind_groups::BindGroupCollection,
         depth_tex::DepthTexture,
         gpu_allocator::{
@@ -83,13 +81,6 @@ impl VertexArenaCollection {
             skinned_arena: GPUArena::<PNUJWVertex>::new(),
         }
     }
-
-    fn unload(&mut self, alloc_handle: GPUAllocationHandle) -> Result<(), VertexArenaError> {
-        self.index_arena.dealloc(&alloc_handle)?;
-        self.static_arena.dealloc(&alloc_handle)?;
-        self.skinned_arena.dealloc(&alloc_handle)?;
-        Ok(())
-    }
 }
 
 impl RenderKey for GPUInstanceHandle {
@@ -122,11 +113,6 @@ pub(crate) struct Renderer {
 }
 
 impl Renderer {
-    #[cfg(test)]
-    pub(crate) fn get_joint_arena(&self) -> &GPUArena<JointTransform> {
-        &self.bind_groups.skinning.get_joint_arena()
-    }
-
     #[allow(unused)]
     #[cfg(test)]
     pub(crate) fn get_lt_buffer(&self) -> &wgpu::Buffer {
@@ -254,9 +240,36 @@ impl Renderer {
         &mut self,
         alloc_handle: GPUAllocationHandle,
     ) -> Result<(), VertexArenaError> {
-        self.vertex_arenas.unload(alloc_handle)
+        let mask = alloc_handle.alloc_mask.clone();
+        if mask.contains(AllocationMask::PNU_VERTEX) {
+            self.vertex_arenas.static_arena.dealloc(&alloc_handle)?;
+        }
+        if mask.contains(AllocationMask::PNUJW_VERTEX) {
+            self.vertex_arenas.skinned_arena.dealloc(&alloc_handle)?;
+        }
+        if mask.contains(AllocationMask::INDEX) {
+            self.vertex_arenas.index_arena.dealloc(&alloc_handle)?;
+        }
+        if mask.contains(AllocationMask::MATERIAL) {
+            self.bind_groups.material_bind_group.unload(&alloc_handle)?;
+        } else if mask.contains(AllocationMask::TEX) {
+            self.bind_groups
+                .material_bind_group
+                .unload_texture(&alloc_handle)?;
+        }
+
+        Ok(())
     }
 
+    pub(super) fn release_prototypes(
+        &mut self,
+        prototype: &PrototypeHandle,
+    ) -> Result<(), RenderUpdateError> {
+        self.bind_groups
+            .release_prototypes(prototype)
+            .map_err(|e| RenderUpdateError::GpuUploadFailure(Box::new(e)))?;
+        Ok(())
+    }
     pub(super) fn upload_texture<'frame>(
         &mut self,
         job: UploadTextureJob,

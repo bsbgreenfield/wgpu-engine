@@ -2,15 +2,11 @@
 #[cfg(test)]
 mod integration_tests {
 
-    use cgmath::InnerSpace;
+    use cgmath::{InnerSpace, vec3};
 
     use crate::{
         animation::AnimationTransformType,
-        app::{
-            app::{App, AppCommand::Spawn},
-            app_config::AppConfig,
-            app_state::AppState,
-        },
+        app::{app::App, app_config::AppConfig, app_state::AppState},
         common::{entity::EntityHandle, instance::InstanceHandle},
         renderer::{
             DrawItem, GPUInstanceHandle, Instruction, PrototypeHandle, RenderConstant,
@@ -26,7 +22,7 @@ mod integration_tests {
                 archetypes::{APosition, ArchetypeId},
                 gen_draw_calls::DrawCallGenerator,
             },
-            scene::{Scene, SceneId},
+            scene::{Scene, SceneId, SceneLoadLevel, scene::Spawn},
             world::{World, WorldUpdateDelta},
         },
     };
@@ -55,6 +51,7 @@ mod integration_tests {
         EntityInstanceSpawn,
         NewEntitySpawn,
         InstanceDespawn,
+        PrototypeRelease,
     }
 
     /// Variant-only mirrors of RenderUpdateDelta — use these to declare what the renderer should emit.
@@ -104,6 +101,9 @@ mod integration_tests {
                 ) | (
                     WorldUpdateDelta::AssetUnload { .. },
                     WorldDeltaKind::AssetUnload,
+                ) | (
+                    WorldUpdateDelta::ReleasePrototype(..),
+                    WorldDeltaKind::PrototypeRelease
                 )
             );
             assert!(matches, "expected {:?} got {:?}", expected[i], actual[i]);
@@ -812,18 +812,19 @@ mod integration_tests {
                 3,
             )
             .expect("records");
-            assert_eq!(gpu_records[0].lt_base, 0);
-            assert_eq!(gpu_records[1].lt_base, 1);
-            assert_eq!(gpu_records[2].lt_base, 2);
+            assert_eq!(gpu_records[0].lt_base, 1);
+            assert_eq!(gpu_records[1].lt_base, 2);
+            assert_eq!(gpu_records[2].lt_base, 3);
 
             let gpu_joints = crate::tests::gpu_debug::read_buffer::<Mat4F32>(
                 &app.app_config.as_ref().unwrap().device,
                 &app.app_config.as_ref().unwrap().queue,
                 app.renderer.get_joint_buffers().0,
                 0,
-                100,
+                124,
             )
             .expect("jt");
+            // prototype
             for i in 2..24 {
                 assert!(
                     LocalTransform::from(gpu_joints[i])
@@ -833,6 +834,7 @@ mod integration_tests {
                         > 0.
                 );
             }
+            // instance 1
             for i in 26..48 {
                 assert!(
                     LocalTransform::from(gpu_joints[i])
@@ -842,6 +844,7 @@ mod integration_tests {
                         > 0.
                 );
             }
+            // instance 2
             for i in 50..72 {
                 assert!(
                     LocalTransform::from(gpu_joints[i])
@@ -851,7 +854,17 @@ mod integration_tests {
                         > 0.
                 );
             }
-            for i in 72..100 {
+            //instance 3
+            for i in 74..96 {
+                assert!(
+                    LocalTransform::from(gpu_joints[i])
+                        .translation()
+                        .magnitude()
+                        > 0.
+                );
+            }
+            // nothing
+            for i in 100..124 {
                 assert!(
                     LocalTransform::from(gpu_joints[i])
                         .translation()
@@ -1414,7 +1427,37 @@ mod integration_tests {
     }
 
     #[test]
-    fn unload_single_scene() {
+    fn unload_material_scene() {
+        pollster::block_on(async {
+            use crate::asset_manager::AssetHandle;
+
+            let mut app = setup_world(TestCases::IndependantFoxes).await;
+
+            run_frame_unchecked(&mut app); // texture
+            run_frame_unchecked(&mut app); // model
+            run_frame_unchecked(&mut app); // instances
+            assert_eq!(
+                app.world.instance_manager.get_registered_instances().len(),
+                3
+            );
+
+            app.world.scene_manager.set_load_level(
+                SceneId(0),
+                SceneLoadLevel::NotLoaded,
+                &app.world.asset_manager,
+            );
+
+            println!("HERE");
+            run_frame_unchecked(&mut app); // instance despawns
+
+            let asset_unload_requests = app.world.scene_manager.asset_requests();
+            println!("{:?}", asset_unload_requests);
+            assert_eq!(asset_unload_requests.len(), 2);
+            run_frame_unchecked(&mut app); // asset unload and prototype release
+        })
+    }
+    #[test]
+    fn unload_then_reload_single_scene() {
         pollster::block_on(async {
             use crate::asset_manager::{AssetHandle, AssetResidency};
 
@@ -1449,6 +1492,26 @@ mod integration_tests {
                 &[WorldDeltaKind::InstanceDespawn],
                 &[RenderDeltaKind::InstanceDespawns],
             );
+            run_frame(
+                &mut app,
+                &[
+                    WorldDeltaKind::AssetUnload,
+                    WorldDeltaKind::PrototypeRelease,
+                ],
+                &[RenderDeltaKind::AssetUnloaded],
+            );
+
+            assert!(matches!(
+                app.world
+                    .asset_manager
+                    .res_level_of(&AssetHandle::mock(0))
+                    .unwrap_or_else(|e| panic!("{}", e)),
+                AssetResidency::CPU(..)
+            ));
+            let jobs = app.world.scene_manager.load_queue_new.get_all_jobs();
+            assert_eq!(jobs.len(), 1);
+            assert!(matches!(jobs[0].1, SceneLoadLevel::NotLoaded));
+
             run_frame(&mut app, &[], &[]);
 
             assert!(matches!(
@@ -1456,8 +1519,49 @@ mod integration_tests {
                     .asset_manager
                     .res_level_of(&AssetHandle::mock(0))
                     .unwrap_or_else(|e| panic!("{}", e)),
-                AssetResidency::GPU(..)
-            ))
+                AssetResidency::Registered
+            ));
+
+            assert_eq!(
+                app.world.instance_manager.get_registered_prototypes().len(),
+                0
+            );
+            // *********************** UNLOADING COMPLETE ***************************
+
+            app.world.add_instances(
+                SceneId(0),
+                vec![Spawn {
+                    entity: EntityHandle(0),
+                    data: Box::new(APosition {
+                        position: cgmath::Matrix4::<f32>::from_translation(vec3(0., 5., 0.)).into(),
+                    }),
+                }],
+            );
+
+            app.world.scene_manager.set_load_level(
+                SceneId(0),
+                SceneLoadLevel::GPU,
+                &app.world.asset_manager,
+            );
+
+            let reqs = app.world.scene_manager.asset_requests();
+
+            assert_eq!(reqs.len(), 1);
+            assert_eq!(
+                reqs.get(&AssetHandle::mock(0)).unwrap(),
+                &SceneLoadLevel::GPU
+            );
+
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::AssetDidLoad],
+                &[RenderDeltaKind::AssetGPULoaded],
+            );
+            run_frame(
+                &mut app,
+                &[WorldDeltaKind::NewEntitySpawn],
+                &[RenderDeltaKind::EntitySpawn],
+            );
         })
     }
 

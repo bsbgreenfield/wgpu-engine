@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::{
     renderer::{
-        AllocationTableError, GPUInstanceHandle, PrototypeHandle,
+        AllocationTableError, GPUInstanceHandle,
         gpu_allocator::{
             GPUUploadable, allocation_tables::shared_instance_alloc_table::SharedInstanceAllocTable,
         },
@@ -62,6 +62,7 @@ pub trait TAllocationTable {
         handle: &Self::Handle,
     ) -> Result<Option<Self::MetaData>, AllocationTableError>;
 
+    #[allow(unused)]
     #[cfg(test)]
     fn get_table(&self) -> HashMap<Self::Handle, usize>;
 }

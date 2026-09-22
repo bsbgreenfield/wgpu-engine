@@ -6,7 +6,7 @@ use crate::{
     common::instance::InstanceHandle,
     renderer::{
         AllocationTableError, GPUInstanceHandle, InstanceUploadJob,
-        bind_groups::BindGroupProvider,
+        bind_groups::{BindGroupProvider, SharedInstanceBindGroup},
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, VertexArenaError,
             gpu_arena::{GPUArena, InstanceAllocationResult},
@@ -22,11 +22,6 @@ pub(in crate::renderer) struct SkinningBindGroup {
 }
 
 impl SkinningBindGroup {
-    #[cfg(test)]
-    pub fn get_joint_arena(&self) -> &GPUArena<JointTransform> {
-        &self.joint_arena
-    }
-
     #[cfg(test)]
     pub(super) fn get_first_buffers(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
         (
@@ -65,31 +60,44 @@ impl SkinningBindGroup {
         Ok(jt_result)
     }
 
-    pub(in crate::renderer) fn register_shared_binding(
-        &mut self,
-        new_handle: &GPUInstanceHandle,
-    ) -> Result<(InstanceAllocationResult, InstanceAllocationResult), AllocationTableError> {
-        let jt_alloc_result = self.joint_arena.register_shared_binding(new_handle)?;
-        let imb_alloc_result = self.ibm_arena.register_shared_binding(new_handle)?;
-
-        return Ok((jt_alloc_result, imb_alloc_result));
-    }
-
-    pub(in crate::renderer) fn register_copy_binding(
-        &mut self,
-        new_handle: &GPUInstanceHandle,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> Result<(InstanceAllocationResult, InstanceAllocationResult), AllocationTableError> {
-        let jt = self
-            .joint_arena
-            .register_copy_binding(new_handle, queue, device)?;
-        let ibm = self.ibm_arena.register_shared_binding(new_handle)?;
-        return Ok((jt, ibm));
-    }
-
     pub(in crate::renderer) fn get_first_bg(&self) -> &wgpu::BindGroup {
         &self.bind_groups[0]
+    }
+}
+
+impl SharedInstanceBindGroup for SkinningBindGroup {
+    fn register_shared_binding(
+        &mut self,
+        handle: &GPUInstanceHandle,
+    ) -> Result<InstanceAllocationResult, AllocationTableError> {
+        let res = self.joint_arena.register_shared_binding(handle)?;
+        self.ibm_arena.register_shared_binding(handle)?;
+        return Ok(res);
+    }
+
+    fn register_copy_binding(
+        &mut self,
+        handle: &GPUInstanceHandle,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<InstanceAllocationResult, AllocationTableError> {
+        let res = self
+            .joint_arena
+            .register_copy_binding(handle, queue, device)?;
+        self.ibm_arena.register_shared_binding(handle)?;
+        Ok(res)
+    }
+    fn release_prototype(
+        &mut self,
+        prototype: &crate::renderer::PrototypeHandle,
+    ) -> Result<(), AllocationTableError> {
+        self.joint_arena
+            .remove_prototype_binding(prototype)
+            .map_err(|_| AllocationTableError::PrototypeReleaseFailed)?;
+        self.ibm_arena
+            .remove_prototype_binding(prototype)
+            .map_err(|_| AllocationTableError::PrototypeReleaseFailed)?;
+        Ok(())
     }
 }
 impl BindGroupProvider for SkinningBindGroup {

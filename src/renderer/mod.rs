@@ -7,11 +7,9 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData}
 use bytemuck::Pod;
 
 use crate::renderer::RenderConstant::DataRef;
-use crate::renderer::gpu_allocator::gpu_arena::GPUArena;
-use crate::renderer::gpu_allocator::{FreeListAllocError, GPUUploadJob, GPUUploadResult};
 use crate::world::InstanceResidency;
 use crate::{
-    renderer::gpu_allocator::{GPUChunk, UploadMeshJob, VertexArenaError},
+    renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
     util::types::{GlobalTransform, ModelVertex},
     world::RenderKey,
 };
@@ -198,6 +196,7 @@ impl InstanceBindKey {
         (((self.lt as u32) << 16) | self.jt as u32) as u32
     }
 
+    #[allow(unused)]
     pub fn from_u32(val: u32) -> Self {
         todo!()
     }
@@ -238,18 +237,47 @@ impl GPUInstanceHandle {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+struct AllocationMask(u32);
+
+bitflags! {
+    impl AllocationMask: u32 {
+        const PNU_VERTEX = 0b00000001;
+        const PNUJW_VERTEX = 0b00000010;
+        const INDEX = 0b00000100;
+        const TEX = 0b00001000;
+        const MATERIAL = 0b00010000;
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct GPUAllocationHandle {
     global_allocation_id: u32,
+    alloc_mask: AllocationMask,
+}
+
+impl PartialEq for GPUAllocationHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.global_allocation_id == other.global_allocation_id
+    }
+}
+
+impl Eq for GPUAllocationHandle {}
+impl Hash for GPUAllocationHandle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.global_allocation_id.hash(state);
+    }
 }
 
 impl RenderKey for GPUAllocationHandle {
     fn as_key(&self) -> u64 {
-        self.global_allocation_id as u64
+        ((self.global_allocation_id as u64) << 32) | self.alloc_mask.bits() as u64
     }
     fn from_key(key: u64) -> Self {
         Self {
-            global_allocation_id: key as u32,
+            global_allocation_id: (key >> 32) as u32,
+            alloc_mask: AllocationMask::from_bits((key & 0xFFFFFFFF) as u32)
+                .expect("should be a valid mask"),
         }
     }
 }
@@ -259,6 +287,7 @@ impl GPUAllocationHandle {
     pub(crate) fn mock(global_allocation_id: u32) -> Self {
         Self {
             global_allocation_id,
+            alloc_mask: AllocationMask::empty(),
         }
     }
 }
@@ -332,6 +361,7 @@ pub(crate) enum BufferType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Operations {
     CreatePrototype,
+    ReleasePrototype,
     AddAsset,
     SpawnEntityInstance,
     LocalTransformUpload,
@@ -374,9 +404,7 @@ impl StackValue {
     fn as_alloc(self) -> GPUAllocationHandle {
         match self {
             StackValue::Alloc(a) => a,
-            StackValue::Key(a) => GPUAllocationHandle {
-                global_allocation_id: a as u32,
-            },
+            StackValue::Key(a) => GPUAllocationHandle::from_key(a),
             _ => panic!("expected an alloc key, got {self:?}"),
         }
     }
@@ -498,7 +526,8 @@ pub enum AllocationTableError {
     AllocationNotFound,
     MaxAllocationReached,
     ProtoypeDeallocation,
-    DeallocationFailed(FreeListAllocError),
+    PrototypeReleaseFailed,
+    DeallocationFailed,
 }
 impl std::fmt::Display for AllocationTableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

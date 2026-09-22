@@ -38,18 +38,61 @@ pub struct SweepResult {
 
 struct EntityNode {
     assets: HashSet<AssetHandle>,
+    demand: Demand,
     instances: HashMap<SceneId, Vec<InstanceHandle>>,
+    live_instance_count: usize,
 }
 struct SceneNode {
     children: Vec<SceneId>,
     entities: Vec<EntityHandle>,
 }
 
-struct AssetDemand {
+struct Demand {
     cpu: usize,
     gpu: usize,
+}
+impl Demand {
+    fn apply(&mut self, prev: SceneLoadLevel, new: SceneLoadLevel) {
+        if prev == SceneLoadLevel::CPU {
+            self.cpu -= 1;
+        }
+        if prev == SceneLoadLevel::GPU {
+            self.gpu -= 1;
+        }
+        if new == SceneLoadLevel::CPU {
+            self.cpu += 1;
+        }
+        if new == SceneLoadLevel::GPU {
+            self.gpu += 1;
+        }
+    }
+
+    fn level(&self) -> SceneLoadLevel {
+        if self.gpu >= 1 {
+            return SceneLoadLevel::GPU;
+        }
+        if self.cpu >= 1 {
+            return SceneLoadLevel::CPU;
+        }
+        SceneLoadLevel::NotLoaded
+    }
+}
+
+pub struct DemandSweep {
+    pub assets: Vec<AssetHandle>,
+    pub entities: Vec<EntityHandle>,
+}
+
+pub struct DespawnAck {
+    pub freed_assets: Vec<AssetHandle>,
+    /// set when that was the last live instance of the entity
+    pub freed_entity: Option<EntityHandle>,
+}
+
+struct AssetDemand {
+    demand: Demand,
     holders: Vec<SceneId>,
-    live_instance_count: usize,
+    entities: Vec<EntityHandle>,
 }
 
 #[derive(Default)]
@@ -59,29 +102,34 @@ pub struct DependencyGraph {
     asset_demand: HashMap<AssetHandle, AssetDemand>,
 }
 
-pub struct AssetRequirement {
-    entity_handle: EntityHandle,
-    asset_handle: AssetHandle,
-}
-
 impl DependencyGraph {
-    pub fn ack_despawn(&mut self, instance_handle: InstanceHandle) -> Vec<AssetHandle> {
-        let mut free_assets = Vec::<AssetHandle>::new();
-        for asset in self.entities[instance_handle.entity_handle.0 as usize]
-            .assets
-            .iter()
-        {
-            println!("instance {:?} has been despawned", instance_handle);
-            let d = self
-                .asset_demand
-                .get_mut(asset)
-                .expect("asset is not registered");
-            d.live_instance_count -= 1;
-            if d.live_instance_count == 0 {
-                free_assets.push(*asset);
-            }
+    pub fn ack_despawn(&mut self, instance_handle: InstanceHandle) -> Option<DespawnAck> {
+        let entity = instance_handle.entity_handle;
+        let node = &mut self.entities[entity.0 as usize];
+        node.live_instance_count -= 1;
+
+        if node.live_instance_count > 0 {
+            return None;
+        } else {
+            let freed_entity = (node.demand.level() < SceneLoadLevel::GPU).then_some(entity);
+
+            let freed_assets: Vec<AssetHandle> = self.entities[entity.0 as usize]
+                .assets
+                .iter()
+                .copied()
+                .filter(|asset| {
+                    self.asset_demand[asset]
+                        .entities
+                        .iter()
+                        .all(|e| self.entities[e.0 as usize].live_instance_count == 0)
+                })
+                .collect();
+
+            Some(DespawnAck {
+                freed_assets,
+                freed_entity,
+            })
         }
-        free_assets
     }
     pub fn holders_of(&self, asset_handle: &AssetHandle) -> &[SceneId] {
         &self
@@ -90,52 +138,67 @@ impl DependencyGraph {
             .map(|d| d.holders.as_slice())
             .unwrap_or(&[])
     }
-    pub fn required_assets_of(&self, scene_id: SceneId) -> Vec<AssetHandle> {
-        let mut assets = HashSet::new();
-        for entity in self.scenes.get(&scene_id).unwrap().entities.iter() {
-            for asset in &self.entities.get(entity.0 as usize).unwrap().assets {
-                assets.insert(*asset);
-            }
-        }
-        assets.into_iter().collect()
-    }
-    pub fn recompute_asset_levels(
+    //pub fn required_assets_of(&self, scene_id: SceneId) -> Vec<AssetHandle> {
+    //    let mut assets = HashSet::new();
+    //    for entity in self.scenes.get(&scene_id).unwrap().entities.iter() {
+    //        for asset in &self.entities.get(entity.0 as usize).unwrap().assets {
+    //            assets.insert(*asset);
+    //        }
+    //    }
+    //    assets.into_iter().collect()
+    //}
+
+    pub fn recompute_levels(
         &mut self,
         scene_id: SceneId,
         prev: SceneLoadLevel,
         new: SceneLoadLevel,
-    ) -> Vec<AssetHandle> {
-        let mut assets = self.required_assets_of(scene_id);
-        if prev == new {
-            return assets;
+    ) -> DemandSweep {
+        let Self {
+            scenes,
+            entities: entity_nodes,
+            asset_demand,
+        } = self;
+
+        let scene = scenes.get(&scene_id).expect("scene");
+        let mut assets = HashSet::<AssetHandle>::new();
+        let mut entities = Vec::<EntityHandle>::with_capacity(scene.entities.len());
+
+        for entity in scene.entities.iter() {
+            let node = &mut entity_nodes[entity.0 as usize];
+            if prev != new {
+                node.demand.apply(prev, new);
+            }
+            assets.extend(node.assets.iter().copied());
+            entities.push(*entity);
         }
-        for asset in assets.iter_mut() {
-            let d = self.asset_demand.get_mut(&asset).unwrap();
-            if prev == SceneLoadLevel::CPU {
-                d.cpu -= 1;
-            }
-            if prev == SceneLoadLevel::GPU {
-                d.gpu -= 1;
-            }
-            if new == SceneLoadLevel::CPU {
-                d.cpu += 1;
-            }
-            if new == SceneLoadLevel::GPU {
-                d.gpu += 1;
+
+        let assets: Vec<AssetHandle> = assets.into_iter().collect();
+        if prev != new {
+            for asset in assets.iter() {
+                asset_demand.get_mut(asset).unwrap().demand.apply(prev, new);
             }
         }
-        assets
+
+        DemandSweep { assets, entities }
     }
 
     pub fn required_asset_level(&self, asset_handle: &AssetHandle) -> SceneLoadLevel {
-        let demand = self.asset_demand.get(asset_handle).unwrap();
-        if demand.gpu >= 1 {
-            return SceneLoadLevel::GPU;
-        }
-        if demand.cpu >= 1 {
-            return SceneLoadLevel::CPU;
-        }
-        return SceneLoadLevel::NotLoaded;
+        self.asset_demand.get(asset_handle).unwrap().demand.level()
+    }
+    pub fn required_entity_level(&self, entity_handle: &EntityHandle) -> SceneLoadLevel {
+        self.entities
+            .get(entity_handle.0 as usize)
+            .unwrap()
+            .demand
+            .level()
+    }
+
+    pub fn live_instances_of(&self, entity: &EntityHandle) -> usize {
+        self.entities
+            .get(entity.0 as usize)
+            .unwrap()
+            .live_instance_count
     }
     pub fn add_scene(
         &mut self,
@@ -156,6 +219,8 @@ impl DependencyGraph {
                     .resize_with((entity.0 + 1) as usize, || EntityNode {
                         assets: HashSet::new(),
                         instances: HashMap::new(),
+                        demand: Demand { cpu: 0, gpu: 0 },
+                        live_instance_count: 0,
                     });
             }
             self.entities[entity.0 as usize].assets =
@@ -165,12 +230,17 @@ impl DependencyGraph {
                     self.asset_demand.insert(
                         *asset,
                         AssetDemand {
-                            cpu: 0,
-                            gpu: 0,
+                            demand: Demand { cpu: 0, gpu: 0 },
                             holders: vec![],
-                            live_instance_count: 0,
+                            entities: vec![*entity],
                         },
                     );
+                } else {
+                    self.asset_demand
+                        .get_mut(asset)
+                        .unwrap()
+                        .entities
+                        .push(*entity);
                 }
             }
         }
@@ -213,12 +283,7 @@ impl DependencyGraph {
                 .entry(scene_id)
                 .and_modify(|instances| instances.push(handle.clone()))
                 .or_insert(vec![handle]);
-            for asset in entity_node.assets.iter() {
-                self.asset_demand
-                    .get_mut(asset)
-                    .unwrap()
-                    .live_instance_count += 1;
-            }
+            entity_node.live_instance_count += 1;
         }
     }
 

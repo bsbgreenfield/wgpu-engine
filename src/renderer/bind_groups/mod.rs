@@ -1,14 +1,12 @@
-use std::collections::{HashMap, HashSet};
-
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
-        BufferType, GPUInstanceHandle, InstanceUploadJob, PrototypeHandle,
+        AllocationTableError, GPUInstanceHandle, InstanceUploadJob, PrototypeHandle,
         bind_groups::{
             instance_data::InstanceDataBindGroup, local_transforms::LocalTransformBindGroup,
             materials::MaterialBindGroup, skinning::SkinningBindGroup,
         },
-        gpu_allocator::{GPUUploadResult, VertexArenaError},
+        gpu_allocator::{GPUUploadResult, VertexArenaError, gpu_arena::InstanceAllocationResult},
     },
     util::types::{InverseBindMatrix, JointTransform, LocalTransform},
 };
@@ -18,7 +16,26 @@ pub(super) mod local_transforms;
 pub(super) mod materials;
 pub(super) mod skinning;
 
+pub(super) trait SharedInstanceBindGroup {
+    fn register_shared_binding(
+        &mut self,
+        handle: &GPUInstanceHandle,
+    ) -> Result<InstanceAllocationResult, AllocationTableError>;
+    fn register_copy_binding(
+        &mut self,
+        handle: &GPUInstanceHandle,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<InstanceAllocationResult, AllocationTableError>;
+
+    fn release_prototype(
+        &mut self,
+        prototype: &PrototypeHandle,
+    ) -> Result<(), AllocationTableError>;
+}
+
 pub(super) trait BindGroupProvider {
+    #[allow(unused)]
     fn get_bind_group(&self, alloc_handle: &InstanceHandle) -> &wgpu::BindGroup;
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
     fn add_bind_group(&mut self, device: &wgpu::Device);
@@ -104,5 +121,14 @@ impl BindGroupCollection {
         self.instance_data.despawn(handle);
         self.local_transforms.despawn(handle);
         self.skinning.despawn(handle);
+    }
+
+    pub(super) fn release_prototypes(
+        &mut self,
+        prototype: &PrototypeHandle,
+    ) -> Result<(), AllocationTableError> {
+        self.local_transforms.release_prototype(prototype)?;
+        self.skinning.release_prototype(prototype)?;
+        Ok(())
     }
 }

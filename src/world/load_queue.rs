@@ -22,6 +22,13 @@ pub struct LoadQueue {
 }
 
 impl LoadQueue {
+    #[cfg(test)]
+    pub fn get_all_jobs(&self) -> Vec<(AssetHandle, SceneLoadLevel, SceneLoadLevel)> {
+        self.jobs
+            .iter()
+            .map(|j| (*j.0, j.1.target, j.1.base))
+            .collect()
+    }
     pub(super) fn add_load_job(
         &mut self,
         update: (AssetHandle, SceneLoadLevel),

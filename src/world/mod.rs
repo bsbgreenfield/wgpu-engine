@@ -127,11 +127,4 @@ impl InstanceResidency {
             bind_key: u32::MAX,
         }
     }
-    fn new(record_idx: u32, binding_key: u32, group_id: u64) -> Self {
-        Self {
-            record_index: record_idx,
-            bind_key: binding_key,
-            group_id,
-        }
-    }
 }

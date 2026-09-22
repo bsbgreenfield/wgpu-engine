@@ -8,7 +8,6 @@ use std::error::Error;
 
 use crate::renderer::GPUAllocationHandle;
 use crate::renderer::GPUInstanceHandle;
-use crate::renderer::PrototypeHandle;
 use crate::renderer::TexDim;
 use crate::renderer::gpu_allocator::allocation_tables::StorageData;
 use crate::renderer::gpu_allocator::allocation_tables::TAllocationTable;
@@ -84,6 +83,7 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
     }
 }
 
+#[allow(unused)]
 // pub(crate): return type of `GPUUploadable::upload`, which is pub(crate).
 pub(crate) enum GPUUploadResult {
     BindGroupUploadResult {
@@ -106,7 +106,6 @@ pub(super) trait GPUAllocator<T: GPUUploadable> {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, Self::AllocationError>;
-
     fn resolve(&self, handle: &T::GPUHandle) -> (Range<u32>, &wgpu::Buffer);
 
     fn new() -> Self;
@@ -137,6 +136,7 @@ impl Display for FreeListAllocError {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub(crate) enum VertexArenaError {
     DeallocError,
@@ -240,11 +240,21 @@ pub(in crate::renderer) trait GPUUploadable: Debug + bytemuck::Pod {
     fn get_chunk(device: &wgpu::Device) -> GPUChunk<Self> {
         GPUChunk::new(device, Self::CHUNK_SIZE, Self::LABEL, Self::USAGE)
     }
-    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device);
     fn upload(
         arena: &mut GPUArena<Self>,
         handle: Self::GPUHandle,
         chunk_id: usize,
         node_id: usize,
     ) -> GPUUploadResult;
+
+    fn init_with_defaults(
+        _arena: &mut GPUArena<Self>,
+        _queue: &wgpu::Queue,
+        _device: &wgpu::Device,
+    ) {
+    }
+}
+
+pub(in crate::renderer) trait DefaultGPUValue: GPUUploadable {
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device);
 }

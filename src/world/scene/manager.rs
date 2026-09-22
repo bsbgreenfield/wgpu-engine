@@ -15,7 +15,7 @@ use crate::{
         scene::{
             Scene, SceneId, SceneLoadLevel, SceneRuntime,
             builder::SceneBuilder,
-            dependency_graph::{DependencyGraph, DependencyGraphError},
+            dependency_graph::{DemandSweep, DependencyGraph, DependencyGraphError},
             scene::Spawn,
         },
     },
@@ -55,6 +55,8 @@ pub struct SceneManager {
     pub load_queue_new: LoadQueue,
     pub asset_release_queue: HashSet<AssetHandle>,
     pub inflight_despawns: HashMap<GPUInstanceHandle, InstanceHandle>,
+    pending_entity_releases: HashSet<EntityHandle>,
+    pub prototype_release_queue: Vec<EntityHandle>,
 }
 
 impl SceneManager {
@@ -70,6 +72,8 @@ impl SceneManager {
             asset_release_queue: HashSet::new(),
             load_queue_new: LoadQueue::default(),
             inflight_despawns: HashMap::new(),
+            pending_entity_releases: HashSet::new(),
+            prototype_release_queue: Vec::new(),
         }
     }
 
@@ -77,16 +81,30 @@ impl SceneManager {
         let Some(instance) = self.inflight_despawns.remove(&gpu_handle) else {
             return;
         };
-        for free_asset in self.dependency_graph.ack_despawn(instance) {
-            self.asset_release_queue.remove(&free_asset);
-            self.asset_requests.insert(
-                free_asset,
-                self.dependency_graph.required_asset_level(&free_asset),
-            );
+        if let Some(ack) = self.dependency_graph.ack_despawn(instance) {
+            for free_asset in ack.freed_assets {
+                self.asset_release_queue.remove(&free_asset);
+                self.asset_requests.insert(
+                    free_asset,
+                    self.dependency_graph.required_asset_level(&free_asset),
+                );
+            }
+            if let Some(entity) = ack.freed_entity {
+                if self.pending_entity_releases.remove(&entity) {
+                    self.prototype_release_queue.push(entity);
+                }
+            }
         }
     }
 
-    pub fn asset_requests<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
+    #[cfg(test)]
+    pub fn asset_requests<'frame>(
+        &'frame mut self,
+    ) -> &'frame HashMap<AssetHandle, SceneLoadLevel> {
+        &self.asset_requests
+    }
+
+    pub fn drain_asset_requests<'frame>(&'frame mut self) -> Vec<(AssetHandle, SceneLoadLevel)> {
         self.asset_requests.drain().collect()
     }
     pub fn process_scene_events(&mut self) -> Result<(), SceneManagerError> {
@@ -157,8 +175,13 @@ impl SceneManager {
         }
         scene.runtime.requested_level = level;
 
-        let assets = dependency_graph.recompute_asset_levels(scene_id, previous, level);
+        let DemandSweep { assets, entities } =
+            dependency_graph.recompute_levels(scene_id, previous, level);
         if level > previous {
+            // TODO: is this safe?
+            for entity in entities {
+                self.pending_entity_releases.remove(&entity);
+            }
             // raising one holder can only raise each asset's max, so no other
             // scene's request needs consulting
             let mut count = 0;
@@ -187,6 +210,16 @@ impl SceneManager {
 
                 if SceneLoadLevel::from(&residency) > required {
                     self.asset_release_queue.insert(asset);
+                }
+            }
+            for entity in entities {
+                if dependency_graph.required_entity_level(&entity) >= SceneLoadLevel::GPU {
+                    continue;
+                }
+                if dependency_graph.live_instances_of(&entity) == 0 {
+                    self.prototype_release_queue.push(entity);
+                } else {
+                    self.pending_entity_releases.insert(entity);
                 }
             }
             pending[scene_id.0] = 0;

@@ -1,6 +1,5 @@
-use crate::renderer::gpu_allocator::{
-    GPUUploadResult::VertexDataUploadSuccess,
-    allocation_tables::{AllocationSlot, AllocationTableError, TAllocationTable},
+use crate::renderer::gpu_allocator::allocation_tables::{
+    AllocationSlot, AllocationTableError, TAllocationTable,
 };
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
@@ -8,14 +7,6 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash};
 pub struct AssetAllocationMeta {
     chunk_id: u32,
     node_id: u32,
-}
-impl AssetAllocationMeta {
-    pub(super) fn new(chunk: usize, node: usize) -> Self {
-        Self {
-            chunk_id: chunk as u32,
-            node_id: node as u32,
-        }
-    }
 }
 
 impl AllocationSlot for AssetAllocationMeta {

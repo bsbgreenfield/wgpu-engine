@@ -4,7 +4,7 @@ use crate::{
     common::instance::InstanceHandle,
     renderer::{
         AllocationTableError, GPUInstanceHandle, InstanceUploadJob,
-        bind_groups::BindGroupProvider,
+        bind_groups::{BindGroupProvider, SharedInstanceBindGroup},
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, VertexArenaError,
             gpu_arena::{GPUArena, InstanceAllocationResult},
@@ -49,22 +49,32 @@ impl LocalTransformBindGroup {
         }
         upload_result
     }
+}
 
-    pub(in crate::renderer) fn register_shared_binding(
+impl SharedInstanceBindGroup for LocalTransformBindGroup {
+    fn register_shared_binding(
         &mut self,
-        new_handle: &GPUInstanceHandle,
+        handle: &GPUInstanceHandle,
     ) -> Result<InstanceAllocationResult, AllocationTableError> {
-        self.lt_arena.register_shared_binding(new_handle)
+        self.lt_arena.register_shared_binding(handle)
     }
 
-    pub(in crate::renderer) fn register_copy_binding(
+    fn register_copy_binding(
         &mut self,
-        new_handle: &GPUInstanceHandle,
+        handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<InstanceAllocationResult, AllocationTableError> {
+        self.lt_arena.register_copy_binding(handle, queue, device)
+    }
+    fn release_prototype(
+        &mut self,
+        prototype: &crate::renderer::PrototypeHandle,
+    ) -> Result<(), AllocationTableError> {
         self.lt_arena
-            .register_copy_binding(new_handle, queue, device)
+            .remove_prototype_binding(prototype)
+            .map_err(|_| AllocationTableError::PrototypeReleaseFailed)?;
+        Ok(())
     }
 }
 

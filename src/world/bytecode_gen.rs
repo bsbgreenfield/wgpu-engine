@@ -5,7 +5,7 @@ use crate::{
     asset_manager::AssetHandle,
     renderer::{
         BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction, Operations,
-        RenderConstant, TexDim,
+        PrototypeHandle, RenderConstant, TexDim,
     },
     util::types::{GPUMaterialData, PNUJWVertex, PNUVertex, VIndex},
     world::{
@@ -60,10 +60,23 @@ pub trait BytecodeGenerator<'frame> {
                 WorldUpdateDelta::AssetUnload(asset_handle, alloc_handle) => {
                     Self::unload_asset(alloc_handle, asset_handle, instructions, constants)
                 }
+                WorldUpdateDelta::ReleasePrototype(prototype) => {
+                    Self::release_prototype(prototype, instructions, constants)
+                }
             }
         }
     }
 
+    fn release_prototype(
+        prototype: &PrototypeHandle,
+
+        instructions: &mut Vec<Instruction>,
+        constants: &mut Vec<RenderConstant<'frame>>,
+    ) {
+        instructions.push(Instruction::Op(Operations::ReleasePrototype));
+        constants.push(RenderConstant::Key(prototype.as_key()));
+        Self::emit_const_last(constants, instructions);
+    }
     fn unload_asset(
         alloc_handle: &GPUAllocationHandle,
         asset_handle: &AssetHandle,

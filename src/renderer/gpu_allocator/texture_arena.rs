@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
 use wgpu::TextureFormat;
 
@@ -52,7 +52,6 @@ struct TextureChunk {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     allocator: TextureAllocator,
-    dimension: u32,
 }
 
 impl TextureChunk {
@@ -81,7 +80,6 @@ impl TextureChunk {
             texture,
             view,
             allocator: TextureAllocator::new(),
-            dimension: 1,
         }
     }
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat, dimension: TexDim) -> Self {
@@ -109,7 +107,6 @@ impl TextureChunk {
             texture,
             view,
             allocator: TextureAllocator::new(),
-            dimension: dimension.as_u32(),
         }
     }
 
@@ -149,6 +146,10 @@ impl TextureChunk {
         );
         Ok(layer)
     }
+
+    fn dealloc(&mut self, layer_id: usize) {
+        self.allocator.free_layers.push(layer_id);
+    }
 }
 
 pub struct TextureArena {
@@ -168,6 +169,24 @@ impl TextureArena {
             chunks: [None, None, None, None, None],
             alloc_table: TextureAllocTable::new(),
         }
+    }
+
+    pub(in crate::renderer) fn unload(
+        &mut self,
+        alloc_handle: &GPUAllocationHandle,
+    ) -> Result<(), VertexArenaError> {
+        let meta_list = self
+            .alloc_table
+            .dealloc_all(alloc_handle)
+            .map_err(|_| VertexArenaError::DeallocError)?;
+        for meta in meta_list {
+            self.chunks[meta.chunk()]
+                .as_mut()
+                .unwrap()
+                .dealloc(meta.node());
+        }
+
+        Ok(())
     }
 
     pub(in crate::renderer) fn resolve(

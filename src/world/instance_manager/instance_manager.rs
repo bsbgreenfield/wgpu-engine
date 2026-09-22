@@ -1,7 +1,7 @@
 use crate::{
     app::app::AppCommand,
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::{GPUInstanceHandle, RenderPacket},
+    renderer::{GPUInstanceHandle, PrototypeHandle, RenderPacket},
     world::{
         WorldUpdateError,
         instance_manager::{
@@ -111,6 +111,10 @@ impl InstanceManager {
         }
         Ok(gpu_handle)
         // TODO: other tables
+    }
+
+    pub fn release_prototype(&mut self, entity: &EntityHandle) -> Option<PrototypeHandle> {
+        self.gpu_bind_registry.registered_prototypes.remove(entity)
     }
 
     pub fn prepare_render_frame<'frame>(

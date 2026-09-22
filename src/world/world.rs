@@ -8,7 +8,7 @@ use crate::{
     asset_manager::{Asset, AssetHandle, AssetLoadError, AssetSource, asset_manager::AssetManager},
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
-    util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
+    util::types::{InverseBindMatrix, JointTransform, LocalTransform},
     world::{
         RenderKey, WorldUpdateError,
         camera::Camera,
@@ -52,6 +52,7 @@ pub(crate) struct RenderView {
     pub pnu_draws: Option<DrawSet>,
 }
 
+#[allow(unused)]
 pub(crate) struct RenderGroup {
     pub entity_handle: EntityHandle,
     views: Vec<RenderView>,
@@ -142,6 +143,7 @@ pub(crate) enum WorldUpdateDelta {
     AssetDidLoad(GPUAssetUploadJob),
     AssetUnload(AssetHandle, GPUAllocationHandle),
     InstanceDespawn(GPUInstanceHandle),
+    ReleasePrototype(PrototypeHandle),
 }
 
 impl<'frame> Debug for WorldUpdateDelta {
@@ -154,6 +156,7 @@ impl<'frame> Debug for WorldUpdateDelta {
             WorldUpdateDelta::AssetUnload(_asset_handle, alloc_handle) => {
                 write!(f, "unload asset {:?}", alloc_handle)
             }
+            WorldUpdateDelta::ReleasePrototype(p) => write!(f, "release prototype {p:?}"),
         }
     }
 }
@@ -243,7 +246,7 @@ impl World {
         &'frame mut self,
         commands: &mut Vec<AppCommand>,
     ) -> Result<(), WorldUpdateError> {
-        for request in self.scene_manager.asset_requests() {
+        for request in self.scene_manager.drain_asset_requests() {
             self.scene_manager
                 .load_queue_new
                 .add_load_job(request, &self.asset_manager);
@@ -268,8 +271,21 @@ impl World {
         }
 
         self.scene_manager.process_scene_events()?;
+
+        // TODO: this a regression from the normal pattern of request -> renderer -> ack -> do
+        // the reason is because, in this case, its a bit of a reverse ack
+        // as the gpu needs to know that the instance no longer exists on the world, not the
+        // other way around, and its ok if the gpu data persists for a frame or two while
+        // the instance manager simply doesnt draw it.
+        // worth revisiting though
         for handle in std::mem::take(&mut self.scene_manager.despawn_queue) {
             self.despawn_instance(handle)?;
+        }
+        for entity in std::mem::take(&mut self.scene_manager.prototype_release_queue) {
+            if let Some(prototype) = self.instance_manager.release_prototype(&entity) {
+                self.deltas
+                    .push(WorldUpdateDelta::ReleasePrototype(prototype));
+            }
         }
 
         if !self.scene_manager.spawn_queue.is_empty() {
@@ -292,11 +308,6 @@ impl World {
                 AppCommand::Despawn => {
                     self.scene_manager.set_load_level(
                         SceneId(0),
-                        SceneLoadLevel::NotLoaded,
-                        &self.asset_manager,
-                    )?;
-                    self.scene_manager.set_load_level(
-                        SceneId(1),
                         SceneLoadLevel::NotLoaded,
                         &self.asset_manager,
                     )?;

@@ -1,10 +1,10 @@
-use std::{collections::HashMap, num::NonZero, range::Range};
+use std::{num::NonZero, range::Range};
 
 use wgpu::BufferBinding;
 
 use crate::{
     renderer::{
-        GPUAllocationHandle,
+        AllocationMask, GPUAllocationHandle,
         bind_groups::BindGroupProvider,
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, UploadMaterialJob, UploadTextureJob, VertexArenaError,
@@ -15,7 +15,6 @@ use crate::{
 };
 
 pub(in crate::renderer) struct MaterialBindGroup {
-    texture_type_map: HashMap<u32, usize>,
     bind_groups: Vec<wgpu::BindGroup>,
     samplers: Vec<wgpu::Sampler>,
     material_arena: GPUArena<GPUMaterialData>,
@@ -45,6 +44,7 @@ impl MaterialBindGroup {
         alloc_handle: &GPUAllocationHandle,
         alloc_index: usize,
     ) -> Option<(u32, u32)> {
+        println!("ALLOC: {:?}, index: {}", alloc_handle, alloc_index);
         self.texture_arena.resolve(alloc_handle, alloc_index)
     }
 
@@ -83,7 +83,19 @@ impl MaterialBindGroup {
         &mut self,
         alloc_handle: &GPUAllocationHandle,
     ) -> Result<(), VertexArenaError> {
-        // TODO:
+        self.material_arena.dealloc(alloc_handle)?;
+        if alloc_handle.alloc_mask.contains(AllocationMask::TEX) {
+            self.texture_arena.unload(alloc_handle)?;
+        }
+
+        Ok(())
+    }
+
+    pub(in crate::renderer) fn unload_texture(
+        &mut self,
+        alloc_handle: &GPUAllocationHandle,
+    ) -> Result<(), VertexArenaError> {
+        self.texture_arena.unload(alloc_handle)?;
         Ok(())
     }
 
@@ -95,7 +107,7 @@ impl MaterialBindGroup {
 impl BindGroupProvider for MaterialBindGroup {
     fn get_bind_group(
         &self,
-        alloc_handle: &crate::common::instance::InstanceHandle,
+        _alloc_handle: &crate::common::instance::InstanceHandle,
     ) -> &wgpu::BindGroup {
         &self.bind_groups[0]
     }
@@ -213,11 +225,11 @@ impl BindGroupProvider for MaterialBindGroup {
             samplers: vec![],
             material_arena: GPUArena::<GPUMaterialData>::new(),
             texture_arena: TextureArena::new(),
-            texture_type_map: HashMap::new(),
             defaults_ready: false,
         }
     }
 
+    #[allow(unused)]
     fn despawn(&mut self, handle: &crate::renderer::GPUInstanceHandle) {
         todo!()
     }

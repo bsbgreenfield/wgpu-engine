@@ -57,8 +57,8 @@ pub enum SharedInstanceAllocationSlot {
 }
 
 impl AllocationSlot for SharedInstanceAllocationSlot {
-    fn new(chunk_id: usize, node_id: usize) -> Self {
-        todo!()
+    fn new(_chunk_id: usize, _node_id: usize) -> Self {
+        todo!("remove this function")
     }
 
     fn chunk(&self) -> usize {
@@ -93,9 +93,17 @@ impl TAllocationTable for SharedInstanceAllocTable {
                 if let Some(meta_idx) = self.prototype_registry.get(&handle.prototype) {
                     self.table.insert(handle, *meta_idx);
                 } else {
-                    self.prototype_registry
-                        .insert(handle.prototype, self.meta.len());
-                    self.meta.push(upload_meta.clone());
+                    match self.free_list.pop() {
+                        Some(free_idx) => {
+                            self.prototype_registry.insert(handle.prototype, free_idx);
+                            self.meta[free_idx] = upload_meta.clone();
+                        }
+                        None => {
+                            self.prototype_registry
+                                .insert(handle.prototype, self.meta.len());
+                            self.meta.push(upload_meta.clone());
+                        }
+                    }
                 }
             }
             SharedInstanceAllocationSlot::Shared => {
@@ -110,8 +118,16 @@ impl TAllocationTable for SharedInstanceAllocTable {
                     self.prototype_registry.contains_key(&handle.prototype),
                     "Copy slot for a prototype that is not registered here"
                 );
-                self.table.insert(handle, self.meta.len());
-                self.meta.push(upload_meta.clone());
+                match self.free_list.pop() {
+                    Some(free_idx) => {
+                        self.table.insert(handle, free_idx);
+                        self.meta[free_idx] = upload_meta.clone();
+                    }
+                    None => {
+                        self.table.insert(handle, self.meta.len());
+                        self.meta.push(upload_meta.clone());
+                    }
+                }
             }
         }
     }
@@ -131,7 +147,11 @@ impl TAllocationTable for SharedInstanceAllocTable {
             .get(handle)
             .ok_or(AllocationTableError::AllocationNotFound)?;
         match self.meta.get(*meta_idx).expect("meta index not available") {
-            SharedInstanceAllocationSlot::Prototype { slot: _ } => Ok(None),
+            SharedInstanceAllocationSlot::Prototype { slot: _ } => {
+                // this is a shared instance, remove the table entry
+                self.table.remove(handle);
+                Ok(None)
+            }
             SharedInstanceAllocationSlot::Shared => unreachable!(),
             SharedInstanceAllocationSlot::Copied { slot } => {
                 self.free_list.push(*meta_idx);

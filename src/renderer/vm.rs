@@ -3,10 +3,11 @@ use std::{iter::Peekable, slice::Iter};
 
 use crate::{
     renderer::{
-        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, InstanceBindKey,
-        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderConstant,
-        RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, UploadMeshJob,
+        AllocationMask, BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle,
+        InstanceBindKey, InstanceUploadJob, Instruction, Operations, PrototypeHandle,
+        RenderConstant, RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, UploadMeshJob,
         VertexArenaSelector,
+        bind_groups::SharedInstanceBindGroup,
         gpu_allocator::{
             GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
             gpu_arena::InstanceAllocationResult,
@@ -82,7 +83,8 @@ impl<'frame> Renderer {
                         stack.push(second);
                     }
                     Operations::TextureUpload => {
-                        let alloc_handle = stack.pop().unwrap().as_alloc();
+                        let mut alloc_handle = stack.pop().unwrap().as_alloc();
+                        alloc_handle.alloc_mask.insert(AllocationMask::TEX);
                         let texture_data_idx = Self::get_constant_idx(&mut instr_peek);
                         let data = constants[texture_data_idx].unwrap_data_ref();
                         let dim = Self::get_tex_dim(&mut instr_peek);
@@ -102,7 +104,6 @@ impl<'frame> Renderer {
                     }
                     Operations::TextureAcquire => {
                         let texture_alloc_handle = stack.pop().unwrap().as_alloc(); // get alloc
-
                         let alloc_index = Self::get_byte(&mut instr_peek) as usize; // get idx
 
                         let (bucket, layer) = self
@@ -114,7 +115,8 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Alloc(texture_alloc_handle));
                     }
                     Operations::MaterialUpload => {
-                        let gac = stack.pop().expect("should be gac").as_alloc();
+                        let mut gac = stack.pop().expect("should be gac").as_alloc();
+                        gac.alloc_mask.insert(AllocationMask::MATERIAL);
                         let material_data = constants
                             [Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_ref();
@@ -139,7 +141,8 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Alloc(gac));
                     }
                     Operations::PNUUpload => {
-                        let alloc_handle = stack.pop().expect("should be gac").as_alloc();
+                        let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
+                        alloc_handle.alloc_mask.insert(AllocationMask::PNU_VERTEX);
                         let pnu = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_ref();
                         self.upload_mesh(
@@ -151,7 +154,8 @@ impl<'frame> Renderer {
                     }
 
                     Operations::PNUJWUpload => {
-                        let alloc_handle = stack.pop().expect("should be gac").as_alloc();
+                        let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
+                        alloc_handle.alloc_mask.insert(AllocationMask::PNUJW_VERTEX);
                         let pnujw = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_ref();
                         self.upload_mesh(
@@ -162,7 +166,9 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Alloc(alloc_handle));
                     }
                     Operations::IndexUpload => {
-                        let alloc_handle = stack.pop().expect("should be gac").as_alloc();
+                        let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
+                        alloc_handle.alloc_mask.insert(AllocationMask::INDEX);
+
                         let indices = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_ref();
                         self.upload_indices(
@@ -191,6 +197,7 @@ impl<'frame> Renderer {
 
                         stack.push(StackValue::Alloc(GPUAllocationHandle {
                             global_allocation_id,
+                            alloc_mask: AllocationMask::empty(),
                         }));
                     }
                     Operations::EmitEntitySpawn => {
@@ -267,6 +274,11 @@ impl<'frame> Renderer {
                         stack.push(instance_handle_key.into());
                         stack.push(StackValue::Key(prototype_handle.as_key()));
                     }
+                    Operations::ReleasePrototype => {
+                        let idx = Self::get_constant_idx(&mut instr_peek);
+                        let prototype = PrototypeHandle::from_key(constants[idx].unwrap_key());
+                        self.release_prototypes(&prototype)?;
+                    }
                     Operations::SpawnEntityInstance => {
                         let prototype_key =
                             stack.pop().expect("should be prototype key").as_raw_key();
@@ -327,7 +339,7 @@ impl<'frame> Renderer {
                                     stack.push(StackValue::Offset(lt_offset));
                                 }
                                 BufferType::JointTransform => {
-                                    let (jt_result, _ibm_result) = self
+                                    let jt_result = self
                                         .bind_groups
                                         .skinning
                                         .register_shared_binding(&new_handle)
@@ -362,7 +374,7 @@ impl<'frame> Renderer {
                                     stack.push(StackValue::Instance(new_handle));
                                 }
                                 BufferType::JointTransform => {
-                                    let (jt_result, _ibm_result) = self
+                                    let jt_result = self
                                         .bind_groups
                                         .skinning
                                         .register_copy_binding(&new_handle, queue, device)?;

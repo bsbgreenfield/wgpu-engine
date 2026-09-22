@@ -1,5 +1,4 @@
 use crate::{
-    asset_manager::AssetHandle,
     common::entity::EntityHandle,
     world::{
         scene::{SceneDesc, SceneId, manager::SceneManagerError},

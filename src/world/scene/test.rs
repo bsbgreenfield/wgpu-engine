@@ -85,12 +85,18 @@ mod scene_tests {
             }
         }
 
-        /// Register a scene with `manager`, one entity per asset.
+        /// Register a scene with `manager`, one fresh entity per asset.
         fn scene(&mut self, manager: &mut SceneManager, assets: &[AssetHandle]) -> SceneId {
+            let entities: Vec<EntityHandle> = assets.iter().map(|a| self.entity(*a)).collect();
+            self.scene_of(manager, &entities)
+        }
+
+        /// Register a scene over entities that already exist, so two scenes can
+        /// hold the *same* entity rather than two entities sharing an asset.
+        fn scene_of(&mut self, manager: &mut SceneManager, entities: &[EntityHandle]) -> SceneId {
             let mut builder = SceneBuilder::new();
-            for asset in assets {
-                let entity = self.entity(*asset);
-                builder = builder.add_entity(entity);
+            for entity in entities {
+                builder = builder.add_entity(*entity);
             }
             manager
                 .add_scene(builder, &self.entities, &self.assets)
@@ -124,7 +130,7 @@ mod scene_tests {
 
     /// `asset_requests` drains into an unordered Vec; a map is what assertions want.
     fn requests(manager: &mut SceneManager) -> HashMap<AssetHandle, SceneLoadLevel> {
-        manager.asset_requests().into_iter().collect()
+        manager.drain_asset_requests().into_iter().collect()
     }
 
     fn state(manager: &SceneManager, scene: SceneId) -> SceneLoadLevel {
@@ -151,6 +157,23 @@ mod scene_tests {
             .into()
     }
 
+    /// Stand in for the renderer: hand `instance` a GPU handle, then ack the
+    /// despawn the way `World::post_frame_update` would.
+    fn ack_despawn(manager: &mut SceneManager, instance: &InstanceHandle, gpu_id: u32) {
+        let gpu_handle = GPUInstanceHandle {
+            prototype: PrototypeHandle::new(0),
+            instance_id: gpu_id,
+        };
+        manager
+            .inflight_despawns
+            .insert(gpu_handle, instance.clone());
+        manager.ack_despawn(gpu_handle);
+    }
+
+    fn instance_of(entity: EntityHandle, id: u16) -> InstanceHandle {
+        InstanceHandle::mock(ArchetypeId::Position, entity, id, 0)
+    }
+
     // ---------------------------------------------------------------- graph
 
     #[test]
@@ -166,7 +189,14 @@ mod scene_tests {
             .add_scene(&scene, &fixture.entities, &fixture.assets)
             .expect("added");
 
-        let assets = graph.required_assets_of(SceneId(0));
+        // a no-op transition sweeps the scene without disturbing any demand
+        let assets = graph
+            .recompute_levels(
+                SceneId(0),
+                SceneLoadLevel::NotLoaded,
+                SceneLoadLevel::NotLoaded,
+            )
+            .assets;
         assert_eq!(
             assets.len(),
             2,
@@ -357,6 +387,154 @@ mod scene_tests {
         for handle in gpu_handles {
             manager.ack_despawn(handle);
         }
+    }
+
+    // ------------------------------------------------------------- prototypes
+
+    #[test]
+    fn a_prototype_is_released_only_once_every_instance_has_been_ack_d() {
+        let mut fixture = Fixture::new();
+        let mut manager = SceneManager::new();
+
+        let asset = fixture.gpu();
+        let entity = fixture.entity(asset);
+        let scene = fixture.scene_of(&mut manager, &[entity]);
+
+        manager
+            .set_load_level(scene, SceneLoadLevel::GPU, &fixture.assets)
+            .expect("raise to gpu");
+        let _ = requests(&mut manager);
+
+        let instances = vec![instance_of(entity, 0), instance_of(entity, 1)];
+        manager
+            .add_instance_handles(scene, instances.clone())
+            .expect("register instances");
+
+        manager
+            .set_load_level(scene, SceneLoadLevel::NotLoaded, &fixture.assets)
+            .expect("drop scene");
+        assert!(
+            manager.prototype_release_queue.is_empty(),
+            "the prototype still backs two instances the renderer has not dropped yet"
+        );
+
+        ack_despawn(&mut manager, &instances[0], 0);
+        assert!(
+            manager.prototype_release_queue.is_empty(),
+            "one instance is still live"
+        );
+
+        ack_despawn(&mut manager, &instances[1], 1);
+        assert_eq!(
+            manager.prototype_release_queue,
+            vec![entity],
+            "the last ack frees the prototype"
+        );
+    }
+
+    #[test]
+    fn an_entity_with_nothing_live_releases_its_prototype_on_the_spot() {
+        let mut fixture = Fixture::new();
+        let mut manager = SceneManager::new();
+
+        let asset = fixture.gpu();
+        let entity = fixture.entity(asset);
+        let scene = fixture.scene_of(&mut manager, &[entity]);
+
+        manager
+            .set_load_level(scene, SceneLoadLevel::GPU, &fixture.assets)
+            .expect("raise to gpu");
+        let _ = requests(&mut manager);
+
+        // no instances were ever spawned, so there is no ack to wait for
+        manager
+            .set_load_level(scene, SceneLoadLevel::NotLoaded, &fixture.assets)
+            .expect("drop scene");
+
+        assert!(manager.despawn_queue.is_empty());
+        assert_eq!(manager.prototype_release_queue, vec![entity]);
+    }
+
+    #[test]
+    fn lowering_frees_the_exclusive_asset_and_prototype_and_keeps_the_shared_ones() {
+        let mut fixture = Fixture::new();
+        let mut manager = SceneManager::new();
+
+        let shared_asset = fixture.gpu();
+        let exclusive_asset = fixture.gpu();
+        let shared_entity = fixture.entity(shared_asset);
+        let exclusive_entity = fixture.entity(exclusive_asset);
+
+        // the survivor holds the shared entity, so both that entity's prototype
+        // and its asset must outlive the scene being dropped
+        let doomed = fixture.scene_of(&mut manager, &[shared_entity, exclusive_entity]);
+        let survivor = fixture.scene_of(&mut manager, &[shared_entity]);
+
+        for scene in [doomed, survivor] {
+            manager
+                .set_load_level(scene, SceneLoadLevel::GPU, &fixture.assets)
+                .expect("raise to gpu");
+        }
+        let _ = requests(&mut manager);
+
+        let doomed_shared = instance_of(shared_entity, 0);
+        let doomed_exclusive = instance_of(exclusive_entity, 1);
+        let survivor_shared = instance_of(shared_entity, 2);
+        manager
+            .add_instance_handles(
+                doomed,
+                vec![doomed_shared.clone(), doomed_exclusive.clone()],
+            )
+            .expect("register instances");
+        manager
+            .add_instance_handles(survivor, vec![survivor_shared])
+            .expect("register instances");
+
+        manager
+            .set_load_level(doomed, SceneLoadLevel::NotLoaded, &fixture.assets)
+            .expect("drop doomed");
+
+        assert_eq!(manager.despawn_queue.len(), 2);
+        assert!(
+            manager.asset_release_queue.contains(&exclusive_asset)
+                && !manager.asset_release_queue.contains(&shared_asset),
+            "only the asset no other scene wants is queued for release"
+        );
+        assert!(
+            manager.prototype_release_queue.is_empty(),
+            "nothing may be released before the renderer acks the despawns"
+        );
+
+        ack_despawn(&mut manager, &doomed_shared, 0);
+        assert!(
+            manager.prototype_release_queue.is_empty()
+                && manager.asset_release_queue.contains(&exclusive_asset),
+            "the shared entity still has a live instance in the survivor"
+        );
+
+        ack_despawn(&mut manager, &doomed_exclusive, 1);
+
+        assert_eq!(
+            manager.prototype_release_queue,
+            vec![exclusive_entity],
+            "the shared entity's prototype stays, the exclusive one goes"
+        );
+        assert!(
+            manager.asset_release_queue.is_empty(),
+            "the exclusive asset moved from 'waiting on despawns' to a real request"
+        );
+
+        let requested = requests(&mut manager);
+        assert_eq!(
+            requested.get(&exclusive_asset),
+            Some(&SceneLoadLevel::NotLoaded)
+        );
+        assert_eq!(
+            requested.get(&shared_asset),
+            None,
+            "the survivor still wants the shared asset on the GPU"
+        );
+        assert_eq!(state(&manager, survivor), SceneLoadLevel::GPU);
     }
 
     // ---------------------------------------------------------------- loading
