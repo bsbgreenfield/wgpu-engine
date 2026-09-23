@@ -6,7 +6,8 @@ use crate::{
     renderer::{
         GPUInstanceHandle,
         gpu_allocator::{
-            GPUUploadable, allocation_tables::shared_instance_alloc_table::SharedInstanceAllocTable,
+            GPUUploadable, VertexArenaError,
+            allocation_tables::shared_instance_alloc_table::SharedInstanceAllocTable,
         },
     },
     util::types::{
@@ -57,6 +58,7 @@ pub enum AllocationTableError {
     ProtoypeDeallocation,
     PrototypeReleaseFailed,
     DeallocationFailed,
+    GPUArenaError(VertexArenaError),
 }
 impl std::fmt::Display for AllocationTableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -70,6 +72,7 @@ impl std::fmt::Display for AllocationTableError {
                 f.write_str("could not release prototype")
             }
             AllocationTableError::DeallocationFailed => f.write_str("dealloc error"),
+            AllocationTableError::GPUArenaError(e) => e.fmt(f),
         }
     }
 }

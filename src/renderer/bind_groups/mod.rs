@@ -73,10 +73,6 @@ impl BindGroupCollection {
         let res = self
             .local_transforms
             .upload_local_transforms(job, queue, device)?;
-        if let GPUUploadResult::PrototypeUploaded = res {
-        } else {
-            panic!("wrong upload type");
-        }
 
         Ok(res)
     }
@@ -89,10 +85,6 @@ impl BindGroupCollection {
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, VertexArenaError> {
         let res = self.skinning.upload(joint_job, ibm_job, queue, device)?;
-
-        let GPUUploadResult::PrototypeUploaded = res else {
-            panic!("wrong upload type");
-        };
         Ok(res)
     }
 

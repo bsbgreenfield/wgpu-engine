@@ -102,21 +102,18 @@ impl FreeListAllocator {
     }
 
     fn find_first(&self, size: u32) -> Result<(usize, u32), FreeListAllocError> {
+        // it really should never get here do to the caller checking this, but here for completness
         if size > self.chunk_size {
-            return Err(FreeListAllocError::NoRoomLeft(size, CHUNK_SIZE));
+            return Err(FreeListAllocError::NoRoomLeft(size));
         }
         let mut offset = 0;
         let mut node_idx = self.head as u32;
-        let mut debug_max_avail_node_size = 0;
 
         loop {
             let node = &self.nodes[node_idx as usize];
 
             // if the node is available and large enough, use this node
             if !node.occupied && node.block_size >= size {
-                if node.block_size > debug_max_avail_node_size {
-                    debug_max_avail_node_size = node.block_size;
-                }
                 return Ok((offset, node_idx));
             }
             // otherwise, increment offset and move to the next node
@@ -131,10 +128,7 @@ impl FreeListAllocator {
             }
         }
 
-        Err(FreeListAllocError::NoRoomLeft(
-            size,
-            debug_max_avail_node_size,
-        ))
+        Err(FreeListAllocError::NoRoomLeft(size))
     }
 
     #[cfg(test)]
@@ -291,7 +285,7 @@ mod free_list_tests {
     fn alloc_exceeding_chunk_size_fails() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let result = alloc.alloc_first(CHUNK_SIZE + 1);
-        assert!(matches!(result, Err(FreeListAllocError::NoRoomLeft(_, _))));
+        assert!(matches!(result, Err(FreeListAllocError::NoRoomLeft(_))));
     }
 
     /// Once all free space is consumed every further allocation must fail.
@@ -302,7 +296,7 @@ mod free_list_tests {
         alloc.alloc_first(half).unwrap();
         alloc.alloc_first(half).unwrap();
         let result = alloc.alloc_first(half);
-        assert!(matches!(result, Err(FreeListAllocError::NoRoomLeft(_, _))));
+        assert!(matches!(result, Err(FreeListAllocError::NoRoomLeft(_))));
     }
 
     // ── prev pointer wiring ────────────────────────────────────────────────

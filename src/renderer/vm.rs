@@ -229,10 +229,8 @@ impl<'frame> Renderer {
                         ]);
                         let record_job: InstanceUploadJob<InstanceRecordData> =
                             InstanceUploadJob::new(&record_data, gpu_instance_handle);
-                        let GPUUploadResult::BindGroupUploadResult {
-                            buffer_element_offset,
-                            ..
-                        } = self.upload_instance_record(record_job, queue, device)?
+                        let GPUUploadResult::RecordData { element_slot } =
+                            self.upload_instance_record(record_job, queue, device)?
                         else {
                             panic!("unexpected upload result type")
                         };
@@ -241,7 +239,7 @@ impl<'frame> Renderer {
                         res.push(RenderUpdateDelta::EntitySpawned {
                             instance_key,
                             gpu_instance_handle,
-                            record_offset: buffer_element_offset,
+                            record_offset: element_slot,
                             binding_key: InstanceBindKey {
                                 lt: lt_buffer_index as u16,
                                 jt: joint_result.map(|jr| jr.0).unwrap_or(0) as u16,
@@ -254,11 +252,7 @@ impl<'frame> Renderer {
                         let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_ref();
                         let lt_upload_job = InstanceUploadJob::new(lt, gpu_instance_handle.clone());
-                        let GPUUploadResult::PrototypeUploaded =
-                            self.upload_local_transforms(lt_upload_job, queue, device)?
-                        else {
-                            panic!("expected bing group upload")
-                        };
+                        self.upload_local_transforms(lt_upload_job, queue, device)?;
 
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }
@@ -297,11 +291,7 @@ impl<'frame> Renderer {
                         let jt_upload_job = InstanceUploadJob::new(jt, gpu_instance_handle.clone());
                         let ibm_upload_job =
                             InstanceUploadJob::new(ibms, gpu_instance_handle.clone());
-                        let GPUUploadResult::PrototypeUploaded =
-                            self.upload_skin_data(jt_upload_job, ibm_upload_job, queue, device)?
-                        else {
-                            panic!("expected bin group upload");
-                        };
+                        self.upload_skin_data(jt_upload_job, ibm_upload_job, queue, device)?;
 
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }

@@ -2,9 +2,9 @@ use crate::{
     renderer::{
         AllocationMask, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob, PrototypeHandle,
         gpu_allocator::{
-            CHUNK_SIZE, DefaultGPUValue, GPUAllocator, GPUChunk, GPUUploadJob, GPUUploadResult,
-            GPUUploadable, TAllocationTable, UploadIndexJob, UploadMaterialJob, UploadMeshJob,
-            VertexArenaError,
+            CHUNK_SIZE, DefaultGPUValue, FreeListAllocError, GPUAllocator, GPUChunk, GPUUploadJob,
+            GPUUploadResult, GPUUploadable, TAllocationTable, UploadIndexJob, UploadMaterialJob,
+            UploadMeshJob, VertexArenaError,
             allocation_tables::{
                 AllocationSlot, AllocationTableError, SharedInstanceData, StorageData,
                 asset_alloc_table::{AssetAllocationMeta, SingleAlocationTable},
@@ -29,24 +29,303 @@ pub(in crate::renderer) struct GPUArena<T: GPUUploadable> {
     label: Option<String>,
 }
 
-//#[allow(private_bounds)]
-//#[cfg(test)]
-//impl<T: GPUUploadable<GPUHandle = GPUInstanceHandle>> GPUArena<T> {
-//    pub(crate) fn get_instance_table(&self) -> &HashMap<GPUInstanceHandle, usize> {
-//        self.alloc_table.get_table()
-//    }
-//    #[cfg(test)]
-//    pub fn buffer_offset_of(&self, handle: GPUInstanceHandle) -> u32 {
-//        self.resolve_byte_offset(&handle)
-//    }
-//}
-//#[allow(private_bounds)]
-//#[cfg(test)]
-//impl<T: GPUUploadable<GPUHandle = GPUAllocationHandle>> GPUArena<T> {
-//    pub(crate) fn get_alloc_table(&self) -> &HashMap<GPUAllocationHandle, usize> {
-//        self.alloc_table.get_table()
-//    }
-//}
+impl<'a, T: bytemuck::Pod> GPUUploadJob for InstanceUploadJob<'a, T> {
+    type GPUHandle = GPUInstanceHandle;
+    fn get_data(&self) -> &[u8] {
+        self.data
+    }
+    fn get_handle(&self) -> GPUInstanceHandle {
+        self.gpu_instance_handle
+    }
+}
+impl<'a> GPUUploadJob for UploadMaterialJob<'a> {
+    type GPUHandle = GPUAllocationHandle;
+    fn get_data(&self) -> &[u8] {
+        self.data
+    }
+    fn get_handle(&self) -> Self::GPUHandle {
+        self.alloc_handle.clone()
+    }
+}
+
+impl<'a, T: ModelVertex> GPUUploadJob for UploadMeshJob<'a, T> {
+    type GPUHandle = GPUAllocationHandle;
+    fn get_data(&self) -> &[u8] {
+        self.verts
+    }
+    fn get_handle(&self) -> Self::GPUHandle {
+        self.alloc_handle.clone()
+    }
+}
+
+impl<'a> GPUUploadJob for UploadIndexJob<'a> {
+    type GPUHandle = GPUAllocationHandle;
+    fn get_data(&self) -> &[u8] {
+        self.indices
+    }
+    fn get_handle(&self) -> Self::GPUHandle {
+        self.alloc_handle.clone()
+    }
+}
+
+impl GPUUploadable for LocalTransform {
+    type GPUHandle = GPUInstanceHandle;
+
+    type AllocTable = SharedInstanceAllocTable;
+
+    type UploadJob<'a> = InstanceUploadJob<'a, LocalTransform>;
+
+    const LABEL: &'static str = "Local Transform Upload";
+
+    const USAGE: wgpu::BufferUsages = <LocalTransform as StorageData>::BUFFER_USAGES;
+
+    const CHUNK_SIZE: u32 = 1024 * 16;
+
+    const MIN_ALLOC_SIZE: u32 = 64;
+
+    fn arena_label() -> String {
+        String::from("Local transform upload arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        let meta = SharedInstanceAllocationSlot::Prototype {
+            slot: AssetAllocationMeta::new(chunk_id, node_id),
+        };
+        arena.alloc_table.allocate(handle, meta);
+        GPUUploadResult::Success
+    }
+}
+impl GPUUploadable for JointTransform {
+    type GPUHandle = GPUInstanceHandle;
+
+    type AllocTable = SharedInstanceAllocTable;
+
+    type UploadJob<'a> = InstanceUploadJob<'a, JointTransform>;
+
+    const LABEL: &'static str = "Local Transform Upload";
+
+    const USAGE: wgpu::BufferUsages = <JointTransform as StorageData>::BUFFER_USAGES;
+    const MIN_ALLOC_SIZE: u32 = 64;
+    const CHUNK_SIZE: u32 = 1024 * 16;
+
+    fn arena_label() -> String {
+        String::from("Joint transforms arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        let meta = SharedInstanceAllocationSlot::Prototype {
+            slot: AssetAllocationMeta::new(chunk_id, node_id),
+        };
+        arena.alloc_table.allocate(handle, meta);
+        GPUUploadResult::Success
+    }
+}
+impl GPUUploadable for InverseBindMatrix {
+    type GPUHandle = GPUInstanceHandle;
+
+    type AllocTable = SharedInstanceAllocTable;
+
+    type UploadJob<'a> = InstanceUploadJob<'a, Self>;
+
+    const LABEL: &'static str = "Local Transform Upload";
+
+    const USAGE: wgpu::BufferUsages = <Self as StorageData>::BUFFER_USAGES;
+    const MIN_ALLOC_SIZE: u32 = 8;
+    const CHUNK_SIZE: u32 = 1024 * 2;
+
+    fn arena_label() -> String {
+        String::from("ibm arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        let meta = SharedInstanceAllocationSlot::Prototype {
+            slot: AssetAllocationMeta::new(chunk_id, node_id),
+        };
+        arena.alloc_table.allocate(handle, meta);
+
+        GPUUploadResult::Success
+    }
+}
+
+impl GPUUploadable for InstanceRecordData {
+    type GPUHandle = GPUInstanceHandle;
+
+    type AllocTable = SingleAlocationTable<GPUInstanceHandle>;
+
+    type UploadJob<'a> = InstanceUploadJob<'a, InstanceRecordData>;
+
+    const LABEL: &'static str = "Global TRansform upload";
+
+    const USAGE: wgpu::BufferUsages = <Self as StorageData>::BUFFER_USAGES;
+
+    const CHUNK_SIZE: u32 = 1024;
+
+    const MIN_ALLOC_SIZE: u32 = 64;
+
+    fn arena_label() -> String {
+        String::from("instance record alloc arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena
+            .alloc_table
+            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
+        let element_offset = arena.resolve_element_offset(&handle);
+        return GPUUploadResult::RecordData {
+            element_slot: element_offset as u32,
+        };
+    }
+}
+
+impl GPUUploadable for VIndex {
+    type UploadJob<'a> = UploadIndexJob<'a>;
+    type GPUHandle = GPUAllocationHandle;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const MIN_ALLOC_SIZE: u32 = 1024;
+    const LABEL: &'static str = "Vertex indices";
+    const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::INDEX.union(wgpu::BufferUsages::COPY_DST);
+    fn arena_label() -> String {
+        String::from("Index Arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena
+            .alloc_table
+            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
+        return GPUUploadResult::Success;
+    }
+}
+
+impl GPUUploadable for PNUJWVertex {
+    type GPUHandle = GPUAllocationHandle;
+    type UploadJob<'a> = UploadMeshJob<'a, PNUJWVertex>;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const MIN_ALLOC_SIZE: u32 = 2048;
+    const LABEL: &'static str = "PNUJW";
+    const USAGE: wgpu::BufferUsages =
+        wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
+    fn arena_label() -> String {
+        String::from("PNUJW Arena")
+    }
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena
+            .alloc_table
+            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
+        return GPUUploadResult::Success;
+    }
+}
+impl GPUUploadable for PNUVertex {
+    type GPUHandle = GPUAllocationHandle;
+    const MIN_ALLOC_SIZE: u32 = 2048;
+    type UploadJob<'a> = UploadMeshJob<'a, PNUVertex>;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const LABEL: &'static str = "PNU";
+    const USAGE: wgpu::BufferUsages =
+        wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
+    fn arena_label() -> String {
+        String::from("PNU Arena")
+    }
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena
+            .alloc_table
+            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
+        return GPUUploadResult::Success;
+    }
+}
+impl DefaultGPUValue for GPUMaterialData {
+    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {
+        let default_data = &[GPUMaterialData {
+            base_color_factors: [1., 0.3, 0.2, 1.],
+            roughness: 1.,
+            metallic: 1.,
+            tex_mod: 0,
+            _pad: 0,
+        }];
+        let bytes = bytemuck::cast_slice::<GPUMaterialData, u8>(default_data);
+        let default_material_job = UploadMaterialJob {
+            data: &bytes,
+            alloc_handle: GPUAllocationHandle {
+                global_allocation_id: u32::MAX,
+                alloc_mask: AllocationMask::all(), // intentionally not a valid mask
+            },
+        };
+
+        let _ = gpu_arena.upload(default_material_job, queue, device);
+    }
+}
+impl GPUUploadable for GPUMaterialData {
+    type GPUHandle = GPUAllocationHandle;
+
+    type UploadJob<'a> = UploadMaterialJob<'a>;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
+
+    const LABEL: &'static str = "Material Data";
+
+    const USAGE: wgpu::BufferUsages =
+        wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_DST);
+
+    const CHUNK_SIZE: u32 = CHUNK_SIZE / 4;
+
+    const MIN_ALLOC_SIZE: u32 = 0;
+
+    fn arena_label() -> String {
+        String::from("Material Data Arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena
+            .alloc_table
+            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
+        return GPUUploadResult::Success;
+    }
+
+    fn init_with_defaults(arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {
+        <Self as DefaultGPUValue>::insert_default(arena, queue, device);
+    }
+}
 
 impl<T: GPUUploadable> GPUArena<T> {
     pub(in crate::renderer) fn get_first_buffer(&self) -> &wgpu::Buffer {
@@ -141,9 +420,28 @@ impl<T: SharedInstanceData> GPUArena<T> {
         // allocate for new node of size "size"
         let mut dst_location = None;
         for (chunk_id, chunk) in self.get_chunks_mut().iter_mut().enumerate() {
-            if let Ok(node_id) = chunk.allocator.alloc_first(size as u32) {
+            let res = chunk.allocator.alloc_first(size as u32);
+            if let Ok(node_id) = res {
                 dst_location = Some((chunk_id, node_id));
                 break;
+            } else if let Err(FreeListAllocError::NoRoomLeft(size)) = res {
+                return Err(AllocationTableError::GPUArenaError(
+                    VertexArenaError::DataTooLarge(size, T::LABEL.to_string(), T::CHUNK_SIZE),
+                ));
+            }
+        }
+        'outer: {
+            if dst_location.is_none() {
+                let chunk_id = self.chunks.len();
+                // couldnt allocate into any of the chunks
+                if chunk_id < self.max_chunks {
+                    self.add_buffer(device);
+                    if let Ok(node_id) = self.chunks[chunk_id].allocator.alloc_first(size as u32) {
+                        dst_location = Some((chunk_id, node_id));
+                        break 'outer;
+                    }
+                }
+                return Err(AllocationTableError::MaxAllocationReached);
             }
         }
         let (dst_chunk_id, dst_node_id) =
@@ -192,305 +490,6 @@ impl<T: SharedInstanceData> GPUArena<T> {
         })
     }
 }
-
-impl<'a, T: bytemuck::Pod> GPUUploadJob for InstanceUploadJob<'a, T> {
-    type GPUHandle = GPUInstanceHandle;
-    fn get_data(&self) -> &[u8] {
-        self.data
-    }
-    fn get_handle(&self) -> GPUInstanceHandle {
-        self.gpu_instance_handle
-    }
-}
-impl<'a> GPUUploadJob for UploadMaterialJob<'a> {
-    type GPUHandle = GPUAllocationHandle;
-    fn get_data(&self) -> &[u8] {
-        self.data
-    }
-    fn get_handle(&self) -> Self::GPUHandle {
-        self.alloc_handle.clone()
-    }
-}
-
-impl<'a, T: ModelVertex> GPUUploadJob for UploadMeshJob<'a, T> {
-    type GPUHandle = GPUAllocationHandle;
-    fn get_data(&self) -> &[u8] {
-        self.verts
-    }
-    fn get_handle(&self) -> Self::GPUHandle {
-        self.alloc_handle.clone()
-    }
-}
-
-impl<'a> GPUUploadJob for UploadIndexJob<'a> {
-    type GPUHandle = GPUAllocationHandle;
-    fn get_data(&self) -> &[u8] {
-        self.indices
-    }
-    fn get_handle(&self) -> Self::GPUHandle {
-        self.alloc_handle.clone()
-    }
-}
-
-impl GPUUploadable for LocalTransform {
-    type GPUHandle = GPUInstanceHandle;
-
-    type AllocTable = SharedInstanceAllocTable;
-
-    type UploadJob<'a> = InstanceUploadJob<'a, LocalTransform>;
-
-    const LABEL: &'static str = "Local Transform Upload";
-
-    const USAGE: wgpu::BufferUsages = <LocalTransform as StorageData>::BUFFER_USAGES;
-
-    const CHUNK_SIZE: u32 = 1024 * 16;
-
-    const MIN_ALLOC_SIZE: u32 = 64;
-
-    fn arena_label() -> String {
-        String::from("Local transform upload arena")
-    }
-
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        let meta = SharedInstanceAllocationSlot::Prototype {
-            slot: AssetAllocationMeta::new(chunk_id, node_id),
-        };
-        arena.alloc_table.allocate(handle, meta);
-        GPUUploadResult::PrototypeUploaded
-    }
-}
-impl GPUUploadable for JointTransform {
-    type GPUHandle = GPUInstanceHandle;
-
-    type AllocTable = SharedInstanceAllocTable;
-
-    type UploadJob<'a> = InstanceUploadJob<'a, JointTransform>;
-
-    const LABEL: &'static str = "Local Transform Upload";
-
-    const USAGE: wgpu::BufferUsages = <JointTransform as StorageData>::BUFFER_USAGES;
-    const MIN_ALLOC_SIZE: u32 = 64;
-    const CHUNK_SIZE: u32 = 1024 * 16;
-
-    fn arena_label() -> String {
-        String::from("Joint transforms arena")
-    }
-
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        let meta = SharedInstanceAllocationSlot::Prototype {
-            slot: AssetAllocationMeta::new(chunk_id, node_id),
-        };
-        arena.alloc_table.allocate(handle, meta);
-        GPUUploadResult::PrototypeUploaded
-    }
-}
-impl GPUUploadable for InverseBindMatrix {
-    type GPUHandle = GPUInstanceHandle;
-
-    type AllocTable = SharedInstanceAllocTable;
-
-    type UploadJob<'a> = InstanceUploadJob<'a, Self>;
-
-    const LABEL: &'static str = "Local Transform Upload";
-
-    const USAGE: wgpu::BufferUsages = <Self as StorageData>::BUFFER_USAGES;
-    const MIN_ALLOC_SIZE: u32 = 8;
-    const CHUNK_SIZE: u32 = 1024 * 2;
-
-    fn arena_label() -> String {
-        String::from("ibm arena")
-    }
-
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        let meta = SharedInstanceAllocationSlot::Prototype {
-            slot: AssetAllocationMeta::new(chunk_id, node_id),
-        };
-        arena.alloc_table.allocate(handle, meta);
-
-        GPUUploadResult::PrototypeUploaded
-    }
-}
-
-impl GPUUploadable for InstanceRecordData {
-    type GPUHandle = GPUInstanceHandle;
-
-    type AllocTable = SingleAlocationTable<GPUInstanceHandle>;
-
-    type UploadJob<'a> = InstanceUploadJob<'a, InstanceRecordData>;
-
-    const LABEL: &'static str = "Global TRansform upload";
-
-    const USAGE: wgpu::BufferUsages = <Self as StorageData>::BUFFER_USAGES;
-
-    const CHUNK_SIZE: u32 = 1024;
-
-    const MIN_ALLOC_SIZE: u32 = 64;
-
-    fn arena_label() -> String {
-        String::from("instance record alloc arena")
-    }
-
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        arena
-            .alloc_table
-            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
-        let element_offset = arena.resolve_element_offset(&handle);
-        return GPUUploadResult::BindGroupUploadResult {
-            buffer_element_offset: element_offset as u32,
-            chunk_idx: chunk_id as u32,
-        };
-    }
-}
-
-impl GPUUploadable for VIndex {
-    type UploadJob<'a> = UploadIndexJob<'a>;
-    type GPUHandle = GPUAllocationHandle;
-    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-    const MIN_ALLOC_SIZE: u32 = 1024;
-    const LABEL: &'static str = "Vertex indices";
-    const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::INDEX.union(wgpu::BufferUsages::COPY_DST);
-    fn arena_label() -> String {
-        String::from("Index Arena")
-    }
-
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        arena
-            .alloc_table
-            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
-        return GPUUploadResult::VertexDataUploadSuccess;
-    }
-}
-
-impl GPUUploadable for PNUJWVertex {
-    type GPUHandle = GPUAllocationHandle;
-    type UploadJob<'a> = UploadMeshJob<'a, PNUJWVertex>;
-    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-    const MIN_ALLOC_SIZE: u32 = 2048;
-    const LABEL: &'static str = "PNUJW";
-    const USAGE: wgpu::BufferUsages =
-        wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
-    fn arena_label() -> String {
-        String::from("PNUJW Arena")
-    }
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        arena
-            .alloc_table
-            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
-        return GPUUploadResult::VertexDataUploadSuccess;
-    }
-}
-impl GPUUploadable for PNUVertex {
-    type GPUHandle = GPUAllocationHandle;
-    const MIN_ALLOC_SIZE: u32 = 2048;
-    type UploadJob<'a> = UploadMeshJob<'a, PNUVertex>;
-    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
-    const CHUNK_SIZE: u32 = CHUNK_SIZE;
-    const LABEL: &'static str = "PNU";
-    const USAGE: wgpu::BufferUsages =
-        wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
-    fn arena_label() -> String {
-        String::from("PNU Arena")
-    }
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        arena
-            .alloc_table
-            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
-        return GPUUploadResult::VertexDataUploadSuccess;
-    }
-}
-impl DefaultGPUValue for GPUMaterialData {
-    fn insert_default(gpu_arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {
-        let default_data = &[GPUMaterialData {
-            base_color_factors: [1., 0.3, 0.2, 1.],
-            roughness: 1.,
-            metallic: 1.,
-            tex_mod: 0,
-            _pad: 0,
-        }];
-        let bytes = bytemuck::cast_slice::<GPUMaterialData, u8>(default_data);
-        let default_material_job = UploadMaterialJob {
-            data: &bytes,
-            alloc_handle: GPUAllocationHandle {
-                global_allocation_id: u32::MAX,
-                alloc_mask: AllocationMask::all(), // intentionally not a valid mask
-            },
-        };
-
-        let _ = gpu_arena.upload(default_material_job, queue, device);
-    }
-}
-impl GPUUploadable for GPUMaterialData {
-    type GPUHandle = GPUAllocationHandle;
-
-    type UploadJob<'a> = UploadMaterialJob<'a>;
-    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
-
-    const LABEL: &'static str = "Material Data";
-
-    const USAGE: wgpu::BufferUsages =
-        wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_DST);
-
-    const CHUNK_SIZE: u32 = CHUNK_SIZE / 4;
-
-    const MIN_ALLOC_SIZE: u32 = 0;
-
-    fn arena_label() -> String {
-        String::from("Material Data Arena")
-    }
-
-    fn upload(
-        arena: &mut GPUArena<Self>,
-        handle: Self::GPUHandle,
-        chunk_id: usize,
-        node_id: usize,
-    ) -> GPUUploadResult {
-        arena
-            .alloc_table
-            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
-        return GPUUploadResult::MaterialUploadSucess;
-    }
-
-    fn init_with_defaults(arena: &mut GPUArena<Self>, queue: &wgpu::Queue, device: &wgpu::Device) {
-        <Self as DefaultGPUValue>::insert_default(arena, queue, device);
-    }
-}
 impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
     type AllocationError = VertexArenaError;
 
@@ -515,16 +514,36 @@ impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
                 Ok((node_id, _)) => {
                     return Ok(T::upload(self, job.get_handle(), chunk_id, node_id));
                 }
-
                 Err(e) => match e {
+                    // this can never be allocated, data is too large
                     VertexArenaError::DataTooLarge(_, _, _) => {
                         return Err(e);
                     }
-                    _ => continue 'outer,
+                    VertexArenaError::NoRoomLeft => {
+                        continue 'outer;
+                    }
+                    _ => return Err(e),
                 },
             }
         }
-        Err(VertexArenaError::MaxAllocationReached)
+        // if the max amount of chunks hasnt already been allocated,
+        // create a new chunk and allocate there
+        let chunk_id = self.chunks.len();
+        if chunk_id >= self.max_chunks {
+            return Err(VertexArenaError::MaxAllocationReached);
+        } else {
+            self.add_buffer(device);
+            match self.chunks[chunk_id].gpu_alloc(
+                job.get_data(),
+                queue,
+                self.label.as_ref().unwrap(),
+            ) {
+                Ok((node_id, _)) => {
+                    return Ok(T::upload(self, job.get_handle(), chunk_id, node_id));
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     fn resolve(&self, handle: &T::GPUHandle) -> (std::range::Range<u32>, &wgpu::Buffer) {

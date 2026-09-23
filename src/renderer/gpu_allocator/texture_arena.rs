@@ -262,7 +262,7 @@ impl TextureArena {
                     GPUTextureHandle::new(job.texture_handle, 0),
                     AssetAllocationMeta::new(chunk_idx, layer),
                 );
-                return GPUUploadResult::TextureUploadSuccess;
+                return GPUUploadResult::Success;
             }
             Err(_) => {
                 panic!("texture upload fail")

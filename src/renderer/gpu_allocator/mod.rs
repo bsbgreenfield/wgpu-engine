@@ -9,6 +9,7 @@ use std::error::Error;
 use crate::renderer::GPUAllocationHandle;
 use crate::renderer::GPUInstanceHandle;
 use crate::renderer::TexDim;
+use crate::renderer::gpu_allocator::VertexArenaError::DataTooLarge;
 use crate::renderer::gpu_allocator::allocation_tables::StorageData;
 use crate::renderer::gpu_allocator::allocation_tables::TAllocationTable;
 use crate::renderer::gpu_allocator::free_list::FreeListAllocator;
@@ -50,19 +51,16 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
         label: &str,
     ) -> Result<(usize, Range<u32>), VertexArenaError> {
         let size = data.len() as u32;
+        if size > T::CHUNK_SIZE {
+            return Err(DataTooLarge(size, label.to_string(), T::CHUNK_SIZE));
+        }
 
         let node_idx: usize = if self.remaining_space >= size {
+            self.remaining_space -= size;
             self.allocator.alloc_first(size)?
         } else {
-            return Err(VertexArenaError::DataTooLarge(
-                size,
-                label.to_string(),
-                T::CHUNK_SIZE,
-            ));
+            return Err(VertexArenaError::NoRoomLeft);
         };
-        // for datum in data.iter().take(10) {
-        //     println!("{:?}", datum);
-        // }
         let offset = self.allocator.offset_of(node_idx) as u32;
         queue.write_buffer(&self.buffer, offset.into(), data);
         Ok((node_idx, Range::from(offset..offset + (data.len() as u32))))
@@ -83,19 +81,24 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
     }
 }
 
-#[allow(unused)]
-// pub(crate): return type of `GPUUploadable::upload`, which is pub(crate).
 pub(crate) enum GPUUploadResult {
-    BindGroupUploadResult {
-        buffer_element_offset: u32,
-        chunk_idx: u32,
-    },
-    InstanceRecordUpload,
-    PrototypeUploaded,
-    VertexDataUploadSuccess,
-    MaterialUploadSucess,
-    TextureUploadSuccess,
+    Success,
+    RecordData { element_slot: u32 },
 }
+
+//#[allow(unused)]
+//// pub(crate): return type of `GPUUploadable::upload`, which is pub(crate).
+//pub(crate) enum GPUUploadResult {
+//    BindGroupUploadResult {
+//        buffer_element_offset: u32,
+//        chunk_idx: u32,
+//    },
+//    InstanceRecordUpload,
+//    PrototypeUploaded,
+//    VertexDataUploadSuccess,
+//    MaterialUploadSucess,
+//    TextureUploadSuccess,
+//}
 
 pub(super) trait GPUAllocator<T: GPUUploadable> {
     type AllocationError: Error;
@@ -116,7 +119,7 @@ pub(super) trait GPUAllocator<T: GPUUploadable> {
 // pub(crate): wrapped by `VertexArenaError::FreeListError`, which is pub(crate).
 #[derive(Debug)]
 pub(crate) enum FreeListAllocError {
-    NoRoomLeft(u32, u32),
+    NoRoomLeft(u32),
     NodeNotFount(usize),
 }
 
@@ -124,13 +127,9 @@ impl Error for FreeListAllocError {}
 impl Display for FreeListAllocError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoRoomLeft(size, used) => f.write_str(
-                format!(
-                    "Not enough room to fit data of size {}. Largest Node Available: {}",
-                    size, used,
-                )
-                .as_str(),
-            ),
+            Self::NoRoomLeft(size) => {
+                f.write_str(format!("Not enough room to fit data of size {}", size,).as_str())
+            }
             Self::NodeNotFount(id) => write!(f, "node {} not found", id),
         }
     }
@@ -149,6 +148,7 @@ pub(crate) enum VertexArenaError {
     AllocationSlotNotFound,
     MetadataNotFound,
     MaxAllocationReached,
+    NoRoomLeft, // happy state error, move to next chunk
 }
 
 impl From<FreeListAllocError> for VertexArenaError {
@@ -181,6 +181,7 @@ impl Display for VertexArenaError {
             Self::AllocationSlotNotFound => f.write_str("alloc slot not found"),
             Self::MetadataNotFound => f.write_str("No metadaat found at the slot"),
             Self::DeallocError => f.write_str("dealloc failure"),
+            Self::NoRoomLeft => f.write_str("this chunk is out of room "),
         }
     }
 }

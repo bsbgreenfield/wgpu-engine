@@ -66,7 +66,8 @@ impl SharedInstanceBindGroup for LocalTransformBindGroup {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<InstanceAllocationResult, AllocationTableError> {
-        self.lt_arena.register_copy_binding(handle, queue, device)
+        let res = self.lt_arena.register_copy_binding(handle, queue, device)?;
+        Ok(res)
     }
     fn release_prototype(
         &mut self,
