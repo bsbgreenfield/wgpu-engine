@@ -11,7 +11,7 @@ use crate::renderer::{
 pub(in crate::renderer::gpu_allocator) trait InstanceAllocationTable:
     TAllocationTable<Handle = GPUInstanceHandle>
 {
-    fn get_prototype_meta(&self, handle: &GPUInstanceHandle) -> (usize, usize);
+    fn get_prototype_meta(&self, handle: &PrototypeHandle) -> (usize, usize);
     fn release_prototype(
         &mut self,
         handle: &PrototypeHandle,
@@ -42,10 +42,10 @@ impl InstanceAllocationTable for SharedInstanceAllocTable {
         Ok(None)
     }
 
-    fn get_prototype_meta(&self, handle: &GPUInstanceHandle) -> (usize, usize) {
+    fn get_prototype_meta(&self, handle: &PrototypeHandle) -> (usize, usize) {
         let prototype_slot = self
             .prototype_registry
-            .get(&handle.prototype)
+            .get(handle)
             .expect("could not find registered prototype");
         let meta = &self.meta[*prototype_slot];
         (meta.chunk(), meta.node())

@@ -163,6 +163,7 @@ mod scene_tests {
         let gpu_handle = GPUInstanceHandle {
             prototype: PrototypeHandle::new(0),
             instance_id: gpu_id,
+            bind_id: 0,
         };
         manager
             .inflight_despawns
@@ -350,7 +351,7 @@ mod scene_tests {
             InstanceHandle::mock(ArchetypeId::Position, EntityHandle(0), 1, 0),
         ];
         manager
-            .add_instance_handles(first, instances.clone())
+            .add_multiple_instances_handles(first, instances.clone())
             .expect("register instances");
 
         manager
@@ -377,6 +378,7 @@ mod scene_tests {
                 let gpu_handle = GPUInstanceHandle {
                     prototype: PrototypeHandle::new(0),
                     instance_id: i as u32,
+                    bind_id: 0,
                 };
                 manager
                     .inflight_despawns
@@ -407,7 +409,7 @@ mod scene_tests {
 
         let instances = vec![instance_of(entity, 0), instance_of(entity, 1)];
         manager
-            .add_instance_handles(scene, instances.clone())
+            .add_multiple_instances_handles(scene, instances.clone())
             .expect("register instances");
 
         manager
@@ -481,13 +483,13 @@ mod scene_tests {
         let doomed_exclusive = instance_of(exclusive_entity, 1);
         let survivor_shared = instance_of(shared_entity, 2);
         manager
-            .add_instance_handles(
+            .add_multiple_instances_handles(
                 doomed,
                 vec![doomed_shared.clone(), doomed_exclusive.clone()],
             )
             .expect("register instances");
         manager
-            .add_instance_handles(survivor, vec![survivor_shared])
+            .add_multiple_instances_handles(survivor, vec![survivor_shared])
             .expect("register instances");
 
         manager

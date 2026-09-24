@@ -1,13 +1,16 @@
 #[cfg(test)]
 use std::collections::HashMap;
-use std::marker::PhantomData;
+use std::{hash::Hash, marker::PhantomData};
 
 use crate::{
     renderer::{
         GPUInstanceHandle,
         gpu_allocator::{
             GPUUploadable, VertexArenaError,
-            allocation_tables::shared_instance_alloc_table::SharedInstanceAllocTable,
+            allocation_tables::{
+                asset_alloc_table::SingleAlocationTable,
+                shared_instance_alloc_table::SharedInstanceAllocTable,
+            },
         },
     },
     util::types::{
@@ -19,6 +22,18 @@ use crate::{
 pub(super) mod asset_alloc_table;
 pub(super) mod shared_instance_alloc_table;
 pub(super) mod texture_alloc_table;
+
+pub(in crate::renderer) trait ReservedSlotData:
+    StorageData
+    + bytemuck::Pod
+    + GPUUploadable<
+        GPUHandle = GPUInstanceHandle,
+        AllocTable = SingleAlocationTable<GPUInstanceHandle>,
+    >
+{
+}
+
+impl ReservedSlotData for InstanceRecordData {}
 
 pub(in crate::renderer) trait StorageData:
     bytemuck::Pod + std::fmt::Debug + Sized
@@ -54,7 +69,7 @@ pub trait AllocationSlot: Clone {
 #[derive(Debug)]
 pub enum AllocationTableError {
     AllocationNotFound,
-    MaxAllocationReached,
+    MaxAllocationReached(String),
     ProtoypeDeallocation,
     PrototypeReleaseFailed,
     DeallocationFailed,
@@ -64,7 +79,9 @@ impl std::fmt::Display for AllocationTableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AllocationTableError::AllocationNotFound => f.write_str("allocation not found"),
-            AllocationTableError::MaxAllocationReached => f.write_str("Max alloc reached"),
+            AllocationTableError::MaxAllocationReached(al) => {
+                write!(f, "Max allocation reach for: {}", al)
+            }
             AllocationTableError::ProtoypeDeallocation => {
                 f.write_str("tried to dealloc a prototype slot")
             }

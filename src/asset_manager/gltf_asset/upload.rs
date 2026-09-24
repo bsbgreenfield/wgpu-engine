@@ -70,6 +70,9 @@ impl ProvidesMeshData for GltfAsset {
         let mut local_transforms = Vec::new();
         let mut joint_map = Vec::new();
 
+        let mut pnu_indices = Vec::new();
+        let mut pnujw_indices = Vec::new();
+
         let mut pnu_materials = Vec::new();
         let mut pnujw_materials = Vec::new();
         let has_indices = self.meshes[0].primitives[0].indices.is_some();
@@ -93,11 +96,17 @@ impl ProvidesMeshData for GltfAsset {
                     pnu_mesh_map.push(relative_lt_offset);
                     pnu_ranges.push(primitive.vertices.clone());
                     pnu_materials.push(primitive.material_idx);
+                    if has_indices {
+                        pnu_indices.push(primitive.indices.clone().unwrap());
+                    }
                 } else if primitive.vertex_type == TypeId::of::<PNUJWVertex>() {
                     pnujw_mesh_map.push(relative_lt_offset);
                     pnujw_ranges.push(primitive.vertices.clone());
                     joint_map.push(skin_offset_of(mesh_instance.skin_idx, &self.skins) as u32);
                     pnujw_materials.push(primitive.material_idx);
+                    if has_indices {
+                        pnujw_indices.push(primitive.indices.clone().unwrap());
+                    }
                 } else {
                     panic!("vertex type not specified {:?}", primitive.vertex_type);
                 }
@@ -140,7 +149,8 @@ impl ProvidesMeshData for GltfAsset {
             pnujw_mesh_map,
             pnu_vertex_ranges: (!pnu_ranges.is_empty()).then_some(pnu_ranges),
             pnujw_vertex_ranges: (!pnujw_ranges.is_empty()).then_some(pnujw_ranges),
-            index_ranges: (!index_ranges.is_empty()).then_some(index_ranges),
+            pnu_index_ranges: (!pnu_indices.is_empty()).then_some(pnu_indices),
+            pnujw_index_ranges: (!pnujw_indices.is_empty()).then_some(pnujw_indices),
             local_transforms,
             pnu_materials,
             pnujw_materials,

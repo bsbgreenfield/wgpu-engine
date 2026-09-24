@@ -1,8 +1,11 @@
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
-        GPUInstanceHandle, InstanceUploadJob,
-        gpu_allocator::{GPUUploadResult, VertexArenaError, gpu_arena::GPUArena},
+        GPUInstanceHandle, InstanceUploadJob, RenderUpdateError,
+        gpu_allocator::{
+            GPUUploadResult, VertexArenaError, allocation_tables::AllocationTableError,
+            gpu_arena::GPUArena,
+        },
     },
 };
 use std::num::NonZero;
@@ -112,7 +115,9 @@ impl BindGroupProvider for InstanceDataBindGroup {
     }
 
     fn despawn(&mut self, handle: &GPUInstanceHandle) {
-        let _ = self.record_arena.dealloc(handle).expect("despawn failure");
+        self.record_arena
+            .dealloc(handle)
+            .expect("instance despawn failed");
     }
 }
 
@@ -139,10 +144,11 @@ impl InstanceDataBindGroup {
     pub(in crate::renderer) fn upload_instance_record<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, InstanceRecordData>,
+        node_id: u32,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, VertexArenaError> {
-        let upload_result = self.record_arena.upload(job, queue, device)?;
+        let upload_result = self.record_arena.upload_reserved(job, node_id, queue);
         if self.bind_groups.is_empty() {
             self.add_bind_group(device);
         }
@@ -158,5 +164,13 @@ impl InstanceDataBindGroup {
             0,
             bytemuck::cast_slice(offset_data),
         );
+    }
+
+    pub(in crate::renderer) fn reserve_record_slot(
+        &mut self,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<(usize, usize), AllocationTableError> {
+        self.record_arena.reserve(queue, device)
     }
 }

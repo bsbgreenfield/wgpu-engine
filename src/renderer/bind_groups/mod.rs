@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
@@ -46,12 +48,22 @@ pub(super) trait BindGroupProvider {
     fn despawn(&mut self, handle: &GPUInstanceHandle);
 }
 
+#[derive(Hash, PartialEq, Eq, Clone)]
+struct BindSlots {
+    slots: [u8; 8],
+}
+struct BindRegistry {
+    bindings: Vec<BindSlots>,
+    lookup: HashMap<BindSlots, u16>,
+}
+
 pub(super) struct BindGroupCollection {
     next_handle: u32,
     pub(super) local_transforms: LocalTransformBindGroup,
     pub(super) skinning: SkinningBindGroup,
     pub(super) instance_data: InstanceDataBindGroup,
     pub(super) material_bind_group: MaterialBindGroup,
+    bind_registry: BindRegistry,
 }
 
 impl BindGroupCollection {
@@ -62,6 +74,19 @@ impl BindGroupCollection {
     #[cfg(test)]
     pub(super) fn get_joint_buffer(&self) -> (&wgpu::Buffer, &wgpu::Buffer) {
         self.skinning.get_first_buffers()
+    }
+
+    pub(super) fn set_bindings(&mut self, bindings: [u8; 8]) -> u16 {
+        let bs = BindSlots { slots: bindings };
+        if let Some(id) = self.bind_registry.lookup.get(&bs) {
+            return *id;
+        } else {
+            self.bind_registry
+                .lookup
+                .insert(bs.clone(), self.bind_registry.bindings.len() as u16);
+            self.bind_registry.bindings.push(bs);
+            (self.bind_registry.bindings.len() - 1) as u16
+        }
     }
 
     pub(super) fn upload_local_transforms<'frame>(
@@ -90,13 +115,19 @@ impl BindGroupCollection {
 
     pub(super) fn gen_gpu_instance_handle(
         &mut self,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
         prototype: &PrototypeHandle,
-    ) -> GPUInstanceHandle {
-        self.next_handle += 1;
-        GPUInstanceHandle {
-            instance_id: self.next_handle - 1,
-            prototype: prototype.clone(),
-        }
+    ) -> Result<(u32, GPUInstanceHandle), AllocationTableError> {
+        let (element_offset, node_id) = self.instance_data.reserve_record_slot(queue, device)?;
+        Ok((
+            node_id as u32,
+            GPUInstanceHandle {
+                instance_id: element_offset as u32,
+                prototype: prototype.clone(),
+                bind_id: u16::MAX,
+            },
+        ))
     }
 
     pub(super) fn new() -> Self {
@@ -106,6 +137,10 @@ impl BindGroupCollection {
             skinning: SkinningBindGroup::new(),
             instance_data: InstanceDataBindGroup::new(),
             material_bind_group: MaterialBindGroup::new(),
+            bind_registry: BindRegistry {
+                bindings: Vec::new(),
+                lookup: HashMap::new(),
+            },
         }
     }
     pub(super) fn despawn(&mut self, handle: &GPUInstanceHandle) {

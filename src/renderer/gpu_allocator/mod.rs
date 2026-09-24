@@ -44,6 +44,23 @@ pub(crate) struct GPUChunk<T: bytemuck::Pod + Debug> {
 }
 
 impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
+    fn upload_into_slot(
+        &mut self,
+        data: &[u8],
+        node_id: u32,
+        element_offset: u32,
+        queue: &wgpu::Queue,
+    ) -> Result<(usize, Range<u32>), VertexArenaError> {
+        let byte_offset = (element_offset as usize * size_of::<T>()) as u64;
+        assert!(byte_offset == self.allocator.offset_of(node_id as usize));
+
+        queue.write_buffer(&self.buffer, byte_offset, data);
+        Ok((
+            node_id as usize,
+            Range::from((byte_offset as u32)..(byte_offset as u32) + (data.len() as u32)),
+        ))
+    }
+
     fn gpu_alloc(
         &mut self,
         data: &[u8],
@@ -55,15 +72,19 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
             return Err(DataTooLarge(size, label.to_string(), T::CHUNK_SIZE));
         }
 
-        let node_idx: usize = if self.remaining_space >= size {
+        let (offset, node_idx) = if self.remaining_space >= size {
             self.remaining_space -= size;
-            self.allocator.alloc_first(size)?
+            self.allocator
+                .alloc_first(size)
+                .map_err(|e| VertexArenaError::NoRoomLeft)?
         } else {
             return Err(VertexArenaError::NoRoomLeft);
         };
-        let offset = self.allocator.offset_of(node_idx) as u32;
-        queue.write_buffer(&self.buffer, offset.into(), data);
-        Ok((node_idx, Range::from(offset..offset + (data.len() as u32))))
+        queue.write_buffer(&self.buffer, offset as u64, data);
+        Ok((
+            node_idx,
+            Range::from((offset as u32)..(offset as u32) + (data.len() as u32)),
+        ))
     }
 
     pub fn new(device: &wgpu::Device, size: u32, label: &str, usages: wgpu::BufferUsages) -> Self {

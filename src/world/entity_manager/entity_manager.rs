@@ -1,13 +1,13 @@
-use std::{collections::HashSet, mem::MaybeUninit, ops::Range};
+use std::{any::type_name, collections::HashSet, mem::MaybeUninit, ops::Range};
 
 use crate::{
     asset_manager::{
-        AssetHandle, MeshRenderables, ProvidesAnimationData, ProvidesMaterialData,
-        ProvidesMeshData, asset_manager::AssetManager,
+        AssetHandle, ProvidesAnimationData, ProvidesMaterialData, ProvidesMeshData,
+        asset_manager::AssetManager,
     },
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::PrototypeHandle,
-    util::types::{InverseBindMatrix, JointTransform, LocalTransform, Mat4F32},
+    util::types::{InverseBindMatrix, JointTransform, LocalTransform},
     world::{
         entity_manager::{
             EntityManagerError, Renderables,
@@ -25,16 +25,31 @@ use crate::{
 
 pub struct EntityManager {
     available_ids: Vec<std::range::Range<u32>>,
+    prototypes: SparseSet<PrototypeHandle, 100>,
     mesh_collections: SparseSet<MeshCollectionComponent<dyn ProvidesMeshData>, 100>,
     materials: SparseSet<MaterialPalleteComponent<dyn ProvidesMaterialData>, 100>,
     animations: SparseSet<AnimationComponent<dyn ProvidesAnimationData>, 100>,
 }
 
 impl EntityManager {
+    pub fn release_prototype(&mut self, entity_handle: &EntityHandle) -> Option<PrototypeHandle> {
+        self.prototypes.remove(entity_handle.0 as usize)
+    }
+    pub fn prototype_of(&self, entity_handle: &EntityHandle) -> Option<PrototypeHandle> {
+        self.prototypes.get(entity_handle.0 as usize).cloned()
+    }
+    pub fn ack_prototype(
+        &mut self,
+        entity_handle: &EntityHandle,
+        prototype_handle: PrototypeHandle,
+    ) {
+        self.prototypes
+            .insert(entity_handle.0 as usize, prototype_handle);
+    }
+
     pub fn get_entity_new<'frame>(
         &'frame self,
         instance_handle: &InstanceHandle,
-        prototype_handle: PrototypeHandle,
         local_transform_data: Vec<LocalTransform>,
         joint_transform_data: Option<Vec<JointTransform>>,
         ibm_data: Option<Vec<InverseBindMatrix>>,
@@ -59,24 +74,24 @@ impl EntityManager {
         let (joint_transforms, ibms) = if let Some(joints) = joint_transform_data {
             let jt_res = match skinned_mode {
                 AnimationMode::Shared | AnimationMode::None => {
-                    Some(JointTransforms::OwnedShared { data: joints })
+                    JointTransforms::OwnedShared { data: joints }
                 }
-                AnimationMode::Independent => Some(JointTransforms::OwnedCopy { data: joints }),
+                AnimationMode::Independent => JointTransforms::OwnedCopy { data: joints },
             };
-            let ibm_res = Some(InverseBindMatrices::Owned {
+            let ibm_res = InverseBindMatrices::Owned {
                 data: ibm_data.expect("must have ibms"),
-            });
+            };
             (jt_res, ibm_res)
         } else {
-            (None, None)
+            (JointTransforms::None, InverseBindMatrices::None)
         };
 
         NewInstanceData {
             handle: instance_handle.clone(),
-            prototype: prototype_handle,
             local_transforms,
             joint_transforms,
             ibms,
+            additional: Vec::new(),
         }
     }
     pub fn get_entity_cloned<'frame>(
@@ -223,6 +238,7 @@ impl EntityManager {
             mesh_collections: SparseSet::new(),
             animations: SparseSet::new(),
             materials: SparseSet::new(),
+            prototypes: SparseSet::new(),
         }
     }
 
@@ -264,6 +280,17 @@ impl EntityManager {
         self.materials
             .insert(entity_handle.0 as usize, material_component.erase());
     }
+
+    #[cfg(test)]
+    pub fn get_registered_prototypes(&self) -> Vec<PrototypeHandle> {
+        let mut res = Vec::new();
+        for s in self.prototypes.sparse.iter().filter(|s| **s != INVALID) {
+            unsafe {
+                res.push(self.prototypes.dense[*s].assume_init().clone());
+            }
+        }
+        res
+    }
 }
 
 const INVALID: usize = usize::MAX;
@@ -289,7 +316,7 @@ impl<T, const N: usize> SparseSet<T, N> {
         assert!(id < N, "ID out of bounds");
 
         if self.contains(id) {
-            panic!("ID already present in SparseSet");
+            panic!("ID already present in SparseSet, {:?}", type_name::<T>());
         }
 
         let dense_index = self.len;
@@ -322,5 +349,30 @@ impl<T, const N: usize> SparseSet<T, N> {
     #[inline]
     pub fn contains(&self, id: usize) -> bool {
         id < N && self.sparse[id] < self.len && self.dense_ids[self.sparse[id]] == id
+    }
+
+    pub fn remove(&mut self, id: usize) -> Option<T> {
+        if !self.contains(id) {
+            return None;
+        }
+
+        let dense_index = self.sparse[id];
+        let last_index = self.len - 1;
+
+        let removed = unsafe { self.dense[dense_index].assume_init_read() };
+
+        if dense_index != last_index {
+            let moved_id = self.dense_ids[last_index];
+            let moved_value = unsafe { self.dense[last_index].assume_init_read() };
+            self.dense[dense_index].write(moved_value);
+            self.dense_ids[dense_index] = moved_id;
+            self.sparse[moved_id] = dense_index;
+        }
+
+        self.dense_ids[last_index] = INVALID;
+        self.sparse[id] = INVALID;
+        self.len -= 1;
+
+        Some(removed)
     }
 }

@@ -1,5 +1,8 @@
-use std::fmt::Debug;
+use std::collections::HashMap;
 use std::range::Range;
+use std::{collections::HashSet, fmt::Debug};
+
+use cgmath::vec3;
 
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
@@ -99,10 +102,10 @@ pub enum InverseBindMatrices {
 #[derive(Debug, Clone)]
 pub struct NewInstanceData {
     pub handle: InstanceHandle,
-    pub prototype: PrototypeHandle,
     pub local_transforms: LocalTransforms,
-    pub joint_transforms: Option<JointTransforms>,
-    pub ibms: Option<InverseBindMatrices>,
+    pub joint_transforms: JointTransforms,
+    pub ibms: InverseBindMatrices,
+    pub additional: Vec<InstanceHandle>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,20 +213,58 @@ impl World {
 
     pub fn spawn(
         &mut self,
-        scene_id: SceneId,
-        instance_data: Vec<Spawn<dyn Archetype>>,
-    ) -> Result<Vec<InstanceUploadData>, WorldUpdateError> {
-        let upload_data = self.instance_manager.spawn_instances(
-            &self.entity_manager,
-            &self.asset_manager,
-            instance_data,
-        )?;
+        scene_spawns: HashMap<SceneId, Vec<Spawn<dyn Archetype>>>,
+    ) -> Result<(), WorldUpdateError> {
+        let mut new_this_frame: HashMap<EntityHandle, NewInstanceData> = HashMap::new();
 
-        for iud in upload_data.iter() {
-            self.scene_manager
-                .add_instance_handles(scene_id, iud.handles())?;
+        for (scene_id, spawns) in scene_spawns {
+            // pull out anything for an entity we already promoted to New earlier this frame
+            let (already_new, rest): (Vec<_>, Vec<_>) = spawns
+                .into_iter()
+                .partition(|s| new_this_frame.contains_key(&s.entity));
+
+            for spawn in already_new {
+                let handle = self
+                    .instance_manager
+                    .insert_archetypes(&spawn.entity, vec![spawn.data])
+                    .remove(0);
+                self.scene_manager
+                    .add_instance_handle(scene_id, handle.clone())?;
+                new_this_frame
+                    .get_mut(&spawn.entity)
+                    .unwrap()
+                    .additional
+                    .push(handle);
+            }
+
+            for iud in self.instance_manager.spawn_instances(
+                &self.entity_manager,
+                &self.asset_manager,
+                rest,
+            )? {
+                match iud {
+                    InstanceUploadData::New(new) => {
+                        // primary + any additional generated within THIS scene's own batch
+                        let mut handles = vec![new.handle.clone()];
+                        handles.extend(new.additional.iter().cloned());
+                        self.scene_manager
+                            .add_multiple_instances_handles(scene_id, handles)?;
+                        new_this_frame.insert(new.handle.entity_handle.clone(), new);
+                    }
+                    InstanceUploadData::Copied(copied) => {
+                        self.scene_manager
+                            .add_multiple_instances_handles(scene_id, copied.handles.clone())?;
+                        self.deltas
+                            .push(WorldUpdateDelta::EntityInstanceSpawn(copied));
+                    }
+                }
+            }
         }
-        Ok(upload_data)
+
+        for (_, new) in new_this_frame {
+            self.deltas.push(WorldUpdateDelta::NewEntitySpawn(new));
+        }
+        Ok(())
     }
 
     pub fn despawn_instance(
@@ -280,7 +321,8 @@ impl World {
             self.despawn_instance(handle)?;
         }
         for entity in std::mem::take(&mut self.scene_manager.prototype_release_queue) {
-            if let Some(prototype) = self.instance_manager.release_prototype(&entity) {
+            if let Some(prototype) = self.entity_manager.release_prototype(&entity) {
+                self.instance_manager.release_entity_render_state(&entity);
                 self.deltas
                     .push(WorldUpdateDelta::ReleasePrototype(prototype));
             }
@@ -288,18 +330,7 @@ impl World {
 
         if !self.scene_manager.spawn_queue.is_empty() {
             let spawn_data = std::mem::take(&mut self.scene_manager.spawn_queue);
-            for (scene_id, spawns) in spawn_data {
-                for instance_data in self.spawn(scene_id, spawns)? {
-                    match instance_data {
-                        InstanceUploadData::New(new) => {
-                            self.deltas.push(WorldUpdateDelta::NewEntitySpawn(new))
-                        }
-                        InstanceUploadData::Copied(copied) => self
-                            .deltas
-                            .push(WorldUpdateDelta::EntityInstanceSpawn(copied)),
-                    }
-                }
-            }
+            self.spawn(spawn_data)?;
         }
         match commands.pop() {
             Some(c) => match c {
@@ -315,9 +346,12 @@ impl World {
                     self.add_instances(
                         SceneId(0),
                         vec![Spawn {
-                            entity: EntityHandle(1),
+                            entity: EntityHandle(0),
                             data: Box::new(APosition {
-                                position: cgmath::Matrix4::<f32>::from_scale(0.5).into(),
+                                position: cgmath::Matrix4::<f32>::from_translation(vec3(
+                                    0., 3., 5.,
+                                ))
+                                .into(),
                             }),
                         }],
                     )?;
@@ -355,22 +389,38 @@ impl World {
                     self.asset_manager
                         .register_asset_gpu_unloaded(asset_handle)?;
                 }
-                RenderUpdateDelta::EntitySpawned {
-                    instance_key,
-                    gpu_instance_handle,
-                    record_offset,
-                    binding_key,
-                } => {
-                    let instance_handle = InstanceHandle::from_key(instance_key);
-                    self.instance_manager.add_record_index(
-                        &instance_handle,
-                        record_offset,
-                        binding_key.as_u32(),
-                        gpu_instance_handle,
-                    );
-                }
+                // RenderUpdateDelta::EntitySpawned {
+                //     instance_key,
+                //     gpu_instance_handle,
+                //     record_offset,
+                //     binding_key,
+                // } => {
+                //     let instance_handle = InstanceHandle::from_key(instance_key);
+                //     self.instance_manager.add_record_index(
+                //         &instance_handle,
+                //         record_offset,
+                //         binding_key.as_u32(),
+                //         gpu_instance_handle,
+                //     );
+                // }
                 RenderUpdateDelta::InstanceDespawn(gpu_handle) => {
                     self.scene_manager.ack_despawn(gpu_handle);
+                }
+                RenderUpdateDelta::InstanceSpawn {
+                    instance_key,
+                    gpu_instance_handle,
+                } => {
+                    let instance_handle = InstanceHandle::from_key(instance_key);
+                    self.instance_manager
+                        .ack_instance_spawn(&instance_handle, gpu_instance_handle);
+                }
+                RenderUpdateDelta::PrototypeCreated {
+                    entity_key,
+                    prototype_handle,
+                } => {
+                    let entity_handle = EntityHandle::from_key(entity_key);
+                    self.entity_manager
+                        .ack_prototype(&entity_handle, prototype_handle);
                 }
             }
         }

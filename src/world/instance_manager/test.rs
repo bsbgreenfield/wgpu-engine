@@ -6,7 +6,7 @@ use crate::world::instance_manager::instance_manager::InstanceManager;
 use crate::{
     animation::{Animation, AnimationInstance, EntityAnimations},
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::{GPUInstanceHandle, PrototypeHandle},
+    renderer::GPUInstanceHandle,
     util::types::GlobalTransform,
     world::world::RenderGroup,
 };
@@ -27,10 +27,6 @@ impl InstanceManager {
             .unwrap();
 
         &entity_anim.mesh_slot_map
-    }
-    #[cfg(test)]
-    pub fn get_registered_prototypes(&self) -> &HashMap<EntityHandle, PrototypeHandle> {
-        &self.gpu_bind_registry.registered_prototypes
     }
     #[cfg(test)]
     pub fn get_registered_instances(&self) -> &HashMap<InstanceHandle, GPUInstanceHandle> {
@@ -101,7 +97,7 @@ impl InstanceManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn get_groups(&self) -> &Vec<RenderGroup> {
-        &self.render_groups
+    pub(crate) fn get_groups(&self) -> Vec<&RenderGroup> {
+        self.render_groups.iter().flatten().collect()
     }
 }

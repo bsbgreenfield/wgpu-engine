@@ -4,7 +4,6 @@ use crate::{
     animation::EntityAnimations,
     asset_manager::asset_manager::AssetManager,
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::PrototypeHandle,
     world::{
         WorldUpdateError,
         entity_manager::{Renderables, entity_manager::EntityManager},
@@ -25,22 +24,16 @@ impl InstanceManager {
         let sorted = Self::sort_entities(instance_data);
 
         for (entity_handle, arch_list) in sorted {
-            let registered: bool = self
-                .gpu_bind_registry
-                .registered_prototypes
-                .contains_key(&entity_handle);
+            let registered: bool = entity_manager.prototype_of(&entity_handle).is_some();
 
             if registered {
                 let handles = self.insert_archetypes(&entity_handle, arch_list);
                 let upload_data = self.copy_instances(entity_manager, &entity_handle, handles);
                 res.push(upload_data);
             } else {
-                let (new_instance_data, additional) =
+                let new_instance_data =
                     self.spawn_new_entity(entity_manager, asset_manager, entity_handle, arch_list);
                 res.push(InstanceUploadData::New(new_instance_data));
-                if !additional.is_empty() {
-                    res.push(self.copy_instances(entity_manager, &entity_handle, additional));
-                }
             }
         }
 
@@ -52,7 +45,7 @@ impl InstanceManager {
         asset_manager: &AssetManager,
         entity_handle: EntityHandle,
         mut arch_list: Vec<Box<dyn Archetype>>,
-    ) -> (NewInstanceData, Vec<InstanceHandle>) {
+    ) -> NewInstanceData {
         // take the first instance so that a prototype can be generated from it
         let first_arch = arch_list.swap_remove(0);
         let first_instance_handle = first_arch.insert_self(self, &entity_handle);
@@ -62,14 +55,9 @@ impl InstanceManager {
             .get_entity_render_data(&first_instance_handle, asset_manager)
             .expect("renderables fetch fail");
 
-        // create prototype
-        let prototype = self
-            .gpu_bind_registry
-            .gen_prototype(renderables.instance_handle.entity_handle.clone());
-
         // simlutaneously generate the render group of the new entity and the new instance upload data
-        let (render_group, new_instance_data) =
-            Self::new_instance(entity_manager, &mut renderables, prototype);
+        let (render_group, mut new_instance_data) =
+            Self::new_instance(entity_manager, &mut renderables);
 
         self.push_render_group(render_group, &renderables);
 
@@ -83,13 +71,13 @@ impl InstanceManager {
 
         // insert all other instances into archetype tables
         let additional = self.insert_archetypes(&entity_handle, arch_list);
-        (new_instance_data, additional)
+        new_instance_data.additional = additional;
+        new_instance_data
     }
 
     pub(super) fn new_instance(
         entity_manager: &EntityManager,
         renderables: &mut Renderables,
-        prototype: PrototypeHandle,
     ) -> (RenderGroup, NewInstanceData) {
         let mut views = Vec::<RenderView>::with_capacity(renderables.mesh_renderables.len());
         // TODO: change raw u32 to a structure in which a GPUAllocHandle can be included for an
@@ -107,7 +95,7 @@ impl InstanceManager {
                     joint_map: vec![], // TODO: seprate draw set struct for pnu to avoid this?
                     mesh_map: mesh_data.pnu_mesh_map,
                     primtitive_ranges: pnu,
-                    index_ranges: mesh_data.index_ranges.clone(),
+                    index_ranges: mesh_data.pnu_index_ranges.clone(),
                     material_indices: maybe_material
                         .as_ref()
                         .map(|(_material_alloc, material_indices)| {
@@ -128,7 +116,7 @@ impl InstanceManager {
                     joint_map: mesh_data.joint_map,
                     mesh_map: mesh_data.pnujw_mesh_map,
                     primtitive_ranges: pnujw,
-                    index_ranges: mesh_data.index_ranges.clone(),
+                    index_ranges: mesh_data.pnujw_index_ranges.clone(),
                     material_indices: maybe_material
                         .as_ref()
                         .map(|(_material_alloc, material_indices)| {
@@ -150,7 +138,6 @@ impl InstanceManager {
             views.push(view);
             new_instance_data = Some(entity_manager.get_entity_new(
                 &renderables.instance_handle,
-                prototype,
                 mesh_data.local_transforms,
                 mesh_data.joint_transforms,
                 mesh_data.ibms,
@@ -169,12 +156,9 @@ impl InstanceManager {
         entity_handle: &EntityHandle,
         handles: Vec<InstanceHandle>,
     ) -> InstanceUploadData {
-        let prototype_handle = self
-            .gpu_bind_registry
-            .registered_prototypes
-            .get(&entity_handle)
-            .expect("prototype should be registered")
-            .clone();
+        let prototype_handle = entity_manager
+            .prototype_of(entity_handle)
+            .expect("prototype should be registered");
 
         let has_joints = self.group_has_joints(entity_handle);
         entity_manager.get_entity_cloned(handles, prototype_handle, has_joints)
@@ -195,8 +179,12 @@ impl InstanceManager {
     }
 
     fn group_has_joints(&self, entity_handle: &EntityHandle) -> bool {
-        let group = &self.render_groups[self.sparse_entity_group[entity_handle.0 as usize]];
-        group.views().iter().any(|v| v.pnujw_draws.is_some())
+        let slot = self.sparse_entity_group[entity_handle.0 as usize];
+        self.render_groups
+            .get(slot)
+            .and_then(|group| group.as_ref())
+            .map(|g| g.views().iter().any(|v| v.pnujw_draws.is_some()))
+            .unwrap_or(false)
     }
 
     pub fn insert_archetypes(
@@ -215,15 +203,21 @@ impl InstanceManager {
         render_group: RenderGroup,
         renderables: &Renderables,
     ) {
-        if self.sparse_entity_group.len() < renderables.instance_handle.entity_handle.0 as usize {
-            self.sparse_entity_group.resize(
-                renderables.instance_handle.entity_handle.0 as usize,
-                usize::MAX,
-            );
+        let entity_id = renderables.instance_handle.entity_handle.0 as usize;
+        if self.sparse_entity_group.len() < entity_id {
+            self.sparse_entity_group.resize(entity_id + 1, usize::MAX);
         }
-        self.sparse_entity_group[renderables.instance_handle.entity_handle.0 as usize] =
-            self.render_groups.len();
-        self.render_groups.push(render_group);
+        let slot = match self.free_group_slots.pop() {
+            Some(slot) => {
+                self.render_groups[slot] = Some(render_group);
+                slot
+            }
+            None => {
+                self.render_groups.push(Some(render_group));
+                self.render_groups.len() - 1
+            }
+        };
+        self.sparse_entity_group[entity_id] = slot;
     }
 }
 

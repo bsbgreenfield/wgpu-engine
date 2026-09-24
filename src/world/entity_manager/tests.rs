@@ -118,6 +118,80 @@ mod sparse_set_tests {
             assert_eq!(set.get(id), Some(&(id as i32 * 10)));
         }
     }
+
+    #[test]
+    fn remove_returns_value_and_clears_entry() {
+        let mut set = TestSet::new();
+
+        set.insert(3, 42);
+
+        assert_eq!(set.remove(3), Some(42));
+        assert!(!set.contains(3));
+        assert_eq!(set.get(3), None);
+        assert_eq!(set.len, 0);
+    }
+
+    #[test]
+    fn remove_missing_returns_none() {
+        let mut set = TestSet::new();
+
+        set.insert(1, 10);
+
+        assert_eq!(set.remove(5), None);
+        assert_eq!(set.len, 1);
+    }
+
+    #[test]
+    fn remove_keeps_other_entries_compact_and_correct() {
+        let mut set = TestSet::new();
+
+        set.insert(1, 10);
+        set.insert(4, 20);
+        set.insert(6, 30);
+
+        // remove the middle entry, which forces the last dense element (id 6) to move
+        assert_eq!(set.remove(4), Some(20));
+
+        assert!(set.contains(1));
+        assert!(!set.contains(4));
+        assert!(set.contains(6));
+
+        assert_eq!(set.get(1), Some(&10));
+        assert_eq!(set.get(4), None);
+        assert_eq!(set.get(6), Some(&30));
+
+        assert_eq!(set.len, 2);
+        for i in 0..set.len {
+            let id = set.dense_ids[i];
+            assert!(set.contains(id));
+            assert_eq!(set.sparse[id], i);
+        }
+    }
+
+    #[test]
+    fn remove_last_inserted_entry() {
+        let mut set = TestSet::new();
+
+        set.insert(2, 100);
+        set.insert(5, 200);
+
+        assert_eq!(set.remove(5), Some(200));
+        assert!(set.contains(2));
+        assert!(!set.contains(5));
+        assert_eq!(set.len, 1);
+    }
+
+    #[test]
+    fn insert_after_remove_reuses_slot() {
+        let mut set = TestSet::new();
+
+        set.insert(2, 1);
+        set.remove(2);
+        set.insert(2, 99);
+
+        assert_eq!(set.get(2), Some(&99));
+        assert_eq!(set.len, 1);
+    }
 }
 #[cfg(test)]
 mod entity_manager_tests {

@@ -3,6 +3,7 @@ use core::panic;
 use crate::{
     app::{GPUAssetUploadJob, GPUTextureBinding},
     asset_manager::AssetHandle,
+    common::instance::InstanceHandle,
     renderer::{
         BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction, Operations,
         PrototypeHandle, RenderConstant, TexDim,
@@ -106,34 +107,55 @@ pub trait BytecodeGenerator<'frame> {
         constants: &mut Vec<RenderConstant<'frame>>,
     ) {
         let mut bind_mask = GPUBindings::empty();
+
+        instructions.push(Instruction::Op(Operations::PushPrototype));
         constants.push(RenderConstant::Key(
             copied_instance.prototype_handle.as_key(),
         ));
+        Self::emit_const_last(constants, instructions);
 
-        let prototype_idx = constants.len() - 1;
+        Self::entity_instance_spawn_ex(
+            instructions,
+            constants,
+            &copied_instance.local_transforms,
+            &copied_instance.joint_transforms,
+            &copied_instance.handles,
+            &mut bind_mask,
+        );
+    }
+
+    fn entity_instance_spawn_ex(
+        instructions: &mut Vec<Instruction>,
+        constants: &mut Vec<RenderConstant<'frame>>,
+        local_transforms: &LocalTransforms,
+        joint_transforms: &JointTransforms,
+        handles: &[InstanceHandle],
+        bind_mask: &mut GPUBindings,
+    ) {
         bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
-        let lt_instr = match copied_instance.local_transforms {
-            LocalTransforms::NeedsCopy => Instruction::Op(Operations::CopyData),
-            LocalTransforms::NeedsShared => Instruction::Op(Operations::ShareData),
+        let lt_instr = match local_transforms {
+            LocalTransforms::NeedsCopy | LocalTransforms::OwnedCopy { .. } => {
+                Instruction::Op(Operations::CopyData)
+            }
+            LocalTransforms::NeedsShared | LocalTransforms::OwnedShared { .. } => {
+                Instruction::Op(Operations::ShareData)
+            }
             _ => panic!(),
         };
-        let joint_instr = match copied_instance.joint_transforms {
+        let joint_instr = match joint_transforms {
             JointTransforms::None => None,
-            JointTransforms::NeedsCopy => {
+            JointTransforms::NeedsCopy | JointTransforms::OwnedCopy { .. } => {
                 bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
                 Some(Instruction::Op(Operations::CopyData))
             }
-            JointTransforms::NeedsShared => {
+            JointTransforms::NeedsShared | JointTransforms::OwnedShared { .. } => {
                 bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
                 Some(Instruction::Op(Operations::ShareData))
             }
-            _ => panic!(),
         };
 
-        for handle in copied_instance.handles.iter().cloned() {
-            instructions.push(Instruction::Op(Operations::Push));
-            Self::emit_const(constants, instructions, prototype_idx);
-            instructions.push(Instruction::Op(Operations::SpawnFromPrototype));
+        for handle in handles.iter().cloned() {
+            instructions.push(Instruction::Op(Operations::SpawnInstance));
             constants.push(RenderConstant::Key(handle.as_key()));
             Self::emit_const_last(constants, instructions);
             instructions.push(lt_instr);
@@ -142,7 +164,7 @@ pub trait BytecodeGenerator<'frame> {
                 instructions.push(joint_instr);
                 instructions.push(Instruction::Buffer(BufferType::JointTransform));
             }
-            instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+            instructions.push(Instruction::Op(Operations::EmitInstanceSpawn));
             instructions.push(Instruction::Byte(bind_mask.bits()));
         }
     }
@@ -153,14 +175,18 @@ pub trait BytecodeGenerator<'frame> {
         constants: &mut Vec<RenderConstant<'frame>>,
     ) {
         let mut bind_mask = GPUBindings::empty();
-        // prototype gen
+
+        // create the prototype, associated with this entity
         instructions.push(Instruction::Op(Operations::CreatePrototype));
-        constants.push(RenderConstant::Key(new_instance.prototype.as_key()));
-        Self::emit_const_last(constants, instructions);
-        constants.push(RenderConstant::Key(new_instance.handle.as_key()));
+        constants.push(RenderConstant::Key(
+            new_instance.handle.entity_handle.as_key(),
+        ));
         Self::emit_const_last(constants, instructions);
 
-        instructions.push(Instruction::Op(Operations::SpawnEntityInstance));
+        // spawn a new instance
+        instructions.push(Instruction::Op(Operations::SpawnInstance));
+        constants.push(RenderConstant::Key(new_instance.handle.as_key()));
+        Self::emit_const_last(constants, instructions);
 
         // local transforms
         bind_mask.insert(GPUBindings::LOCAL_TRANSFORM);
@@ -189,41 +215,48 @@ pub trait BytecodeGenerator<'frame> {
             ),
         }
 
-        // joints and ibms
-        if let Some(joint_transforms) = &new_instance.joint_transforms {
+        if let JointTransforms::OwnedShared { data } | JointTransforms::OwnedCopy { data } =
+            &new_instance.joint_transforms
+        {
             bind_mask.insert(GPUBindings::JOINT_TRANSFORM);
-            instructions.push(Instruction::Op(Operations::JointTransformUpload));
-            let ibm_bytes = if let Some(InverseBindMatrices::Owned { data }) = &new_instance.ibms {
+            let ibm_bytes = if let InverseBindMatrices::Owned { data } = &new_instance.ibms {
                 bytemuck::cast_slice(data)
             } else {
                 panic!("joint transforms must be accompanied by ibms");
             };
-            if let JointTransforms::OwnedCopy { data } | JointTransforms::OwnedShared { data } =
-                joint_transforms
-            {
-                let jt_bytes: &[u8] = bytemuck::cast_slice(data);
-                constants.push(RenderConstant::DataRef(jt_bytes));
-                Self::emit_const_last(constants, instructions);
-                constants.push(RenderConstant::DataRef(ibm_bytes));
-                Self::emit_const_last(constants, instructions);
-            } else {
-                panic!("must be joint data")
-            }
-            match joint_transforms {
+            instructions.push(Instruction::Op(Operations::JointTransformUpload));
+            let jt_bytes: &[u8] = bytemuck::cast_slice(data);
+            constants.push(RenderConstant::DataRef(jt_bytes));
+            Self::emit_const_last(constants, instructions);
+            constants.push(RenderConstant::DataRef(ibm_bytes));
+            Self::emit_const_last(constants, instructions);
+            match &new_instance.joint_transforms {
                 JointTransforms::OwnedShared { .. } => {
-                    instructions.push(Instruction::Op(Operations::ShareData));
-                    instructions.push(Instruction::Buffer(BufferType::JointTransform));
+                    instructions.push(Instruction::Op(Operations::ShareData))
                 }
                 JointTransforms::OwnedCopy { .. } => {
-                    instructions.push(Instruction::Op(Operations::CopyData));
-                    instructions.push(Instruction::Buffer(BufferType::JointTransform));
+                    instructions.push(Instruction::Op(Operations::CopyData))
                 }
-                _ => panic!("joint transforms must be sent with entity spawn"),
+                _ => unreachable!(),
             }
+            instructions.push(Instruction::Buffer(BufferType::JointTransform));
         }
 
-        instructions.push(Instruction::Op(Operations::EmitEntitySpawn));
+        instructions.push(Instruction::Op(Operations::EmitInstanceSpawn));
         instructions.push(Instruction::Byte(bind_mask.bits()));
+
+        if !new_instance.additional.is_empty() {
+            Self::entity_instance_spawn_ex(
+                instructions,
+                constants,
+                &new_instance.local_transforms,
+                &new_instance.joint_transforms,
+                &new_instance.additional,
+                &mut bind_mask,
+            );
+        }
+
+        instructions.push(Instruction::Op(Operations::EmitPrototypeSpawn));
     }
 
     fn asset_upload(
@@ -284,7 +317,7 @@ pub trait BytecodeGenerator<'frame> {
                     {
                         match texture {
                             GPUTextureBinding::Resolved(handle) => {
-                                instructions.push(Instruction::Op(Operations::Push));
+                                instructions.push(Instruction::Op(Operations::PushAlloc));
                                 constants.push(RenderConstant::Key(handle.as_key()));
                                 Self::emit_const_last(constants, instructions);
                                 instructions.push(Instruction::Op(Operations::TextureAcquire));

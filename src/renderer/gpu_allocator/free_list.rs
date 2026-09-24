@@ -101,7 +101,7 @@ impl FreeListAllocator {
         }
     }
 
-    fn find_first(&self, size: u32) -> Result<(usize, u32), FreeListAllocError> {
+    pub(super) fn find_first(&self, size: u32) -> Result<(usize, u32), FreeListAllocError> {
         // it really should never get here do to the caller checking this, but here for completness
         if size > self.chunk_size {
             return Err(FreeListAllocError::NoRoomLeft(size));
@@ -136,7 +136,7 @@ impl FreeListAllocator {
         self.nodes.len()
     }
 
-    pub(super) fn alloc_first(&mut self, size: u32) -> Result<usize, FreeListAllocError> {
+    pub(super) fn alloc_first(&mut self, size: u32) -> Result<(usize, usize), FreeListAllocError> {
         // TODO: account for alignemnt and padding
         let (offset, node_idx) = self.find_first(size)?;
         let node = &mut self.nodes[node_idx as usize];
@@ -158,7 +158,7 @@ impl FreeListAllocator {
         }
         // if there is not enough space for a new node, do nothing
 
-        Ok(node_idx as usize)
+        Ok((offset, node_idx as usize))
     }
 
     fn add_node(&mut self, node: FreeListNode) -> usize {
@@ -185,14 +185,14 @@ mod free_list_tests {
     #[test]
     fn first_alloc_offset_is_zero() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let id = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, id) = alloc.alloc_first(ALLOC).unwrap();
         assert_eq!(alloc.offset_of(id), 0);
     }
 
     #[test]
     fn resolve_returns_correct_range() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let id = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, id) = alloc.alloc_first(ALLOC).unwrap();
         let range = alloc.resolve(id);
         assert_eq!(range.start, 0);
         assert_eq!(range.end, ALLOC);
@@ -203,8 +203,8 @@ mod free_list_tests {
     #[test]
     fn second_alloc_starts_after_first() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, b) = alloc.alloc_first(ALLOC).unwrap();
         assert_ne!(
             alloc.offset_of(a),
             alloc.offset_of(b),
@@ -220,9 +220,9 @@ mod free_list_tests {
     #[test]
     fn three_allocs_are_contiguous() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
-        let c = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, b) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, c) = alloc.alloc_first(ALLOC).unwrap();
         assert_eq!(alloc.offset_of(a), 0);
         assert_eq!(alloc.offset_of(b), ALLOC as u64);
         assert_eq!(alloc.offset_of(c), (ALLOC * 2) as u64);
@@ -234,11 +234,11 @@ mod free_list_tests {
     fn allocated_ranges_do_not_overlap() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let sizes = [ALLOC, ALLOC * 2, ALLOC];
-        let ids: Vec<usize> = sizes
+        let ids: Vec<(usize, usize)> = sizes
             .iter()
             .map(|&s| alloc.alloc_first(s).unwrap())
             .collect();
-        let ranges: Vec<_> = ids.iter().map(|&id| alloc.resolve(id)).collect();
+        let ranges: Vec<_> = ids.iter().map(|&id| alloc.resolve(id.1)).collect();
 
         for i in 0..ranges.len() {
             for j in (i + 1)..ranges.len() {
@@ -305,7 +305,7 @@ mod free_list_tests {
     #[test]
     fn alloc_sets_prev_on_remainder_node() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let id = alloc.alloc_first(ALLOC).unwrap();
+        let (_off, id) = alloc.alloc_first(ALLOC).unwrap();
         let remainder_idx = alloc.nodes[id]
             .next
             .expect("a remainder node should exist after the first allocation")
@@ -322,9 +322,9 @@ mod free_list_tests {
     #[test]
     fn sequential_allocs_form_prev_chain() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
-        let c = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, b) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, c) = alloc.alloc_first(ALLOC).unwrap();
         assert_eq!(alloc.nodes[a].prev, None, "head allocation has no prev");
         assert_eq!(alloc.nodes[b].prev, Some(a as u32));
         assert_eq!(alloc.nodes[c].prev, Some(b as u32));
@@ -337,9 +337,9 @@ mod free_list_tests {
     #[test]
     fn dealloc_marks_node_unoccupied() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
-        let c = alloc.alloc_first(ALLOC).unwrap();
+        let (_off, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_off, b) = alloc.alloc_first(ALLOC).unwrap();
+        let (_off, c) = alloc.alloc_first(ALLOC).unwrap();
         alloc.dealloc(b).unwrap();
         assert!(!alloc.nodes[b].occupied, "deallocated node should be free");
         assert!(alloc.nodes[a].occupied, "left neighbor must stay occupied");
@@ -352,7 +352,7 @@ mod free_list_tests {
     fn dealloc_with_occupied_neighbors_does_not_merge() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
         let _a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
+        let (_off, b) = alloc.alloc_first(ALLOC).unwrap();
         let _c = alloc.alloc_first(ALLOC).unwrap();
         let free_before = alloc.free_nodes.len();
         alloc.dealloc(b).unwrap();
@@ -371,11 +371,11 @@ mod free_list_tests {
     #[test]
     fn realloc_after_dealloc_reuses_offset() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
+        let (_off, a) = alloc.alloc_first(ALLOC).unwrap();
         let _b = alloc.alloc_first(ALLOC).unwrap();
         let offset_a = alloc.offset_of(a);
         alloc.dealloc(a).unwrap();
-        let new_id = alloc.alloc_first(ALLOC).unwrap();
+        let (_off, new_id) = alloc.alloc_first(ALLOC).unwrap();
         assert_eq!(
             alloc.offset_of(new_id),
             offset_a,
@@ -390,9 +390,9 @@ mod free_list_tests {
     #[test]
     fn dealloc_merges_with_free_prev() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
-        let c = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, b) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, c) = alloc.alloc_first(ALLOC).unwrap();
         alloc.dealloc(a).unwrap();
         let free_before = alloc.free_nodes.len();
         alloc.dealloc(b).unwrap();
@@ -411,7 +411,7 @@ mod free_list_tests {
         assert_eq!(alloc.nodes[c].prev, Some(a as u32));
         assert!(!alloc.nodes[a].occupied);
 
-        let new = alloc.alloc_first(ALLOC * 2).unwrap();
+        let (_off, new) = alloc.alloc_first(ALLOC * 2).unwrap();
         assert_eq!(alloc.offset_of(new), 0);
         assert_eq!(alloc.nodes[new].block_size, ALLOC * 2);
         // c is untouched and still reachable from the merged node's next pointer.
@@ -425,9 +425,9 @@ mod free_list_tests {
     #[test]
     fn dealloc_merges_with_free_next() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
-        let c = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, b) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, c) = alloc.alloc_first(ALLOC).unwrap();
         // Freeing c first folds the tail remainder into c's slot, so the
         // node that sits to b's right has block_size = CHUNK_SIZE - 2*ALLOC.
         alloc.dealloc(c).unwrap();
@@ -450,7 +450,7 @@ mod free_list_tests {
             "deallocated node should absorb the free next node (which already \
              swallowed the tail remainder)"
         );
-        let new = alloc.alloc_first(CHUNK_SIZE - ALLOC).unwrap();
+        let (_offset, new) = alloc.alloc_first(CHUNK_SIZE - ALLOC).unwrap();
         assert_eq!(alloc.offset_of(new), ALLOC as u64);
         assert_eq!(alloc.nodes[new].block_size, CHUNK_SIZE - ALLOC);
     }
@@ -461,9 +461,9 @@ mod free_list_tests {
     #[test]
     fn dealloc_merges_with_both_neighbors() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
-        let c = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, b) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, c) = alloc.alloc_first(ALLOC).unwrap();
         alloc.dealloc(a).unwrap();
         alloc.dealloc(c).unwrap();
         alloc.dealloc(b).unwrap();
@@ -473,7 +473,7 @@ mod free_list_tests {
             "after freeing every allocation, the head node should describe the \
              entire chunk as one contiguous free region"
         );
-        let new = alloc.alloc_first(CHUNK_SIZE).unwrap();
+        let (_offset, new) = alloc.alloc_first(CHUNK_SIZE).unwrap();
         assert_eq!(alloc.offset_of(new), 0);
         assert_eq!(alloc.resolve(new), Range::from(0..CHUNK_SIZE));
     }
@@ -484,13 +484,13 @@ mod free_list_tests {
     #[test]
     fn allocs_after_merge_are_contiguous_with_remaining_nodes() {
         let mut alloc = FreeListAllocator::new(CHUNK_SIZE, 2048);
-        let a = alloc.alloc_first(ALLOC).unwrap();
-        let b = alloc.alloc_first(ALLOC).unwrap();
-        let c = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, b) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, c) = alloc.alloc_first(ALLOC).unwrap();
         alloc.dealloc(a).unwrap();
         alloc.dealloc(b).unwrap();
-        let new_a = alloc.alloc_first(ALLOC).unwrap();
-        let new_b = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, new_a) = alloc.alloc_first(ALLOC).unwrap();
+        let (_offset, new_b) = alloc.alloc_first(ALLOC).unwrap();
         assert_eq!(alloc.offset_of(new_a), 0);
         assert_eq!(alloc.offset_of(new_b), ALLOC as u64);
         assert_eq!(alloc.offset_of(c), (ALLOC * 2) as u64);

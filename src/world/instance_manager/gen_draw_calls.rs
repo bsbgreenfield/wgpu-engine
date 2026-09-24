@@ -10,16 +10,15 @@ impl<'frame> DrawCallGenerator<'frame> for InstanceManager {
         // adjust as archetype tables are added
         let record_len = self.pos.positions.len();
 
-        // TODO: this is NOT the correct number to use for the number of buckets,
-        // because not every render group will use every binding.
-        // also active_bindings leaks, because its never removed
         packet.reset(record_len);
 
         packet.count_sort(&self.pos.record_indices, &self.pos.positions);
 
         for bucket in packet.draw_packet.draw_buckets.iter() {
             let instance_range = Range::from(bucket.start..(bucket.start + bucket.count));
-            let group = &self.render_groups[bucket.group_idx];
+            let Some(group) = self.render_groups[bucket.group_idx].as_ref() else {
+                panic!("draw bucket referenced a freed render group slot");
+            };
             for view in group.views().iter() {
                 if let Some(pnu) = &view.pnu_draws {
                     for (i, prim_range) in pnu.primtitive_ranges.iter().enumerate() {

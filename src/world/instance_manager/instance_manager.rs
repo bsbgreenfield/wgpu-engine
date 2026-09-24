@@ -1,7 +1,7 @@
 use crate::{
     app::app::AppCommand,
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::{GPUInstanceHandle, PrototypeHandle, RenderPacket},
+    renderer::{GPUInstanceHandle, RenderPacket},
     world::{
         WorldUpdateError,
         instance_manager::{
@@ -15,10 +15,10 @@ use crate::{
 };
 
 pub struct InstanceManager {
-    pub(super) _next_id: u16,
     pub(super) gpu_bind_registry: GPUBindRegistry,
     pub(super) pos: APositionTable,
-    pub(super) render_groups: Vec<RenderGroup>,
+    pub(super) render_groups: Vec<Option<RenderGroup>>,
+    pub(super) free_group_slots: Vec<usize>,
     pub(super) sparse_entity_group: Vec<usize>,
     pub animation_controller: AnimationController,
 }
@@ -26,9 +26,9 @@ pub struct InstanceManager {
 impl InstanceManager {
     pub fn new() -> Self {
         Self {
-            _next_id: 0,
             gpu_bind_registry: GPUBindRegistry::default(),
             pos: APositionTable::new(),
+            free_group_slots: Vec::new(),
             sparse_entity_group: Vec::from_iter(std::iter::repeat_n(usize::MAX, 100)),
             render_groups: Vec::new(),
             animation_controller: AnimationController::default(),
@@ -113,8 +113,35 @@ impl InstanceManager {
         // TODO: other tables
     }
 
-    pub fn release_prototype(&mut self, entity: &EntityHandle) -> Option<PrototypeHandle> {
-        self.gpu_bind_registry.registered_prototypes.remove(entity)
+    pub fn release_entity_render_state(&mut self, entity_handle: &EntityHandle) {
+        debug_assert!(
+            !self
+                .pos
+                .arena
+                .handles
+                .iter()
+                .any(|h| &h.entity_handle == entity_handle),
+            "released group for {entity_handle:?} with live instances in it"
+        );
+        self.animation_controller
+            .registered_animations
+            .remove(entity_handle);
+        let Some(slot) = self
+            .sparse_entity_group
+            .get(entity_handle.0 as usize)
+            .copied()
+        else {
+            return;
+        };
+
+        if slot == usize::MAX {
+            return;
+        }
+
+        self.sparse_entity_group[entity_handle.0 as usize] = usize::MAX;
+        if self.render_groups[slot].take().is_some() {
+            self.free_group_slots.push(slot);
+        }
     }
 
     pub fn prepare_render_frame<'frame>(

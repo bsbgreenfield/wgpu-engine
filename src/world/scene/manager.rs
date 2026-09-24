@@ -274,13 +274,22 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn add_instance_handles(
+    pub fn add_instance_handle(
+        &mut self,
+        scene_id: SceneId,
+        handle: InstanceHandle,
+    ) -> Result<(), SceneManagerError> {
+        self.dependency_graph.add_instance_handle(scene_id, handle);
+        Ok(())
+    }
+
+    pub fn add_multiple_instances_handles(
         &mut self,
         scene_id: SceneId,
         handles: impl IntoIterator<Item = InstanceHandle>,
     ) -> Result<(), SceneManagerError> {
         self.dependency_graph
-            .add_instance_handles(scene_id, handles);
+            .add_multiple_handles(scene_id, handles);
 
         Ok(())
     }

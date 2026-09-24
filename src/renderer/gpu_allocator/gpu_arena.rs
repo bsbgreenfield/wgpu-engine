@@ -6,7 +6,8 @@ use crate::{
             GPUUploadResult, GPUUploadable, TAllocationTable, UploadIndexJob, UploadMaterialJob,
             UploadMeshJob, VertexArenaError,
             allocation_tables::{
-                AllocationSlot, AllocationTableError, SharedInstanceData, StorageData,
+                AllocationSlot, AllocationTableError, ReservedSlotData, SharedInstanceData,
+                StorageData,
                 asset_alloc_table::{AssetAllocationMeta, SingleAlocationTable},
                 shared_instance_alloc_table::{
                     InstanceAllocationTable, SharedInstanceAllocTable, SharedInstanceAllocationSlot,
@@ -19,15 +20,6 @@ use crate::{
         ModelVertex, PNUJWVertex, PNUVertex, VIndex,
     },
 };
-
-// pub(crate): parameter type of `GPUUploadable::upload`, which is pub(crate).
-#[allow(unused)]
-pub(in crate::renderer) struct GPUArena<T: GPUUploadable> {
-    max_chunks: usize,
-    chunks: Vec<GPUChunk<T>>,
-    alloc_table: T::AllocTable,
-    label: Option<String>,
-}
 
 impl<'a, T: bytemuck::Pod> GPUUploadJob for InstanceUploadJob<'a, T> {
     type GPUHandle = GPUInstanceHandle;
@@ -173,7 +165,7 @@ impl GPUUploadable for InstanceRecordData {
 
     const USAGE: wgpu::BufferUsages = <Self as StorageData>::BUFFER_USAGES;
 
-    const CHUNK_SIZE: u32 = 1024;
+    const CHUNK_SIZE: u32 = 1024 * 128;
 
     const MIN_ALLOC_SIZE: u32 = 64;
 
@@ -375,6 +367,59 @@ pub(crate) struct InstanceAllocationResult {
     /// the index of the buffer (chunk) in which this data was placed
     pub chunk_index: u32,
 }
+
+// pub(crate): parameter type of `GPUUploadable::upload`, which is pub(crate).
+#[allow(unused)]
+pub(in crate::renderer) struct GPUArena<T: GPUUploadable> {
+    max_chunks: usize,
+    chunks: Vec<GPUChunk<T>>,
+    alloc_table: T::AllocTable,
+    label: Option<String>,
+}
+
+impl<T: ReservedSlotData> GPUArena<T> {
+    pub fn reserve(
+        &mut self,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<(usize, usize), AllocationTableError> {
+        self.ensure_initialized(queue, device);
+        for (_chunk_id, chunk) in self.chunks.iter_mut().enumerate() {
+            match chunk.allocator.alloc_first(size_of::<T>() as u32) {
+                Ok((byte_offset, node_id)) => {
+                    return Ok((byte_offset / size_of::<T>(), node_id));
+                }
+                Err(e) => match e {
+                    FreeListAllocError::NoRoomLeft(_) => continue,
+                    _ => return Err(AllocationTableError::MaxAllocationReached(T::arena_label())),
+                },
+            }
+        }
+
+        // TODO: allow for new chunks to be created for this type of data
+        return Err(AllocationTableError::MaxAllocationReached(T::arena_label()));
+    }
+
+    pub fn upload_reserved<'a>(
+        &mut self,
+        job: T::UploadJob<'a>,
+        reserved_node: u32,
+        queue: &wgpu::Queue,
+    ) -> GPUUploadResult {
+        let _ = self.chunks[0].upload_into_slot(
+            job.get_data(),
+            reserved_node,
+            job.get_handle().instance_id,
+            queue,
+        );
+        self.alloc_table.allocate(
+            job.get_handle(),
+            AssetAllocationMeta::new(0, reserved_node as usize),
+        );
+        GPUUploadResult::Success
+    }
+}
+
 impl<T: SharedInstanceData> GPUArena<T> {
     pub fn remove_prototype_binding(
         &mut self,
@@ -395,7 +440,7 @@ impl<T: SharedInstanceData> GPUArena<T> {
     ) -> Result<InstanceAllocationResult, AllocationTableError> {
         self.alloc_table
             .allocate(new_handle.clone(), SharedInstanceAllocationSlot::Shared);
-        let (chunk_index, _) = self.alloc_table.get_prototype_meta(new_handle);
+        let (chunk_index, _) = self.alloc_table.get_prototype_meta(&new_handle.prototype);
         let data_offset = self.resolve(new_handle).0.start;
         Ok(InstanceAllocationResult {
             data_offset,
@@ -409,7 +454,8 @@ impl<T: SharedInstanceData> GPUArena<T> {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<InstanceAllocationResult, AllocationTableError> {
-        let (src_chunk_idx, src_node_idx) = self.alloc_table.get_prototype_meta(new_handle);
+        let (src_chunk_idx, src_node_idx) =
+            self.alloc_table.get_prototype_meta(&new_handle.prototype);
 
         // get the data from the prototype allocation
         let src_range = self.get_chunks()[src_chunk_idx]
@@ -418,11 +464,11 @@ impl<T: SharedInstanceData> GPUArena<T> {
         let size = (src_range.end - src_range.start) as u64;
 
         // allocate for new node of size "size"
-        let mut dst_location = None;
+        let mut dst_location: Option<(usize, usize, usize)> = None;
         for (chunk_id, chunk) in self.get_chunks_mut().iter_mut().enumerate() {
             let res = chunk.allocator.alloc_first(size as u32);
-            if let Ok(node_id) = res {
-                dst_location = Some((chunk_id, node_id));
+            if let Ok((byte_offset, node_id)) = res {
+                dst_location = Some((byte_offset, chunk_id, node_id));
                 break;
             } else if let Err(FreeListAllocError::NoRoomLeft(size)) = res {
                 return Err(AllocationTableError::GPUArenaError(
@@ -436,20 +482,18 @@ impl<T: SharedInstanceData> GPUArena<T> {
                 // couldnt allocate into any of the chunks
                 if chunk_id < self.max_chunks {
                     self.add_buffer(device);
-                    if let Ok(node_id) = self.chunks[chunk_id].allocator.alloc_first(size as u32) {
-                        dst_location = Some((chunk_id, node_id));
+                    if let Ok((byte_offset, node_id)) =
+                        self.chunks[chunk_id].allocator.alloc_first(size as u32)
+                    {
+                        dst_location = Some((byte_offset, chunk_id, node_id));
                         break 'outer;
                     }
                 }
-                return Err(AllocationTableError::MaxAllocationReached);
+                return Err(AllocationTableError::MaxAllocationReached(T::arena_label()));
             }
         }
-        let (dst_chunk_id, dst_node_id) =
-            dst_location.ok_or(AllocationTableError::MaxAllocationReached)?;
-
-        let dst_offset = self.get_chunks()[dst_chunk_id]
-            .allocator
-            .offset_of(dst_node_id);
+        let (dst_offset, dst_chunk_id, dst_node_id) =
+            dst_location.ok_or(AllocationTableError::MaxAllocationReached(T::arena_label()))?;
 
         // do copying
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
@@ -466,7 +510,7 @@ impl<T: SharedInstanceData> GPUArena<T> {
         encoder.copy_buffer_to_buffer(src_buf, src_range.start as u64, &staging, 0, size);
 
         let dst_buf = &self.get_chunks()[dst_chunk_id].buffer;
-        encoder.copy_buffer_to_buffer(&staging, 0, dst_buf, dst_offset, size);
+        encoder.copy_buffer_to_buffer(&staging, 0, dst_buf, dst_offset as u64, size);
 
         queue.submit(Some(encoder.finish()));
 
@@ -490,6 +534,7 @@ impl<T: SharedInstanceData> GPUArena<T> {
         })
     }
 }
+
 impl<T: GPUUploadable> GPUAllocator<T> for GPUArena<T> {
     type AllocationError = VertexArenaError;
 

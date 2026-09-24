@@ -10,7 +10,7 @@ use crate::{
         depth_tex::DepthTexture,
         gpu_allocator::{
             GPUAllocator, GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
-            gpu_arena::GPUArena,
+            allocation_tables::AllocationTableError, gpu_arena::GPUArena,
         },
         pipeline::PipelineCollection,
     },
@@ -85,20 +85,22 @@ impl VertexArenaCollection {
 
 impl RenderKey for GPUInstanceHandle {
     fn as_key(&self) -> u64 {
-        let i = self.instance_id as u64;
-        let p = (self.prototype.0 as u64) << 32;
-        i | p
+        ((self.instance_id as u64) << 32)
+            | ((self.prototype.0 as u64) << 16)
+            | (self.bind_id as u64)
     }
 
     fn from_key(key: u64) -> Self {
-        let instance = (key & 0xFFFF_FFFF) as u32;
-        let p = ((key >> 32) & 0xFFFF_FFFF) as u32;
+        let instance = (key >> 32) as u32;
+        let p = (key >> 16) as u16;
+        let bind_id = key as u16;
 
         let prototype = PrototypeHandle(p);
 
         Self {
             prototype,
             instance_id: instance,
+            bind_id,
         }
     }
 }
@@ -173,9 +175,12 @@ impl Renderer {
 
     pub(super) fn get_gpu_instance_handle(
         &mut self,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
         prototype: &PrototypeHandle,
-    ) -> GPUInstanceHandle {
-        self.bind_groups.gen_gpu_instance_handle(prototype)
+    ) -> Result<(u32, GPUInstanceHandle), AllocationTableError> {
+        self.bind_groups
+            .gen_gpu_instance_handle(queue, device, prototype)
     }
 
     pub(crate) fn update(
@@ -306,13 +311,14 @@ impl Renderer {
     pub(super) fn upload_instance_record<'frame>(
         &mut self,
         job: InstanceUploadJob<'frame, InstanceRecordData>,
+        node_id: u32,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<GPUUploadResult, VertexArenaError> {
         Ok(self
             .bind_groups
             .instance_data
-            .upload_instance_record(job, queue, device)?)
+            .upload_instance_record(job, node_id, queue, device)?)
     }
 
     pub(super) fn upload_local_transforms<'frame>(

@@ -23,10 +23,10 @@ pub(crate) mod renderer;
 mod vm;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct PrototypeHandle(u32);
+pub struct PrototypeHandle(u16);
 
 impl PrototypeHandle {
-    pub fn new(id: u32) -> Self {
+    pub fn new(id: u16) -> Self {
         Self(id)
     }
 }
@@ -36,7 +36,7 @@ impl RenderKey for PrototypeHandle {
     }
 
     fn from_key(key: u64) -> Self {
-        Self(key as u32)
+        Self(key as u16)
     }
 }
 
@@ -212,30 +212,54 @@ pub(crate) enum RenderUpdateDelta {
         key: u64,
         alloc_handle: GPUAllocationHandle,
     },
-    EntitySpawned {
+    InstanceSpawn {
         instance_key: u64,
         gpu_instance_handle: GPUInstanceHandle,
-        record_offset: u32,
-        binding_key: InstanceBindKey,
     },
+    PrototypeCreated {
+        entity_key: u64,
+        prototype_handle: PrototypeHandle,
+    },
+    //EntitySpawned {
+    //    instance_key: u64,
+    //    gpu_instance_handle: GPUInstanceHandle,
+    //    record_offset: u32,
+    //    binding_key: InstanceBindKey,
+    //},
     InstanceDespawn(GPUInstanceHandle),
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct GPUInstanceHandle {
-    pub(crate) prototype: PrototypeHandle,
     pub(crate) instance_id: u32,
+    pub(crate) prototype: PrototypeHandle,
+    pub(crate) bind_id: u16,
 }
 
 #[cfg(test)]
 impl GPUInstanceHandle {
-    pub fn prototype_id(&self) -> u32 {
+    pub fn prototype_id(&self) -> u16 {
         self.prototype.0
     }
     pub fn instance_id(&self) -> u32 {
         self.instance_id
     }
 }
+
+impl Hash for GPUInstanceHandle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.instance_id.hash(state);
+        self.prototype.hash(state);
+    }
+}
+
+impl PartialEq for GPUInstanceHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.instance_id == other.instance_id && self.prototype == other.prototype
+    }
+}
+
+impl Eq for GPUInstanceHandle {}
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct AllocationMask(u32);
@@ -363,10 +387,9 @@ pub(crate) enum Operations {
     CreatePrototype,
     ReleasePrototype,
     AddAsset,
-    SpawnEntityInstance,
+    SpawnInstance,
     LocalTransformUpload,
     JointTransformUpload,
-    SpawnFromPrototype,
     ShareData,
     CopyData,
     PNUUpload,
@@ -377,12 +400,17 @@ pub(crate) enum Operations {
     TextureAcquire,
     MaterialUpload,
     EmitAssetUpload,
-    EmitEntitySpawn,
+    EmitInstanceSpawn,
+    EmitPrototypeSpawn,
+    //EmitEntitySpawn,
     DespawnInstance,
     DespawnAsset,
     Pop,
     Swap,
-    Push,
+    PushKey,
+    PushPrototype,
+    PushInstance,
+    PushAlloc,
 }
 
 #[derive(Debug)]
@@ -391,16 +419,30 @@ pub(crate) enum RenderConstant<'frame> {
     Key(u64),
 }
 
-#[derive(Debug)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct TexLayer {
+    bucket: u16,
+    layer: u16,
+}
+
+#[derive(Debug, Clone)]
 enum StackValue {
     Key(u64),
     Alloc(GPUAllocationHandle),
     Instance(GPUInstanceHandle),
     Offset(u32),
-    TextureSlot(u32),
+    TextureSlot(TexLayer),
+    Prototype(PrototypeHandle),
 }
 
 impl StackValue {
+    fn as_prototype(self) -> PrototypeHandle {
+        match self {
+            StackValue::Prototype(p) => p,
+            _ => panic!("expected prototype handle, got {:?}", self),
+        }
+    }
     fn as_alloc(self) -> GPUAllocationHandle {
         match self {
             StackValue::Alloc(a) => a,
@@ -408,7 +450,7 @@ impl StackValue {
             _ => panic!("expected an alloc key, got {self:?}"),
         }
     }
-    fn as_texture_slot(self) -> u32 {
+    fn as_texture_slot(self) -> TexLayer {
         match self {
             StackValue::TextureSlot(val) => val,
             _ => panic!("expected texuture slot, got {self:?}"),

@@ -268,22 +268,25 @@ impl DependencyGraph {
             .unwrap_or(&[])
     }
 
-    pub fn add_instance_handles(
+    pub fn add_instance_handle(&mut self, scene_id: SceneId, handle: InstanceHandle) {
+        let entity_node = self
+            .entities
+            .get_mut(handle.entity_handle.0 as usize)
+            .unwrap();
+        entity_node
+            .instances
+            .entry(scene_id)
+            .and_modify(|instances| instances.push(handle.clone()))
+            .or_insert(vec![handle]);
+        entity_node.live_instance_count += 1;
+    }
+    pub fn add_multiple_handles(
         &mut self,
         scene_id: SceneId,
         handles: impl IntoIterator<Item = InstanceHandle>,
     ) {
         for handle in handles {
-            let entity_node = self
-                .entities
-                .get_mut(handle.entity_handle.0 as usize)
-                .unwrap();
-            entity_node
-                .instances
-                .entry(scene_id)
-                .and_modify(|instances| instances.push(handle.clone()))
-                .or_insert(vec![handle]);
-            entity_node.live_instance_count += 1;
+            self.add_instance_handle(scene_id, handle);
         }
     }
 

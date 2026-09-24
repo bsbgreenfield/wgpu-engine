@@ -4,12 +4,12 @@ use std::{iter::Peekable, slice::Iter};
 use crate::{
     renderer::{
         AllocationMask, BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle,
-        InstanceBindKey, InstanceUploadJob, Instruction, Operations, PrototypeHandle,
-        RenderConstant, RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, UploadMeshJob,
+        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderConstant,
+        RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, TexLayer, UploadMeshJob,
         VertexArenaSelector,
         bind_groups::SharedInstanceBindGroup,
         gpu_allocator::{
-            GPUUploadResult, UploadIndexJob, UploadMaterialJob, UploadTextureJob,
+            UploadIndexJob, UploadMaterialJob, UploadTextureJob,
             gpu_arena::InstanceAllocationResult,
         },
         renderer::Renderer,
@@ -56,12 +56,17 @@ impl<'frame> Renderer {
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
+        //for i in instructions.iter() {
+        //    println!("{i:?}");
+        //}
+        //println!("------------------------");
         let mut stack = Vec::<StackValue>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
         let mut instr_peek = instructions.iter().peekable();
 
         while instr_peek.peek().is_some() {
             let instr = instr_peek.next().unwrap();
+            //println!("instr: {:?}, stack: {:?}", instr, stack);
             match instr {
                 Instruction::WideIdx(_) => {}
                 Instruction::Buffer(_bt) => {
@@ -71,10 +76,22 @@ impl<'frame> Renderer {
                     Operations::Pop => {
                         stack.pop();
                     }
-                    Operations::Push => {
+                    Operations::PushPrototype => {
                         let val_idx = Self::get_constant_idx(&mut instr_peek);
                         let val = constants[val_idx as usize].clone();
-                        stack.push(val.into());
+                        stack.push(StackValue::Prototype(PrototypeHandle::from_key(
+                            val.unwrap_key(),
+                        )));
+                    }
+                    Operations::PushAlloc => {
+                        let val_idx = Self::get_constant_idx(&mut instr_peek);
+                        let val = constants[val_idx as usize].clone();
+                        stack.push(StackValue::Alloc(GPUAllocationHandle::from_key(
+                            val.unwrap_key(),
+                        )));
+                    }
+                    Operations::PushKey | Operations::PushInstance => {
+                        todo!()
                     }
                     Operations::Swap => {
                         let first = stack.pop().unwrap();
@@ -99,7 +116,10 @@ impl<'frame> Renderer {
                     }
                     Operations::TexureDefault => {
                         let gac = stack.pop().unwrap();
-                        stack.push(StackValue::TextureSlot(0));
+                        stack.push(StackValue::TextureSlot(TexLayer {
+                            bucket: 0,
+                            layer: 0,
+                        }));
                         stack.push(gac);
                     }
                     Operations::TextureAcquire => {
@@ -111,7 +131,10 @@ impl<'frame> Renderer {
                             .material_bind_group
                             .resolve_texture_slot(&texture_alloc_handle, alloc_index)
                             .unwrap();
-                        stack.push(StackValue::TextureSlot((bucket << 16) | layer));
+                        stack.push(StackValue::TextureSlot(TexLayer {
+                            bucket: bucket as u16,
+                            layer: layer as u16,
+                        }));
                         stack.push(StackValue::Alloc(texture_alloc_handle));
                     }
                     Operations::MaterialUpload => {
@@ -128,7 +151,7 @@ impl<'frame> Renderer {
                                 .pop()
                                 .expect("should be texture slot")
                                 .as_texture_slot();
-                            material_chunk[24..28].copy_from_slice(&tex_mod.to_ne_bytes());
+                            material_chunk[24..28].copy_from_slice(bytemuck::bytes_of(&tex_mod));
                         }
                         self.upload_materials(
                             UploadMaterialJob {
@@ -200,12 +223,22 @@ impl<'frame> Renderer {
                             alloc_mask: AllocationMask::empty(),
                         }));
                     }
-                    Operations::EmitEntitySpawn => {
+                    Operations::EmitPrototypeSpawn => {
+                        let prototype = stack.pop().expect("should be prottoype").as_prototype();
+                        let entity_key = stack.pop().expect("should be entity key").as_raw_key();
+
+                        res.push(RenderUpdateDelta::PrototypeCreated {
+                            entity_key,
+                            prototype_handle: prototype,
+                        });
+                    }
+
+                    Operations::EmitInstanceSpawn => {
                         let bind_mask = GPUBindings::from_bits(Self::get_byte(&mut instr_peek))
                             .expect("should be a valid mask");
                         assert!(bind_mask.contains(GPUBindings::LOCAL_TRANSFORM));
 
-                        let gpu_instance_handle =
+                        let mut gpu_instance_handle =
                             stack.pop().expect("should be payload").as_instance_handle();
                         let joint_result: Option<(u32, u32)> = if bind_mask
                             .contains(GPUBindings::JOINT_TRANSFORM)
@@ -227,25 +260,80 @@ impl<'frame> Renderer {
                             0,
                             0,
                         ]);
+                        let reserved_node_id = stack.pop().expect("should be node id").as_offset();
                         let record_job: InstanceUploadJob<InstanceRecordData> =
                             InstanceUploadJob::new(&record_data, gpu_instance_handle);
-                        let GPUUploadResult::RecordData { element_slot } =
-                            self.upload_instance_record(record_job, queue, device)?
-                        else {
-                            panic!("unexpected upload result type")
-                        };
+                        self.upload_instance_record(record_job, reserved_node_id, queue, device)?;
+
+                        let bind_id = self.bind_groups.set_bindings([
+                            lt_buffer_index as u8,
+                            joint_result.map(|j| j.0 as u8).unwrap_or(0),
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                        ]);
+                        gpu_instance_handle.bind_id = bind_id;
 
                         let instance_key = stack.pop().expect("should be key").as_raw_key();
-                        res.push(RenderUpdateDelta::EntitySpawned {
+                        res.push(RenderUpdateDelta::InstanceSpawn {
                             instance_key,
                             gpu_instance_handle,
-                            record_offset: element_slot,
-                            binding_key: InstanceBindKey {
-                                lt: lt_buffer_index as u16,
-                                jt: joint_result.map(|jr| jr.0).unwrap_or(0) as u16,
-                            },
                         });
                     }
+                    //Operations::EmitEntitySpawn => {
+                    //    let bind_mask = GPUBindings::from_bits(Self::get_byte(&mut instr_peek))
+                    //        .expect("should be a valid mask");
+                    //    assert!(bind_mask.contains(GPUBindings::LOCAL_TRANSFORM));
+
+                    //    let gpu_instance_handle =
+                    //        stack.pop().expect("should be payload").as_instance_handle();
+                    //    let joint_result: Option<(u32, u32)> = if bind_mask
+                    //        .contains(GPUBindings::JOINT_TRANSFORM)
+                    //    {
+                    //        let jt_offset = stack.pop().expect("should be data offset").as_offset();
+                    //        let chunk_index =
+                    //            stack.pop().expect("should be chunk offset").as_offset();
+                    //        Some((chunk_index, jt_offset))
+                    //    } else {
+                    //        None
+                    //    };
+                    //    let lt_offset = stack.pop().expect("should be offset").as_offset();
+                    //    let lt_buffer_index =
+                    //        stack.pop().expect("should be chunk offset").as_offset();
+
+                    //    let record_data: Vec<u8> = bytemuck::pod_collect_to_vec(&[
+                    //        lt_offset,
+                    //        joint_result.map(|j| j.1).unwrap_or(0),
+                    //        0,
+                    //        0,
+                    //    ]);
+                    //    let record_job: InstanceUploadJob<InstanceRecordData> =
+                    //        InstanceUploadJob::new(&record_data, gpu_instance_handle);
+                    //    let GPUUploadResult::RecordData { element_slot } = self
+                    //        .upload_instance_record(
+                    //            record_job,
+                    //            gpu_instance_handle.instance_id,
+                    //            queue,
+                    //            device,
+                    //        )?
+                    //    else {
+                    //        panic!("unexpected upload result type")
+                    //    };
+
+                    //    let instance_key = stack.pop().expect("should be key").as_raw_key();
+                    //    res.push(RenderUpdateDelta::EntitySpawned {
+                    //        instance_key,
+                    //        gpu_instance_handle,
+                    //        record_offset: element_slot,
+                    //        binding_key: InstanceBindKey {
+                    //            lt: lt_buffer_index as u16,
+                    //            jt: joint_result.map(|jr| jr.0).unwrap_or(0) as u16,
+                    //        },
+                    //    });
+                    //}
                     Operations::LocalTransformUpload => {
                         let gpu_instance_handle =
                             stack.pop().expect("should be payload").as_instance_handle();
@@ -257,29 +345,17 @@ impl<'frame> Renderer {
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }
                     Operations::CreatePrototype => {
-                        let prototype_idx = Self::get_constant_idx(&mut instr_peek);
-                        let prototype_handle = PrototypeHandle::from_key(
-                            constants[prototype_idx as usize].unwrap_key(),
-                        );
+                        let entity_key_idx = Self::get_constant_idx(&mut instr_peek);
+                        let entity_key = constants[entity_key_idx as usize].unwrap_key();
+                        let prototype_handle = PrototypeHandle::from_key(entity_key.clone());
 
-                        let handle_idx = Self::get_constant_idx(&mut instr_peek);
-                        let instance_handle_key = constants[handle_idx as usize].clone();
-
-                        stack.push(instance_handle_key.into());
-                        stack.push(StackValue::Key(prototype_handle.as_key()));
+                        stack.push(StackValue::Key(entity_key));
+                        stack.push(StackValue::Prototype(prototype_handle));
                     }
                     Operations::ReleasePrototype => {
                         let idx = Self::get_constant_idx(&mut instr_peek);
                         let prototype = PrototypeHandle::from_key(constants[idx].unwrap_key());
                         self.release_prototypes(&prototype)?;
-                    }
-                    Operations::SpawnEntityInstance => {
-                        let prototype_key =
-                            stack.pop().expect("should be prototype key").as_raw_key();
-                        let prototype_handle = PrototypeHandle::from_key(prototype_key);
-                        let gpu_instance_handle = self.get_gpu_instance_handle(&prototype_handle);
-                        // TODO: GPU instance handle should be a payload
-                        stack.push(StackValue::Instance(gpu_instance_handle));
                     }
                     Operations::JointTransformUpload => {
                         let gpu_instance_handle =
@@ -295,18 +371,18 @@ impl<'frame> Renderer {
 
                         stack.push(StackValue::Instance(gpu_instance_handle));
                     }
-                    Operations::SpawnFromPrototype => {
-                        let prototype_key =
-                            stack.pop().expect("should be prototype key").as_raw_key();
-                        let prototype_handle = PrototypeHandle::from_key(prototype_key);
-                        let new_gpu_handle = self.get_gpu_instance_handle(&prototype_handle);
-
-                        // instance handle
-                        let const_idx = Self::get_constant_idx(&mut instr_peek);
-                        stack.push(constants[const_idx as usize].clone().into());
-
-                        // new -> donor
-                        stack.push(StackValue::Instance(new_gpu_handle));
+                    Operations::SpawnInstance => {
+                        let instance_key_idx = Self::get_constant_idx(&mut instr_peek);
+                        let instance_key = constants[instance_key_idx].unwrap_key();
+                        let prototype_handle =
+                            stack.pop().expect("should be prototype key").as_prototype();
+                        let (reserved_node_id, gpu_instance_handle) = self
+                            .get_gpu_instance_handle(queue, device, &prototype_handle)
+                            .map_err(|e| RenderUpdateError::GpuUploadFailure(Box::new(e)))?;
+                        stack.push(StackValue::Prototype(prototype_handle));
+                        stack.push(StackValue::Key(instance_key));
+                        stack.push(StackValue::Offset(reserved_node_id));
+                        stack.push(StackValue::Instance(gpu_instance_handle));
                     }
                     Operations::ShareData => {
                         let new_handle = stack
