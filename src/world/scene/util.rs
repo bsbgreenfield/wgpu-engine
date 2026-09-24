@@ -15,6 +15,40 @@ use crate::{
 };
 
 impl Scene {
+    pub fn mediaval_room(
+        world: &mut crate::world::world::World,
+    ) -> Result<(), crate::world::WorldInitError> {
+        let medieval_room = world.register_asset::<GltfAsset>("medieval_room")?;
+        let mr_entity = world.entity_manager.new_entity()?;
+
+        world.entity_manager.add_mesh_collection_for_entity(
+            &mr_entity,
+            MeshCollectionDescriptor::new(medieval_room.into(), ComponentAccessor::All)
+                .with_material(MaterialComponentDescriptor::Embedded),
+        );
+
+        SceneBuilder::new().add_entity(mr_entity).create(world)?;
+
+        use cgmath::SquareMatrix;
+        world.add_instances(
+            super::SceneId(0),
+            vec![Spawn {
+                entity: mr_entity,
+                data: Box::new(APosition {
+                    position: cgmath::Matrix4::<f32>::identity().into(),
+                }),
+            }],
+        )?;
+
+        world.scene_manager.set_load_level(
+            SceneId(0),
+            SceneLoadLevel::GPU,
+            &world.asset_manager,
+        )?;
+
+        Ok(())
+    }
+
     pub fn box_hierachy(
         world: &mut crate::world::world::World,
     ) -> Result<(), crate::world::WorldInitError> {

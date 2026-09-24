@@ -56,7 +56,9 @@ pub(super) fn load_gltf_from_resource(
     let entries: ReadDir = read_dir(&dir_path).map_err(|e| GltfLoadError::IOErr(e.kind()))?;
 
     for maybe_entry in entries {
-        let entry: DirEntry = maybe_entry.map_err(|_| GltfLoadError::InvalidFileError)?;
+        let entry: DirEntry = maybe_entry.map_err(|_| {
+            GltfLoadError::InvalidFileError(format!("could not find gltf for {:?}", dir_path))
+        })?;
         match entry.path().extension().unwrap().to_str().unwrap() {
             "gltf" => dot_gltf = Some(entry.path()),
             "bin" => dot_bin.push(entry.path()),
@@ -124,7 +126,9 @@ fn get_textures(
                     let bin_match = bin_files
                         .iter()
                         .find(|bin_file_path| *bin_file_path == file_path)
-                        .ok_or(GltfLoadError::InvalidFileError)?;
+                        .ok_or(GltfLoadError::InvalidFileError(String::from(
+                            "could not find bin source for embedded texture",
+                        )))?;
                     Ok(TextureSource::BinarySource(BinarySource::BinFile(
                         bin_match.into(),
                     )))
@@ -137,7 +141,10 @@ fn get_textures(
                     .join("textures")
                     .join(uri);
                 if !dir_path.is_file() {
-                    return Err(GltfLoadError::InvalidFileError);
+                    return Err(GltfLoadError::InvalidFileError(format!(
+                        "could not find texture asset for external texture {:?}",
+                        uri
+                    )));
                 }
                 Ok(TextureSource::ExternalFile(dir_path))
             }

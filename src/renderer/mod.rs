@@ -342,6 +342,7 @@ pub(crate) enum TexDim {
     Dim128,
     Dim256,
     Dim1024,
+    Dim2048,
 }
 
 impl TexDim {
@@ -352,6 +353,7 @@ impl TexDim {
             TexDim::Dim128 => 128,
             TexDim::Dim256 => 256,
             TexDim::Dim1024 => 1024,
+            TexDim::Dim2048 => 2048,
         }
     }
     pub(crate) fn from_u32(val: u32) -> Self {
@@ -361,6 +363,7 @@ impl TexDim {
             128 => Self::Dim128,
             256 => Self::Dim256,
             1024 => Self::Dim1024,
+            2048 => Self::Dim2048,
             _ => todo!("tex dim not implemented for {val}"),
         }
     }

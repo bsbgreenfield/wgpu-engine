@@ -66,7 +66,8 @@ impl GLTFDataAccessor {
             DataType::U8 => 1,
             DataType::U16 => 2,
             DataType::F32 => 4,
-            _ => todo!(),
+            DataType::U32 => 4,
+            _ => todo!("{:?}", acc.data_type()),
         };
         let num_elements = match acc.dimensions() {
             Dimensions::Scalar => 1,

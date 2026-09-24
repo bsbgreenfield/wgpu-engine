@@ -169,11 +169,21 @@ impl BindGroupProvider for MaterialBindGroup {
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -198,12 +208,12 @@ impl BindGroupProvider for MaterialBindGroup {
             .collect();
 
         entries.push(wgpu::BindGroupEntry {
-            binding: 5,
+            binding: 6,
             resource: wgpu::BindingResource::Sampler(&self.samplers[0]), // TODO: get actual
                                                                          // sampler
         });
         entries.push(wgpu::BindGroupEntry {
-            binding: 6,
+            binding: 7,
             resource: wgpu::BindingResource::Buffer(BufferBinding {
                 buffer: self.material_arena.get_first_buffer(),
                 offset: 0,

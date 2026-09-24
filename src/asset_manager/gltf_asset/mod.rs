@@ -221,7 +221,7 @@ pub enum GltfValidationError {
 #[derive(Debug)]
 pub enum GltfLoadError {
     IOErr(std::io::ErrorKind),
-    InvalidFileError,
+    InvalidFileError(String),
     MultipleFileTypes,
     GltfNeedsBinFile,
     GltfPackageError(gltf::Error),
@@ -259,7 +259,7 @@ impl Display for GltfLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::IOErr(err) => Display::fmt(err, f),
-            Self::InvalidFileError => f.write_str("Gltf load failed due to an invald file type"),
+            Self::InvalidFileError(s) => f.write_str(s.as_str()),
             Self::MultipleFileTypes => f.write_str("Gltf load failed due to there being multiple file types to choose from in the provided asset source file"),
             Self::GltfNeedsBinFile => f.write_str("Gltf load failed due to a missing bin file for the associated gltf file"),
             Self::GltfPackageError(err) => Display::fmt(err, f),

@@ -153,7 +153,7 @@ impl TextureChunk {
 }
 
 pub struct TextureArena {
-    chunks: [Option<TextureChunk>; 5],
+    chunks: [Option<TextureChunk>; 6],
     alloc_table: TextureAllocTable,
 }
 
@@ -166,7 +166,7 @@ impl<'frame> UploadTextureJob<'frame> {
 impl TextureArena {
     pub fn new() -> Self {
         Self {
-            chunks: [None, None, None, None, None],
+            chunks: [None, None, None, None, None, None],
             alloc_table: TextureAllocTable::new(),
         }
     }
@@ -206,6 +206,7 @@ impl TextureArena {
             TexDim::Dim128 => 2,
             TexDim::Dim256 => 3,
             TexDim::Dim1024 => 4,
+            TexDim::Dim2048 => 5,
         }
     }
 
@@ -239,7 +240,7 @@ impl TextureArena {
             .chunks
             .iter_mut()
             .skip(1)
-            .zip([64, 128, 256, 1024].into_iter())
+            .zip([64, 128, 256, 1024, 2048].into_iter())
         {
             if maybe_chunk.is_none() {
                 let _ = maybe_chunk.insert(TextureChunk::new(
@@ -264,19 +265,20 @@ impl TextureArena {
                 );
                 return GPUUploadResult::Success;
             }
-            Err(_) => {
-                panic!("texture upload fail")
+            Err(e) => {
+                panic!("texture upload fail {:?}", e)
             }
         }
     }
 
-    pub fn get_views(&self) -> [&wgpu::TextureView; 5] {
+    pub fn get_views(&self) -> [&wgpu::TextureView; 6] {
         [
             &self.chunks[0].as_ref().unwrap().view,
             &self.chunks[1].as_ref().unwrap().view,
             &self.chunks[2].as_ref().unwrap().view,
             &self.chunks[3].as_ref().unwrap().view,
             &self.chunks[4].as_ref().unwrap().view,
+            &self.chunks[5].as_ref().unwrap().view,
         ]
     }
 }

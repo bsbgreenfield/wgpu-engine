@@ -72,8 +72,10 @@ var t_256: texture_2d_array<f32>;
 @group(4) @binding(4)
 var t_1024: texture_2d_array<f32>;
 @group(4) @binding(5)
-var s_diffuse: sampler;
+var t_2048: texture_2d_array<f32>;
 @group(4) @binding(6)
+var s_diffuse: sampler;
+@group(4) @binding(7)
 var<storage, read> materials: array<Material>;
 
 fn apply_bone_transform(joint_base: u32,  joint_offset: u32, joints: vec4<u32>, weights: vec4<f32>, position: vec3<f32>)  -> vec4<f32> {
@@ -98,6 +100,7 @@ fn sample_diffuse(tex_modifier: u32, uv: vec2<f32>) -> vec4<f32> {
               case 2u: { return textureSampleLevel(t_128,  s_diffuse, uv, layer, 0.0); }
               case 3u: { return textureSampleLevel(t_256,  s_diffuse, uv, layer, 0.0); }
               case 4u: { return textureSampleLevel(t_1024, s_diffuse, uv, layer, 0.0); }
+              case 5u: { return textureSampleLevel(t_2048, s_diffuse, uv, layer, 0.0); }
               default: { return textureSampleLevel(t_default, s_diffuse, uv, 0, 0.0); }
       }
 }

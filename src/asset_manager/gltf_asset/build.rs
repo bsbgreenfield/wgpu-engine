@@ -338,7 +338,12 @@ fn build_all_models(
         let mut primitives = Vec::with_capacity(mesh_primitive_data.len());
         for primitive_data in mesh_primitive_data.iter() {
             if primitive_data.indices.is_some() {
-                assert_eq!(primitive_data.indices.as_ref().unwrap().byte_size, 2);
+                assert_eq!(
+                    primitive_data.indices.as_ref().unwrap().byte_size,
+                    2,
+                    "byte size of indices is {:?}",
+                    primitive_data.indices.as_ref().unwrap().byte_size
+                );
             }
             // binary data per vertex attribute
             let primitive_vertex_data: PrimitiveVerticesData =
