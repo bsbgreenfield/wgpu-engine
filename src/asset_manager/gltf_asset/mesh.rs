@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::range::Range;
 use std::{any::TypeId, error::Error};
 
@@ -47,13 +48,56 @@ pub(super) struct GLTFDataAccessor {
 }
 
 #[derive(Debug)]
+pub(super) enum PrimitiveRange {
+    U16(Range<usize>),
+    U32(Range<usize>),
+}
+
+impl Deref for PrimitiveRange {
+    type Target = Range<usize>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::U16(r) | Self::U32(r) => r,
+        }
+    }
+}
+
+impl PrimitiveRange {
+    pub const fn byte_size(&self) -> usize {
+        match self {
+            PrimitiveRange::U16(_) => 2,
+            PrimitiveRange::U32(_) => 4,
+        }
+    }
+
+    fn from_accessor(accessor: &GLTFDataAccessor, buffer_offsets: &Vec<usize>) -> Self {
+        let len =
+            accessor.byte_size as usize * accessor.num_elements as usize * accessor.count as usize;
+        let offset = accessor.byte_offset as usize + buffer_offsets[accessor.buffer_index as usize];
+        let range = Range {
+            start: offset,
+            end: offset + len,
+        };
+        match accessor.byte_size {
+            2 => PrimitiveRange::U16(range),
+            4 => PrimitiveRange::U32(range),
+            _ => panic!(
+                "this indices data type is not supported: {:?}",
+                accessor.byte_size
+            ),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(super) struct PrimitiveData {
     pub(super) positions: GLTFDataAccessor,
     pub(super) tex_coords: Option<GLTFDataAccessor>,
     pub(super) normals: Option<GLTFDataAccessor>,
     pub(super) joints: Option<GLTFDataAccessor>,
     pub(super) weights: Option<GLTFDataAccessor>,
-    pub(super) indices: Option<GLTFDataAccessor>,
+    pub(super) indices: Option<PrimitiveRange>,
     pub(super) material_idx: Option<u32>,
 }
 
@@ -96,6 +140,7 @@ impl GLTFDataAccessor {
 impl Primitive {
     pub(super) fn get_primitive_data(
         primitive: &gltf::Primitive,
+        buffer_offsets: &Vec<usize>,
     ) -> Result<PrimitiveData, GltfValidationError> {
         let position_accessor = GLTFDataAccessor::from_accessor(
             &primitive
@@ -112,8 +157,11 @@ impl Primitive {
             Some(normals) => Some(GLTFDataAccessor::from_accessor(&normals.1)?),
             None => None,
         };
-        let maybe_indices_accessor = match primitive.indices() {
-            Some(indices) => Some(GLTFDataAccessor::from_accessor(&indices)?),
+        let maybe_indices_range = match primitive.indices() {
+            Some(indices) => Some(PrimitiveRange::from_accessor(
+                &GLTFDataAccessor::from_accessor(&indices)?,
+                buffer_offsets,
+            )),
             None => None,
         };
         let maybe_tex_coords_accessor = match primitive
@@ -143,7 +191,7 @@ impl Primitive {
         Ok(PrimitiveData {
             positions: position_accessor,
             normals: maybe_normals_accessor,
-            indices: maybe_indices_accessor,
+            indices: maybe_indices_range,
             tex_coords: maybe_tex_coords_accessor,
             joints: maybe_joints0_accessor,
             weights: maybe_weights_accessor,
@@ -151,27 +199,25 @@ impl Primitive {
         })
     }
 
-    /// get the indices within the binary that contain this primitives index data
-    /// TODO: Assert that this is actually an indices accessor
-    pub(super) fn get_index_range(
-        maybe_accessor: Option<&GLTFDataAccessor>,
-        buffer_offsets: &Vec<usize>,
-    ) -> Result<Option<Range<usize>>, GltfValidationError> {
-        match maybe_accessor {
-            Some(accessor) => {
-                let length = accessor.byte_size as usize
-                    * accessor.num_elements as usize
-                    * accessor.count as usize;
-                let buffer_offset = buffer_offsets[accessor.buffer_index as usize];
-                let offset = accessor.byte_offset as usize + buffer_offset as usize;
-                return Ok(Some(Range {
-                    start: offset,
-                    end: offset + length,
-                }));
-            }
-            None => Ok(None),
-        }
-    }
+    // pub(super) fn get_index_range(
+    //     maybe_accessor: Option<&GLTFDataAccessor>,
+    //     buffer_offsets: &Vec<usize>,
+    // ) -> Result<Option<Range<usize>>, GltfValidationError> {
+    //     match maybe_accessor {
+    //         Some(accessor) => {
+    //             let length = accessor.byte_size as usize
+    //                 * accessor.num_elements as usize
+    //                 * accessor.count as usize;
+    //             let buffer_offset = buffer_offsets[accessor.buffer_index as usize];
+    //             let offset = accessor.byte_offset as usize + buffer_offset as usize;
+    //             return Ok(Some(Range {
+    //                 start: offset,
+    //                 end: offset + length,
+    //             }));
+    //         }
+    //         None => Ok(None),
+    //     }
+    // }
 
     pub(super) fn get_primitive_vertex_data(
         buffer_offsets: &Vec<usize>,

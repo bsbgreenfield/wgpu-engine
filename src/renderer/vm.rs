@@ -111,7 +111,7 @@ impl<'frame> Renderer {
                             dim,
                             texture_handle: alloc_handle.clone(),
                         };
-                        self.upload_texture(job, queue)?;
+                        self.upload_texture(job, device, queue)?;
                         stack.push(StackValue::Alloc(alloc_handle));
                     }
                     Operations::TexureDefault => {
@@ -188,13 +188,29 @@ impl<'frame> Renderer {
                         )?;
                         stack.push(StackValue::Alloc(alloc_handle));
                     }
-                    Operations::IndexUpload => {
+                    Operations::Index16Upload => {
                         let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
-                        alloc_handle.alloc_mask.insert(AllocationMask::INDEX);
+                        alloc_handle.alloc_mask.insert(AllocationMask::INDEX16);
 
                         let indices = constants[Self::get_constant_idx(&mut instr_peek) as usize]
                             .unwrap_data_ref();
-                        self.upload_indices(
+                        self.upload_indices_16(
+                            UploadIndexJob {
+                                indices,
+                                alloc_handle: alloc_handle.clone(),
+                            },
+                            queue,
+                            device,
+                        )?;
+                        stack.push(StackValue::Alloc(alloc_handle));
+                    }
+                    Operations::Index32Upload => {
+                        let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
+                        alloc_handle.alloc_mask.insert(AllocationMask::INDEX32);
+
+                        let indices = constants[Self::get_constant_idx(&mut instr_peek) as usize]
+                            .unwrap_data_ref();
+                        self.upload_indices_32(
                             UploadIndexJob {
                                 indices,
                                 alloc_handle: alloc_handle.clone(),

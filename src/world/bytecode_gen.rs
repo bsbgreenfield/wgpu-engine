@@ -8,7 +8,7 @@ use crate::{
         BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction, Operations,
         PrototypeHandle, RenderConstant, TexDim,
     },
-    util::types::{GPUMaterialData, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{AssetIndices, GPUMaterialData, PNUJWVertex, PNUVertex},
     world::{
         RenderKey,
         world::{
@@ -288,9 +288,12 @@ pub trait BytecodeGenerator<'frame> {
                     Self::emit_const_last(constants, instructions);
                 }
                 if let Some(indices) = &indices {
-                    instructions.push(Instruction::Op(Operations::IndexUpload));
-                    let index_data = bytemuck::cast_slice::<VIndex, u8>(&indices);
-                    constants.push(RenderConstant::DataRef(index_data));
+                    let op = match indices {
+                        AssetIndices::U16(_) => Operations::Index16Upload,
+                        AssetIndices::U32(_) => Operations::Index32Upload,
+                    };
+                    instructions.push(Instruction::Op(op));
+                    constants.push(RenderConstant::DataRef(indices.as_bytes()));
                     Self::emit_const_last(constants, instructions);
                 }
                 if !embedded_materials.records.is_empty() {

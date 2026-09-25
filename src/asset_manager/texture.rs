@@ -1,4 +1,7 @@
-use std::{cell::Cell, error::Error, io::Cursor, path::PathBuf};
+use std::{
+    cell::Cell, collections::HashMap, error::Error, io::Cursor, path::PathBuf, sync::Arc,
+    thread::ScopedJoinHandle,
+};
 
 use image::{DynamicImage, ImageReader};
 
@@ -35,6 +38,46 @@ pub(super) fn load_image_from_file(path: &PathBuf) -> Result<DynamicImage, Box<d
         .decode()
         .expect("failed to decode image");
     Ok(image)
+}
+
+pub fn decode_embedded_parallel(
+    gltf: &gltf::Gltf,
+    bin: &BinaryData,
+    indices: &[usize],
+) -> Result<HashMap<usize, Arc<image::DynamicImage>>, ModelBuilderError> {
+    if indices.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // number of threads to use is the min of available threads and textures to decode
+    let thread_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(indices.len());
+    // split the work into the available threads
+    let chunk_size = indices.len().div_ceil(thread_count);
+
+    let chunks = std::thread::scope(|scope| {
+        indices
+            .chunks(chunk_size)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .map(|&idx| (idx, decode_embedded(gltf, bin, idx)))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .map(|handle| handle.join().expect("texture decode fail"))
+            .collect::<Vec<_>>()
+    });
+    let mut res = HashMap::with_capacity(indices.len());
+    for (idx, result) in chunks.into_iter().flatten() {
+        let image = result.map_err(|e| ModelBuilderError::GltfLoadError(e))?;
+        res.insert(idx, Arc::new(image));
+    }
+
+    Ok(res)
 }
 
 pub(super) fn decode_embedded(

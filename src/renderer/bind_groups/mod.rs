@@ -44,6 +44,7 @@ pub(super) trait BindGroupProvider {
     fn get_bind_group(&self, alloc_handle: &InstanceHandle) -> &wgpu::BindGroup;
     fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout;
     fn add_bind_group(&mut self, device: &wgpu::Device);
+    fn update_bind_group(&mut self, device: &wgpu::Device, bg_idx: usize);
     fn new() -> Self;
     fn despawn(&mut self, handle: &GPUInstanceHandle);
 }

@@ -14,7 +14,7 @@ use crate::{
         Asset, AssetHandle, AssetLoadError, AssetSource, ModelBuilderError,
         asset_manager::AssetManager, gltf_asset::mesh::Mesh,
     },
-    util::types::{Mat4F32, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{AssetIndices, Mat4F32, PNUJWVertex, PNUVertex},
 };
 mod animation;
 mod build;
@@ -207,7 +207,7 @@ pub struct GltfAsset {
     meshes: Vec<Mesh>,
     pnujw_vertices: Arc<[PNUJWVertex]>,
     pnu_vertices: Arc<[PNUVertex]>,
-    indices: Option<Arc<[VIndex]>>,
+    indices: Option<AssetIndices>,
     animations: Vec<Arc<GltfAnimation>>,
     skins: Vec<Vec<usize>>,
     ibms: Vec<Vec<Mat4F32>>,
@@ -228,6 +228,27 @@ pub enum GltfLoadError {
     BadFile(String),
     ModelBuilderError(Box<ModelBuilderError>),
     Unimplemented,
+}
+
+impl Display for GltfLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GltfLoadError::IOErr(error_kind) => write!(f, "IO error: {}", error_kind),
+            GltfLoadError::InvalidFileError(s) => f.write_str(s),
+            GltfLoadError::MultipleFileTypes => {
+                f.write_str("multiple file types included for this gltf asset")
+            }
+            GltfLoadError::GltfNeedsBinFile => f.write_str("gltd file missing bin"),
+            GltfLoadError::GltfPackageError(e) => std::fmt::Display::fmt(e, f),
+            GltfLoadError::BadFile(s) => f.write_str(s),
+            GltfLoadError::ModelBuilderError(model_builder_error) => {
+                std::fmt::Display::fmt(model_builder_error, f)
+            }
+            GltfLoadError::Unimplemented => {
+                f.write_str("gltf load fail: this has not been implemented yet")
+            }
+        }
+    }
 }
 
 pub enum GltfAttributeType {
@@ -255,20 +276,6 @@ impl GltfAttributeType {
     }
 }
 
-impl Display for GltfLoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IOErr(err) => Display::fmt(err, f),
-            Self::InvalidFileError(s) => f.write_str(s.as_str()),
-            Self::MultipleFileTypes => f.write_str("Gltf load failed due to there being multiple file types to choose from in the provided asset source file"),
-            Self::GltfNeedsBinFile => f.write_str("Gltf load failed due to a missing bin file for the associated gltf file"),
-            Self::GltfPackageError(err) => Display::fmt(err, f),
-            Self::BadFile(str) => f.write_str(str),
-            Self::ModelBuilderError(e) => write!(f, "Gltf load failed internally: {}",e ),
-            Self::Unimplemented => f.write_str("This type of gltf loading has not been implemented"),
-        }
-    }
-}
 impl std::error::Error for GltfLoadError {}
 
 impl From<ModelBuilderError> for GltfLoadError {

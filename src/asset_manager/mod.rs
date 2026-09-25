@@ -313,6 +313,7 @@ impl PartialOrd<SceneLoadLevel> for AssetResidency {
 pub enum ModelBuilderError {
     NodeNotFound(usize),
     MeshNotFound(usize),
+    GltfLoadError(GltfLoadError),
     ValidationError(GltfValidationError),
     BinarySourceNotFound,
     IndexRangeError,
@@ -324,6 +325,7 @@ impl Display for ModelBuilderError {
             Self::NodeNotFound(node_id) => write!(f, "Node {} not found", node_id),
             Self::MeshNotFound(mesh_id) => write!(f, "Could not resolve mesh {}", mesh_id),
             Self::ValidationError(err) => err.fmt(f),
+            Self::GltfLoadError(err) => std::fmt::Display::fmt(err, f),
             Self::BinarySourceNotFound => f.write_str("binary source not found"),
             Self::IndexRangeError => f.write_str("index range out of bounds"),
         }

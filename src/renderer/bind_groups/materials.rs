@@ -1,6 +1,6 @@
 use std::{num::NonZero, range::Range};
 
-use wgpu::BufferBinding;
+use wgpu::{BindGroupEntry, BufferBinding};
 
 use crate::{
     renderer::{
@@ -44,17 +44,23 @@ impl MaterialBindGroup {
         alloc_handle: &GPUAllocationHandle,
         alloc_index: usize,
     ) -> Option<(u32, u32)> {
-        println!("ALLOC: {:?}, index: {}", alloc_handle, alloc_index);
         self.texture_arena.resolve(alloc_handle, alloc_index)
     }
 
     pub(in crate::renderer) fn upload_texture(
         &mut self,
         job: UploadTextureJob,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<GPUUploadResult, VertexArenaError> {
-        let upload_result = self.texture_arena.upload(job, queue);
-        Ok(upload_result)
+        match self.texture_arena.upload(job, device, queue) {
+            GPUUploadResult::Success => {}
+            GPUUploadResult::TextureUploadBGDirty => {
+                self.update_bind_group(device, 0); //TODO: find a way to get the actual bind group
+            }
+            _ => panic!("received gpu upload result from the wrong bg"),
+        }
+        Ok(GPUUploadResult::Success)
     }
 
     pub(in crate::renderer) fn ensure_defaults(
@@ -74,7 +80,7 @@ impl MaterialBindGroup {
                 ..Default::default()
             }));
 
-        self.texture_arena.ensure_chunks(device, queue);
+        self.texture_arena.ensure_default(device, queue);
         self.material_arena.ensure_initialized(queue, device);
         self.add_bind_group(device);
     }
@@ -101,6 +107,37 @@ impl MaterialBindGroup {
 
     pub(in crate::renderer) fn get_default_bg(&self) -> &wgpu::BindGroup {
         &self.bind_groups[0]
+    }
+
+    fn get_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
+        let mut entries: Vec<BindGroupEntry> = (0..6)
+            .into_iter()
+            .map(|idx| wgpu::BindGroupEntry {
+                binding: idx,
+                resource: wgpu::BindingResource::TextureView(
+                    self.texture_arena.get_view(idx as usize),
+                ),
+            })
+            .collect();
+        entries.push(wgpu::BindGroupEntry {
+            binding: 6,
+            resource: wgpu::BindingResource::Sampler(&self.samplers[0]), // TODO: get actual
+                                                                         // sampler
+        });
+        entries.push(wgpu::BindGroupEntry {
+            binding: 7,
+            resource: wgpu::BindingResource::Buffer(BufferBinding {
+                buffer: self.material_arena.get_first_buffer(),
+                offset: 0,
+                size: None,
+            }),
+        });
+        let bgl = Self::get_bind_group_layout(device);
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture bind group"),
+            layout: &bgl,
+            entries: &entries,
+        })
     }
 }
 
@@ -196,36 +233,12 @@ impl BindGroupProvider for MaterialBindGroup {
         })
     }
 
+    fn update_bind_group(&mut self, device: &wgpu::Device, bg_idx: usize) {
+        let new_bg = self.get_bind_group(device);
+        self.bind_groups[bg_idx] = new_bg;
+    }
     fn add_bind_group(&mut self, device: &wgpu::Device) {
-        let view = self.texture_arena.get_views();
-        let mut entries: Vec<wgpu::BindGroupEntry> = view
-            .iter()
-            .enumerate()
-            .map(|(idx, view)| wgpu::BindGroupEntry {
-                binding: idx as u32,
-                resource: wgpu::BindingResource::TextureView(view),
-            })
-            .collect();
-
-        entries.push(wgpu::BindGroupEntry {
-            binding: 6,
-            resource: wgpu::BindingResource::Sampler(&self.samplers[0]), // TODO: get actual
-                                                                         // sampler
-        });
-        entries.push(wgpu::BindGroupEntry {
-            binding: 7,
-            resource: wgpu::BindingResource::Buffer(BufferBinding {
-                buffer: self.material_arena.get_first_buffer(),
-                offset: 0,
-                size: None,
-            }),
-        });
-        let bgl = Self::get_bind_group_layout(device);
-        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("texture bind group"),
-            layout: &bgl,
-            entries: &entries,
-        });
+        let bg = self.get_bind_group(device);
         self.bind_groups.push(bg);
     }
 

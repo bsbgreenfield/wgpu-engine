@@ -16,7 +16,7 @@ use crate::{
     },
     util::types::{
         InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex,
-        PNUVertex, VIndex,
+        PNUVertex, VIndex16, VIndex32,
     },
     world::{RenderKey, camera::Camera, instance_manager::RenderFrame, world::DrawSet},
 };
@@ -68,7 +68,8 @@ impl EngineRenderPass {
 }
 
 struct VertexArenaCollection {
-    index_arena: GPUArena<VIndex>,
+    index_arena_16: GPUArena<VIndex16>,
+    index_arena_32: GPUArena<VIndex32>,
     static_arena: GPUArena<PNUVertex>,
     skinned_arena: GPUArena<PNUJWVertex>,
 }
@@ -76,9 +77,24 @@ struct VertexArenaCollection {
 impl VertexArenaCollection {
     fn new() -> Self {
         Self {
-            index_arena: GPUArena::<VIndex>::new(),
+            index_arena_16: GPUArena::<VIndex16>::new(),
+            index_arena_32: GPUArena::<VIndex32>::new(),
             static_arena: GPUArena::<PNUVertex>::new(),
             skinned_arena: GPUArena::<PNUJWVertex>::new(),
+        }
+    }
+    fn resolve_indices(
+        &self,
+        handle: &GPUAllocationHandle,
+    ) -> Option<(std::range::Range<u32>, &wgpu::Buffer, wgpu::IndexFormat)> {
+        if handle.alloc_mask.contains(AllocationMask::INDEX32) {
+            let (range, buffer) = self.index_arena_32.resolve(handle);
+            Some((range, buffer, wgpu::IndexFormat::Uint32))
+        } else if handle.alloc_mask.contains(AllocationMask::INDEX16) {
+            let (range, buffer) = self.index_arena_16.resolve(handle);
+            Some((range, buffer, wgpu::IndexFormat::Uint16))
+        } else {
+            None
         }
     }
 }
@@ -252,8 +268,11 @@ impl Renderer {
         if mask.contains(AllocationMask::PNUJW_VERTEX) {
             self.vertex_arenas.skinned_arena.dealloc(&alloc_handle)?;
         }
-        if mask.contains(AllocationMask::INDEX) {
-            self.vertex_arenas.index_arena.dealloc(&alloc_handle)?;
+        if mask.contains(AllocationMask::INDEX16) {
+            self.vertex_arenas.index_arena_16.dealloc(&alloc_handle)?;
+        }
+        if mask.contains(AllocationMask::INDEX32) {
+            self.vertex_arenas.index_arena_32.dealloc(&alloc_handle)?;
         }
         if mask.contains(AllocationMask::MATERIAL) {
             self.bind_groups.material_bind_group.unload(&alloc_handle)?;
@@ -278,11 +297,12 @@ impl Renderer {
     pub(super) fn upload_texture<'frame>(
         &mut self,
         job: UploadTextureJob,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), VertexArenaError> {
         self.bind_groups
             .material_bind_group
-            .upload_texture(job, queue)?;
+            .upload_texture(job, device, queue)?;
         Ok(())
     }
 
@@ -298,13 +318,26 @@ impl Renderer {
         Ok(())
     }
 
-    pub(super) fn upload_indices<'frame>(
+    pub(super) fn upload_indices_16<'frame>(
         &mut self,
         job: UploadIndexJob,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<(), VertexArenaError> {
-        self.vertex_arenas.index_arena.upload(job, queue, device)?;
+        self.vertex_arenas
+            .index_arena_16
+            .upload(job, queue, device)?;
+        Ok(())
+    }
+    pub(super) fn upload_indices_32<'frame>(
+        &mut self,
+        job: UploadIndexJob,
+        queue: &wgpu::Queue,
+        device: &wgpu::Device,
+    ) -> Result<(), VertexArenaError> {
+        self.vertex_arenas
+            .index_arena_32
+            .upload(job, queue, device)?;
         Ok(())
     }
 
@@ -428,12 +461,12 @@ impl Renderer {
                                 render_pass.set_vertex_buffer(0, v_buffer.slice(..));
 
                                 // resolve index
-                                let (index_alloc_range, i_buffer) =
-                                    self.vertex_arenas.index_arena.resolve(draw_entry.0);
-                                render_pass.set_index_buffer(
-                                    i_buffer.slice(..),
-                                    wgpu::IndexFormat::Uint16,
-                                );
+                                let maybe_indices =
+                                    self.vertex_arenas.resolve_indices(draw_entry.0);
+                                if let Some((_index_alloc_range, i_buffer, format)) = maybe_indices
+                                {
+                                    render_pass.set_index_buffer(i_buffer.slice(..), format);
+                                }
                                 let (material_alloc_range, _material_buf) =
                                     self.bind_groups.material_bind_group.resolve(draw_entry.0);
                                 render_pass.set_bind_group(
@@ -452,9 +485,11 @@ impl Renderer {
                                                 .unwrap_or(0),
                                         ]),
                                     );
-                                    if let Some(indices) = &draw.indices {
+                                    if let Some(indices) = &draw.indices
+                                        && let Some(index_resolve) = &maybe_indices
+                                    {
                                         render_pass.draw_indexed(
-                                            DrawSet::within(indices, &index_alloc_range).into(),
+                                            DrawSet::within(indices, &index_resolve.0).into(),
                                             DrawSet::within(&draw.primitives, &vertex_alloc_range)
                                                 .start
                                                 as i32,
@@ -487,6 +522,14 @@ impl Renderer {
 
                                 render_pass.set_vertex_buffer(0, v_buffer.slice(..));
 
+                                // resolve index
+                                let maybe_indices =
+                                    self.vertex_arenas.resolve_indices(draw_entry.0);
+                                if let Some((_index_alloc_range, i_buffer, format)) = maybe_indices
+                                {
+                                    render_pass.set_index_buffer(i_buffer.slice(..), format);
+                                }
+
                                 let (material_alloc_range, _material_buf) =
                                     self.bind_groups.material_bind_group.resolve(draw_entry.0);
                                 render_pass.set_bind_group(
@@ -505,15 +548,12 @@ impl Renderer {
                                                 .unwrap_or(0),
                                         ]),
                                     );
-                                    if let Some(indices) = &draw.indices {
-                                        let (index_alloc_range, i_buffer) =
-                                            self.vertex_arenas.index_arena.resolve(draw_entry.0);
-                                        render_pass.set_index_buffer(
-                                            i_buffer.slice(..),
-                                            wgpu::IndexFormat::Uint16,
-                                        );
+
+                                    if let Some(indices) = &draw.indices
+                                        && let Some(index_resolve) = &maybe_indices
+                                    {
                                         render_pass.draw_indexed(
-                                            DrawSet::within(indices, &index_alloc_range).into(),
+                                            DrawSet::within(indices, &index_resolve.0).into(),
                                             DrawSet::within(&draw.primitives, &vertex_alloc_range)
                                                 .start
                                                 as i32,

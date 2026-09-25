@@ -150,6 +150,6 @@ impl PipelineUniform for CameraUniform {
 }
 
 pub(super) fn get_camera_default() -> Camera {
-    let camera = Camera::new(std::f32::consts::FRAC_PI_4, 0.1, 100.0);
+    let camera = Camera::new(std::f32::consts::FRAC_PI_4, 0.1, 200.0);
     camera
 }

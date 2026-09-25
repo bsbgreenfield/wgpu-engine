@@ -268,9 +268,10 @@ bitflags! {
     impl AllocationMask: u32 {
         const PNU_VERTEX = 0b00000001;
         const PNUJW_VERTEX = 0b00000010;
-        const INDEX = 0b00000100;
-        const TEX = 0b00001000;
-        const MATERIAL = 0b00010000;
+        const INDEX16 = 0b00000100;
+        const INDEX32 = 0b00001000;
+        const TEX = 0b00010000;
+        const MATERIAL = 0b00100000;
     }
 }
 
@@ -397,7 +398,8 @@ pub(crate) enum Operations {
     CopyData,
     PNUUpload,
     PNUJWUpload,
-    IndexUpload,
+    Index16Upload,
+    Index32Upload,
     TextureUpload,
     TexureDefault,
     TextureAcquire,
@@ -425,8 +427,8 @@ pub(crate) enum RenderConstant<'frame> {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct TexLayer {
-    bucket: u16,
     layer: u16,
+    bucket: u16,
 }
 
 #[derive(Debug, Clone)]

@@ -29,13 +29,19 @@ impl Scene {
 
         SceneBuilder::new().add_entity(mr_entity).create(world)?;
 
-        use cgmath::SquareMatrix;
+        // The gltf is authored in cm: ~1500 units across, centered at
+        // (-381.5, 230.8, 631.9). Scale it down and recenter on the origin so it
+        // lands inside the camera's frustum (zfar is only 100).
+        const MR_SCALE: f32 = 0.01;
+        const MR_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-381.5, 230.8, 731.9);
         world.add_instances(
             super::SceneId(0),
             vec![Spawn {
                 entity: mr_entity,
                 data: Box::new(APosition {
-                    position: cgmath::Matrix4::<f32>::identity().into(),
+                    position: (cgmath::Matrix4::<f32>::from_translation(-MR_CENTER * MR_SCALE)
+                        * cgmath::Matrix4::<f32>::from_scale(MR_SCALE))
+                    .into(),
                 }),
             }],
         )?;

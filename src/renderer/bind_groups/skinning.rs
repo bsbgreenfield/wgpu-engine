@@ -102,6 +102,9 @@ impl SharedInstanceBindGroup for SkinningBindGroup {
     }
 }
 impl BindGroupProvider for SkinningBindGroup {
+    fn update_bind_group(&mut self, device: &wgpu::Device, bg_idx: usize) {
+        todo!()
+    }
     fn add_bind_group(&mut self, device: &wgpu::Device) {
         let bgl = Self::get_bind_group_layout(device);
         let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {

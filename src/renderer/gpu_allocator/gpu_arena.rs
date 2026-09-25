@@ -17,7 +17,7 @@ use crate::{
     },
     util::types::{
         GPUMaterialData, InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform,
-        ModelVertex, PNUJWVertex, PNUVertex, VIndex,
+        ModelVertex, PNUJWVertex, PNUVertex, VIndex16, VIndex32,
     },
 };
 
@@ -71,7 +71,7 @@ impl GPUUploadable for LocalTransform {
 
     const USAGE: wgpu::BufferUsages = <LocalTransform as StorageData>::BUFFER_USAGES;
 
-    const CHUNK_SIZE: u32 = 1024 * 16;
+    const CHUNK_SIZE: u32 = 1024 * 32;
 
     const MIN_ALLOC_SIZE: u32 = 64;
 
@@ -189,16 +189,40 @@ impl GPUUploadable for InstanceRecordData {
     }
 }
 
-impl GPUUploadable for VIndex {
+impl GPUUploadable for VIndex16 {
     type UploadJob<'a> = UploadIndexJob<'a>;
     type GPUHandle = GPUAllocationHandle;
     type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
     const CHUNK_SIZE: u32 = CHUNK_SIZE;
     const MIN_ALLOC_SIZE: u32 = 1024;
-    const LABEL: &'static str = "Vertex indices";
+    const LABEL: &'static str = "Vertex indices (16bit)";
     const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::INDEX.union(wgpu::BufferUsages::COPY_DST);
     fn arena_label() -> String {
-        String::from("Index Arena")
+        String::from("Index 16 Arena")
+    }
+
+    fn upload(
+        arena: &mut GPUArena<Self>,
+        handle: Self::GPUHandle,
+        chunk_id: usize,
+        node_id: usize,
+    ) -> GPUUploadResult {
+        arena
+            .alloc_table
+            .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
+        return GPUUploadResult::Success;
+    }
+}
+impl GPUUploadable for VIndex32 {
+    type UploadJob<'a> = UploadIndexJob<'a>;
+    type GPUHandle = GPUAllocationHandle;
+    type AllocTable = SingleAlocationTable<GPUAllocationHandle>;
+    const CHUNK_SIZE: u32 = CHUNK_SIZE;
+    const MIN_ALLOC_SIZE: u32 = 1024;
+    const LABEL: &'static str = "Vertex indices (32bit)";
+    const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::INDEX.union(wgpu::BufferUsages::COPY_DST);
+    fn arena_label() -> String {
+        String::from("Index 32 Arena")
     }
 
     fn upload(

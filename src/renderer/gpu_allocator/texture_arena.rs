@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 use wgpu::TextureFormat;
 
@@ -39,8 +39,8 @@ struct TextureAllocator {
 }
 
 impl TextureAllocator {
-    fn new() -> Self {
-        let fl = Vec::from_iter(0..NUM_LAYERS);
+    fn new(layer_count: u32) -> Self {
+        let fl = Vec::from_iter(0..layer_count);
         assert!(fl.first() == Some(&0) && fl.last() == Some(&15));
         Self {
             free_layers: Vec::from_iter(0..NUM_LAYERS as usize),
@@ -79,7 +79,7 @@ impl TextureChunk {
         Self {
             texture,
             view,
-            allocator: TextureAllocator::new(),
+            allocator: TextureAllocator::new(1),
         }
     }
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat, dimension: TexDim) -> Self {
@@ -106,7 +106,7 @@ impl TextureChunk {
         Self {
             texture,
             view,
-            allocator: TextureAllocator::new(),
+            allocator: TextureAllocator::new(NUM_LAYERS),
         }
     }
 
@@ -210,7 +210,7 @@ impl TextureArena {
         }
     }
 
-    pub fn ensure_chunks(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    pub fn ensure_default(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         if self.chunks[0].is_none() {
             let white_chunk = TextureChunk::white(device);
 
@@ -235,50 +235,59 @@ impl TextureArena {
             );
             self.chunks[0] = Some(white_chunk)
         }
-
-        for (maybe_chunk, dim) in self
-            .chunks
-            .iter_mut()
-            .skip(1)
-            .zip([64, 128, 256, 1024, 2048].into_iter())
-        {
-            if maybe_chunk.is_none() {
-                let _ = maybe_chunk.insert(TextureChunk::new(
-                    device,
-                    TextureFormat::Rgba8Unorm,
-                    TexDim::from_u32(dim),
-                ));
-            }
-        }
     }
-    pub fn upload(&mut self, job: UploadTextureJob, queue: &wgpu::Queue) -> GPUUploadResult {
-        let chunk_idx = Self::idx_from_tex_dim(job.dim);
+
+    fn ensure_chunk(&mut self, dimension: TexDim, device: &wgpu::Device) -> ChunkResult {
+        let chunk_idx = Self::idx_from_tex_dim(dimension);
+        if self.chunks[chunk_idx].is_none() {
+            self.chunks[chunk_idx] = Some(TextureChunk::new(
+                device,
+                TextureFormat::Rgba8Unorm,
+                dimension,
+            ));
+            return ChunkResult::New(chunk_idx);
+        }
+        return ChunkResult::Existing(chunk_idx);
+    }
+    pub fn upload(
+        &mut self,
+        job: UploadTextureJob,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> GPUUploadResult {
+        let res = self.ensure_chunk(job.dim, device);
+        let (ChunkResult::New(chunk_idx) | ChunkResult::Existing(chunk_idx)) = res;
+
         let chunk = self.chunks[chunk_idx]
             .as_mut()
             .expect("chunks should be initialized");
-
         match chunk.gpu_alloc(job.pixels, job.dim, queue) {
             Ok(layer) => {
                 self.alloc_table.allocate(
                     GPUTextureHandle::new(job.texture_handle, 0),
                     AssetAllocationMeta::new(chunk_idx, layer),
                 );
-                return GPUUploadResult::Success;
             }
             Err(e) => {
                 panic!("texture upload fail {:?}", e)
             }
         }
+
+        match res {
+            ChunkResult::New(_) => GPUUploadResult::TextureUploadBGDirty,
+            ChunkResult::Existing(_) => GPUUploadResult::Success,
+        }
     }
 
-    pub fn get_views(&self) -> [&wgpu::TextureView; 6] {
-        [
-            &self.chunks[0].as_ref().unwrap().view,
-            &self.chunks[1].as_ref().unwrap().view,
-            &self.chunks[2].as_ref().unwrap().view,
-            &self.chunks[3].as_ref().unwrap().view,
-            &self.chunks[4].as_ref().unwrap().view,
-            &self.chunks[5].as_ref().unwrap().view,
-        ]
+    pub fn get_view(&self, chunk_idx: usize) -> &wgpu::TextureView {
+        if let Some(chunk) = &self.chunks[chunk_idx] {
+            &chunk.view
+        } else {
+            &self.chunks[0].as_ref().unwrap().view
+        }
     }
+}
+enum ChunkResult {
+    New(usize),
+    Existing(usize),
 }

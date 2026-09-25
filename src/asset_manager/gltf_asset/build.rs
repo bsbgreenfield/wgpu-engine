@@ -7,17 +7,20 @@ use crate::animation::{
     InterpolationType,
 };
 use crate::asset_manager::gltf_asset::mesh::{
-    copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
+    PrimitiveRange, copy_and_cast_gltf_binary_data_f32, copy_and_cast_gltf_binary_data_mat4f32,
 };
 use crate::asset_manager::gltf_asset::util::collect_mesh_ids;
 use crate::asset_manager::gltf_asset::{
     AssetSources, GltfAnimation, GltfAsset, GltfLoadError, GltfMaterial, GltfTexture,
     NodeTransforms, NodeType, PBRMetallicRoughness, loader,
 };
+use crate::asset_manager::texture::{decode_embedded, decode_embedded_parallel};
 use crate::asset_manager::{
     Asset, AssetHandle, BinaryData, GltfValidationError, ModelBuilderError, texture,
 };
-use crate::util::types::{Mat4F32, ModelVertex, PrimitiveVerticesData, VIndex};
+use crate::util::types::{
+    AssetIndices, Mat4F32, ModelVertex, PrimitiveVerticesData, VIndex16, VIndex32,
+};
 use crate::{
     asset_manager::{
         gltf_asset::{
@@ -160,13 +163,14 @@ fn build_node_trees(
 fn get_primitive_data_map(
     gltf: &gltf::Gltf,
     node_tree: &[Arc<GltfNode>],
+    buffer_offsets: &Vec<usize>,
 ) -> Result<Vec<(usize, Vec<PrimitiveData>)>, ModelBuilderError> {
     let mut mesh_id_to_prim_data = HashMap::<usize, Vec<PrimitiveData>>::new();
     for mesh in gltf.meshes() {
         let mut prim_data_list: Vec<PrimitiveData> = Vec::with_capacity(mesh.primitives().len());
         for primitive in mesh.primitives() {
             prim_data_list.push(
-                Primitive::get_primitive_data(&primitive)
+                Primitive::get_primitive_data(&primitive, buffer_offsets)
                     .map_err(|e| ModelBuilderError::ValidationError(e))?,
             );
         }
@@ -184,24 +188,27 @@ fn get_primitive_data_map(
 
 fn get_index_range_vec(
     primitive_data: &Vec<(usize, Vec<PrimitiveData>)>,
-    buffer_offsets: &Vec<usize>,
-) -> Result<Vec<Range<usize>>, ModelBuilderError> {
-    let mut index_range_vec: Vec<Range<usize>> = Vec::new();
+) -> Result<(Vec<Range<usize>>, Vec<Range<usize>>), ModelBuilderError> {
+    let mut index16_range_vec: Vec<Range<usize>> = Vec::new();
+    let mut index32_range_vec: Vec<Range<usize>> = Vec::new();
     for (_mesh_id, mesh_primitives) in primitive_data.iter() {
         for prim_data in mesh_primitives.iter() {
-            let maybe_index_ranges =
-                &Primitive::get_index_range(prim_data.indices.as_ref(), buffer_offsets)
-                    .map_err(|e| ModelBuilderError::ValidationError(e))?;
-            if let Some(index_ranges) = maybe_index_ranges {
-                range_splicer::define_index_ranges(&mut index_range_vec, index_ranges);
+            match &prim_data.indices {
+                Some(PrimitiveRange::U32(r)) => {
+                    range_splicer::define_index_ranges(&mut index32_range_vec, r)
+                }
+                Some(PrimitiveRange::U16(r)) => {
+                    range_splicer::define_index_ranges(&mut index16_range_vec, r)
+                }
+                None => {}
             }
         }
     }
 
-    Ok(index_range_vec)
+    Ok((index16_range_vec, index32_range_vec))
 }
 fn get_relative_indices(
-    index_ranges: &Vec<Range<usize>>,
+    index_ranges: &[Range<usize>],
     primitive_index_range: &Range<usize>,
 ) -> Result<Range<usize>, ModelBuilderError> {
     let mut offset = 0;
@@ -223,41 +230,75 @@ fn get_relative_indices(
 }
 
 fn find_relative_index_range(
-    index_ranges: &Vec<Range<usize>>,
-    indices_accessor: Option<GLTFDataAccessor>,
-    buffer_offsets: &Vec<usize>,
+    indices_16: &[Range<usize>],
+    indices_32: &[Range<usize>],
+    maybe_primitive_range: Option<&PrimitiveRange>,
 ) -> Result<Option<Range<u32>>, ModelBuilderError> {
-    if !index_ranges.is_empty() {
-        let maybe_primitive_index_range =
-            Primitive::get_index_range(indices_accessor.as_ref(), buffer_offsets)?;
-        // range of this primitives indices within the final GPU index buffer allocation
-        let maybe_relative_index_range = maybe_primitive_index_range.map(|primitive_index_range| {
-            get_relative_indices(index_ranges, &primitive_index_range).unwrap()
-        });
-
-        return Ok(
-            maybe_relative_index_range.map(|relative_index_range| Range {
-                start: (relative_index_range.start / size_of::<u16>()) as u32,
-                end: (relative_index_range.end / size_of::<u16>()) as u32,
-            }),
-        );
-    } else {
+    let Some(prim_range) = maybe_primitive_range else {
         return Ok(None);
-    }
+    };
+
+    let (index_ranges, base) = match prim_range {
+        PrimitiveRange::U16(_) => (indices_16, 0),
+        PrimitiveRange::U32(_) => (indices_32, element_count(indices_16, 2)),
+    };
+
+    let relative = get_relative_indices(index_ranges, prim_range)?;
+    let stride = prim_range.byte_size();
+    Ok(Some(Range {
+        start: (base + relative.start / stride) as u32,
+        end: (base + relative.end / stride) as u32,
+    }))
 }
 
-fn set_index_data(index_ranges: &Vec<Range<usize>>, bin: &Vec<u8>) -> Option<Vec<VIndex>> {
-    if index_ranges.is_empty() {
+fn element_count(index_ranges: &[Range<usize>], byte_size: usize) -> usize {
+    index_ranges
+        .iter()
+        .map(|r| (r.end - r.start) / byte_size)
+        .sum()
+}
+
+fn set_index_data(
+    promote: bool,
+    indices_16: &[Range<usize>],
+    indices_32: &[Range<usize>],
+    bin: &Vec<u8>,
+) -> Option<AssetIndices> {
+    if indices_16.is_empty() && indices_32.is_empty() {
         return None;
-    } else {
-        let mut index_vec: Vec<VIndex> = Vec::new();
-        for range in index_ranges.iter() {
-            let indices_bytes: &[u8] = &bin[range.start..range.end];
-            let indices: &[VIndex] = bytemuck::cast_slice::<u8, VIndex>(indices_bytes);
-            index_vec.extend(indices.to_vec());
-        }
-        Some(index_vec)
     }
+
+    if !promote {
+        debug_assert!(indices_32.is_empty());
+        let mut index_vec: Vec<VIndex16> =
+            Vec::with_capacity(element_count(indices_16, size_of::<u16>()));
+        for range in indices_16.iter() {
+            index_vec.extend(
+                bin[range.start..range.end]
+                    .chunks_exact(size_of::<u16>())
+                    .map(|c| VIndex16::from(u16::from_le_bytes([c[0], c[1]]))),
+            );
+        }
+        return Some(AssetIndices::U16(index_vec.into()));
+    };
+    let mut index_vec: Vec<VIndex32> = Vec::with_capacity(
+        element_count(indices_16, size_of::<u16>()) + element_count(indices_32, size_of::<u32>()),
+    );
+    for range in indices_16.iter() {
+        index_vec.extend(
+            bin[range.start..range.end]
+                .chunks_exact(size_of::<u16>())
+                .map(|c| VIndex32::from(u16::from_le_bytes([c[0], c[1]]))),
+        );
+    }
+    for range in indices_32.iter() {
+        index_vec.extend(
+            bin[range.start..range.end]
+                .chunks_exact(size_of::<u32>())
+                .map(|c| VIndex32::from(u32::from_le_bytes([c[0], c[1], c[2], c[3]]))),
+        );
+    }
+    Some(AssetIndices::U32(index_vec.into()))
 }
 
 fn get_ibms(
@@ -282,35 +323,50 @@ fn get_materials(
     external_textures: &[Option<AssetHandle>],
 ) -> Result<Arc<[GltfMaterial]>, ModelBuilderError> {
     let mut materials: Vec<GltfMaterial> = Vec::new();
+    let mut embedded_texture_indices = Vec::with_capacity(gltf.materials().len());
 
     for material in gltf.materials() {
         let pbr_data = material.pbr_metallic_roughness();
-
-        let gltf_texture: Option<GltfTexture> = if let Some(texture) = pbr_data.base_color_texture()
-        {
-            match texture.texture().source().source() {
-                gltf::image::Source::View { .. } => {
-                    let image = texture::decode_embedded(gltf, bin, texture.texture().index())
-                        .expect("image load fail");
-                    Some(GltfTexture::Embedded(Arc::new(image)))
-                }
-                gltf::image::Source::Uri { .. } => Some(GltfTexture::External(
-                    external_textures[texture.texture().index()]
-                    .expect("index of the texture should correspond to the correct texture in the asset data"),
-                )),
-            }
-        } else {
-            None
-        };
+        // push the material with an empty texture for now
         materials.push(GltfMaterial {
             pbr_metallic_roughness: PBRMetallicRoughness {
                 roughness: pbr_data.roughness_factor(),
                 metallicness: pbr_data.metallic_factor(),
                 base_color_factor: pbr_data.base_color_factor(),
                 texture_idx: pbr_data.base_color_texture().map(|t| t.texture().index()),
-                texture: gltf_texture,
+                texture: None,
             },
         });
+
+        if let Some(texture_info) = pbr_data.base_color_texture() {
+            let tex_index = texture_info.texture().index();
+            if matches!(
+                texture_info.texture().source().source(),
+                gltf::image::Source::View { .. }
+            ) {
+                embedded_texture_indices.push(tex_index);
+            }
+        }
+
+        // returns a hash map containing every embedded texture's image data
+        let decoded = decode_embedded_parallel(gltf, bin, &embedded_texture_indices)?;
+        for material in materials.iter_mut() {
+            if let Some(tex_idx) = material.pbr_metallic_roughness.texture_idx {
+                // if there is a texture, either its in the decoded map
+                // or its external, and the idx of the asset handle should be at tex.index
+                match decoded.get(&tex_idx) {
+                    Some(embedded_image) => {
+                        material.pbr_metallic_roughness.texture =
+                            Some(GltfTexture::Embedded(embedded_image.clone()))
+                    }
+                    None => {
+                        material.pbr_metallic_roughness.texture = Some(GltfTexture::External(
+                            external_textures[tex_idx].expect("should to be an asset handle here"),
+                        ))
+                    }
+                }
+            }
+        }
     }
 
     Ok(materials.into())
@@ -318,14 +374,16 @@ fn get_materials(
 
 fn build_all_models(
     binary_data: &Vec<u8>,
-    index_ranges: &Vec<Range<usize>>,
+    index_ranges_16: &Vec<Range<usize>>,
+    index_ranges_32: &Vec<Range<usize>>,
     buffer_offsets: &Vec<usize>,
     primitive_data: &Vec<(usize, Vec<PrimitiveData>)>,
+    promote_indices: bool,
 ) -> Result<
     (
         Vec<PNUJWVertex>,
         Vec<PNUVertex>,
-        Option<Vec<VIndex>>,
+        Option<AssetIndices>,
         Vec<Mesh>,
     ),
     ModelBuilderError,
@@ -337,20 +395,15 @@ fn build_all_models(
     for (mesh_id, mesh_primitive_data) in primitive_data.iter() {
         let mut primitives = Vec::with_capacity(mesh_primitive_data.len());
         for primitive_data in mesh_primitive_data.iter() {
-            if primitive_data.indices.is_some() {
-                assert_eq!(
-                    primitive_data.indices.as_ref().unwrap().byte_size,
-                    2,
-                    "byte size of indices is {:?}",
-                    primitive_data.indices.as_ref().unwrap().byte_size
-                );
-            }
             // binary data per vertex attribute
             let primitive_vertex_data: PrimitiveVerticesData =
                 Primitive::get_primitive_vertex_data(buffer_offsets, primitive_data, &binary_data)?;
 
-            let maybe_index_range =
-                find_relative_index_range(index_ranges, primitive_data.indices, buffer_offsets)?;
+            let maybe_index_range = find_relative_index_range(
+                index_ranges_16,
+                index_ranges_32,
+                primitive_data.indices.as_ref(),
+            )?;
 
             let is_jointed = primitive_data.joints.is_some().clone();
 
@@ -389,7 +442,12 @@ fn build_all_models(
             primitives,
         });
     }
-    let maybe_index_data = set_index_data(&index_ranges, &binary_data);
+    let maybe_index_data = set_index_data(
+        promote_indices,
+        &index_ranges_16,
+        index_ranges_32,
+        &binary_data,
+    );
     Ok((pnujw_vertices, pnu_vertices, maybe_index_data, meshes))
 }
 impl GltfAsset {
@@ -411,13 +469,21 @@ impl GltfAsset {
 
         let material_palette = get_materials(gltf, bin, textures)?;
         let ibms = get_ibms(&gltf, binary_data, buffer_offsets)?;
-        let primitive_data = get_primitive_data_map(&gltf, &node_tree)?;
-        let index_range_vec = get_index_range_vec(&primitive_data, buffer_offsets)?;
+        let primitive_data = get_primitive_data_map(&gltf, &node_tree, buffer_offsets)?;
+        let promote_indices: bool = primitive_data.iter().any(|(_, prims)| {
+            prims
+                .iter()
+                .any(|p| p.indices.as_ref().is_some_and(|r| r.byte_size() == 4))
+        });
+
+        let (index_ranges_16, index_ranges_32) = get_index_range_vec(&primitive_data)?;
         let (pnujw, pnu, indices, meshes) = build_all_models(
             binary_data,
-            &index_range_vec,
+            &index_ranges_16,
+            &index_ranges_32,
             buffer_offsets,
             &primitive_data,
+            promote_indices,
         )?;
         let animations: Vec<Arc<GltfAnimation>> =
             get_animations(&gltf, buffer_offsets, binary_data, &node_tree)?;
@@ -427,7 +493,7 @@ impl GltfAsset {
             pnu_vertices: Arc::from_iter(pnu),
             node_tree,
             meshes,
-            indices: indices.map(|i| Arc::from_iter(i)),
+            indices,
             animations,
             skins,
             ibms,

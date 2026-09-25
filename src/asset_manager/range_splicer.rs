@@ -15,7 +15,7 @@ fn get_index_result(
     primitive_indices_range: &Range<usize>,
 ) -> IndexResult {
     if primitive_indices_range.start == current_range.start
-        && primitive_indices_range.end == primitive_indices_range.end
+        && primitive_indices_range.end == current_range.end
     {
         IndexResult::ExactlyEqual
     } else if primitive_indices_range.start > current_range.end + 1 {

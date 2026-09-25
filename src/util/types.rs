@@ -37,7 +37,44 @@ pub trait ModelVertex: Debug + bytemuck::Pod {
 
 #[repr(C)]
 #[derive(Debug, bytemuck::Pod, Clone, Copy, bytemuck::Zeroable)]
-pub struct VIndex(u16);
+pub struct VIndex16(u16);
+
+#[repr(C)]
+#[derive(Debug, bytemuck::Pod, Clone, Copy, bytemuck::Zeroable)]
+pub struct VIndex32(u32);
+
+impl From<u16> for VIndex16 {
+    fn from(value: u16) -> Self {
+        VIndex16(value)
+    }
+}
+
+impl From<u32> for VIndex32 {
+    fn from(value: u32) -> Self {
+        VIndex32(value)
+    }
+}
+
+impl From<u16> for VIndex32 {
+    fn from(value: u16) -> Self {
+        Self(value as u32)
+    }
+}
+#[derive(Debug, Clone)]
+pub enum AssetIndices {
+    U16(Arc<[VIndex16]>),
+    U32(Arc<[VIndex32]>),
+}
+
+impl AssetIndices {
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            AssetIndices::U16(i) => bytemuck::cast_slice(i),
+            AssetIndices::U32(i) => bytemuck::cast_slice(i),
+        }
+    }
+}
+
 pub trait InstanceData {
     fn desc() -> wgpu::VertexBufferLayout<'static>;
 }

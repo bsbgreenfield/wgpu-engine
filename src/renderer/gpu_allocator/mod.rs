@@ -105,6 +105,7 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
 pub(crate) enum GPUUploadResult {
     Success,
     RecordData { element_slot: u32 },
+    TextureUploadBGDirty,
 }
 
 //#[allow(unused)]

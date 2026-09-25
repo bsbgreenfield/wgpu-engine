@@ -8,7 +8,7 @@ use crate::{
         material::MaterialTexture,
     },
     renderer::{GPUAllocationHandle, RenderError, RenderUpdateError},
-    util::types::{GPUMaterialData, GPUTextureData, PNUJWVertex, PNUVertex, VIndex},
+    util::types::{AssetIndices, GPUMaterialData, GPUTextureData, PNUJWVertex, PNUVertex},
     world::WorldUpdateError,
 };
 
@@ -76,7 +76,7 @@ pub enum GPUAssetUploadJob {
         asset_handle: AssetHandle,
         pnu_vertices: Option<Arc<[PNUVertex]>>,
         pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
-        indices: Option<Arc<[VIndex]>>,
+        indices: Option<AssetIndices>,
         embedded_materials: MaterialPaletteJob,
     },
     MaterialData {

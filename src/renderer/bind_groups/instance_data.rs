@@ -28,6 +28,10 @@ impl BindGroupProvider for InstanceDataBindGroup {
         self.bind_groups.first().expect("bind group does not exist")
     }
 
+    fn update_bind_group(&mut self, device: &wgpu::Device, bg_idx: usize) {
+        todo!()
+    }
+
     fn add_bind_group(&mut self, device: &wgpu::Device) {
         // TODO: formalize the system for lazy allocating all bg buffers
         self.allocate_buffers(device);
