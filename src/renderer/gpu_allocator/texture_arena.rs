@@ -40,10 +40,8 @@ struct TextureAllocator {
 
 impl TextureAllocator {
     fn new(layer_count: u32) -> Self {
-        let fl = Vec::from_iter(0..layer_count);
-        assert!(fl.first() == Some(&0) && fl.last() == Some(&15));
         Self {
-            free_layers: Vec::from_iter(0..NUM_LAYERS as usize),
+            free_layers: Vec::from_iter(0..layer_count as usize),
         }
     }
 }
