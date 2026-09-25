@@ -1,3 +1,5 @@
+use cgmath::vec3;
+
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
 
@@ -7,7 +9,8 @@ use crate::{
     world::{
         entity_manager::components::{
             AnimationComponentDescriptor, AnimationMode, ComponentAccessor,
-            MaterialComponentDescriptor, MeshCollectionDescriptor,
+            MaterialComponentDescriptor::{self, Embedded},
+            MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
         scene::{Scene, SceneId, SceneLoadLevel, builder::SceneBuilder, scene::Spawn},
@@ -21,29 +24,60 @@ impl Scene {
         let medieval_room = world.register_asset::<GltfAsset>("medieval_room")?;
         let mr_entity = world.entity_manager.new_entity()?;
 
+        let fox = world.register_asset::<GltfAsset>("fox")?;
+        let fox_entity = world.entity_manager.new_entity()?;
+
         world.entity_manager.add_mesh_collection_for_entity(
             &mr_entity,
             MeshCollectionDescriptor::new(medieval_room.into(), ComponentAccessor::All)
                 .with_material(MaterialComponentDescriptor::Embedded),
         );
 
-        SceneBuilder::new().add_entity(mr_entity).create(world)?;
+        world.entity_manager.add_mesh_collection_for_entity(
+            &fox_entity,
+            MeshCollectionDescriptor::new(fox.into(), ComponentAccessor::All)
+                .with_material(MaterialComponentDescriptor::Embedded)
+                .with_animation(AnimationComponentDescriptor::Embedded {
+                    accessor: ComponentAccessor::All,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                }),
+        );
+
+        SceneBuilder::new()
+            .add_entity(mr_entity)
+            .add_entity(fox_entity)
+            .create(world)?;
 
         // The gltf is authored in cm: ~1500 units across, centered at
         // (-381.5, 230.8, 631.9). Scale it down and recenter on the origin so it
         // lands inside the camera's frustum (zfar is only 100).
         const MR_SCALE: f32 = 0.01;
         const MR_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-381.5, 230.8, 731.9);
+        const MR_FLOOR_Y: f32 = -9.06;
+        const MR_ROOM_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-100.5, 20., 900.9);
+        const FOX_SCALE: f32 = 0.025;
         world.add_instances(
             super::SceneId(0),
-            vec![Spawn {
-                entity: mr_entity,
-                data: Box::new(APosition {
-                    position: (cgmath::Matrix4::<f32>::from_translation(-MR_CENTER * MR_SCALE)
-                        * cgmath::Matrix4::<f32>::from_scale(MR_SCALE))
-                    .into(),
-                }),
-            }],
+            vec![
+                Spawn {
+                    entity: mr_entity,
+                    data: Box::new(APosition {
+                        position: (cgmath::Matrix4::<f32>::from_translation(-MR_CENTER * MR_SCALE)
+                            * cgmath::Matrix4::<f32>::from_scale(MR_SCALE))
+                        .into(),
+                    }),
+                },
+                Spawn {
+                    entity: fox_entity,
+                    data: Box::new(APosition {
+                        position: (cgmath::Matrix4::<f32>::from_translation(
+                            (MR_ROOM_CENTER - MR_CENTER) * MR_SCALE,
+                        ) * cgmath::Matrix4::<f32>::from_scale(FOX_SCALE))
+                        .into(),
+                    }),
+                },
+            ],
         )?;
 
         world.scene_manager.set_load_level(
