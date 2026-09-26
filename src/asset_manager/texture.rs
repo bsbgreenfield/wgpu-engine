@@ -5,7 +5,7 @@ use image::{DynamicImage, ImageReader};
 use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
-        Asset, AssetHandle, AssetSource, BinaryData, ModelBuilderError, ProvidesTextureData,
+        Asset, AssetSource, BinaryData, ModelBuilderError, ProvidesTextureData,
         asset_manager::AssetManager, gltf_asset::GltfLoadError,
     },
     util::types::GPUTextureData,

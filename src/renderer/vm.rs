@@ -4,7 +4,7 @@ use std::{iter::Peekable, slice::Iter};
 use crate::{
     renderer::{
         AllocationMask, BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle,
-        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderConstant, RenderProgram,
+        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderProgram,
         RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, TexLayer, UploadMeshJob,
         VertexArenaSelector,
         bind_groups::SharedInstanceBindGroup,
@@ -314,57 +314,7 @@ impl<'frame> Renderer {
                             gpu_instance_handle,
                         });
                     }
-                    //Operations::EmitEntitySpawn => {
-                    //    let bind_mask = GPUBindings::from_bits(Self::get_byte(&mut instr_peek))
-                    //        .expect("should be a valid mask");
-                    //    assert!(bind_mask.contains(GPUBindings::LOCAL_TRANSFORM));
 
-                    //    let gpu_instance_handle =
-                    //        stack.pop().expect("should be payload").as_instance_handle();
-                    //    let joint_result: Option<(u32, u32)> = if bind_mask
-                    //        .contains(GPUBindings::JOINT_TRANSFORM)
-                    //    {
-                    //        let jt_offset = stack.pop().expect("should be data offset").as_offset();
-                    //        let chunk_index =
-                    //            stack.pop().expect("should be chunk offset").as_offset();
-                    //        Some((chunk_index, jt_offset))
-                    //    } else {
-                    //        None
-                    //    };
-                    //    let lt_offset = stack.pop().expect("should be offset").as_offset();
-                    //    let lt_buffer_index =
-                    //        stack.pop().expect("should be chunk offset").as_offset();
-
-                    //    let record_data: Vec<u8> = bytemuck::pod_collect_to_vec(&[
-                    //        lt_offset,
-                    //        joint_result.map(|j| j.1).unwrap_or(0),
-                    //        0,
-                    //        0,
-                    //    ]);
-                    //    let record_job: InstanceUploadJob<InstanceRecordData> =
-                    //        InstanceUploadJob::new(&record_data, gpu_instance_handle);
-                    //    let GPUUploadResult::RecordData { element_slot } = self
-                    //        .upload_instance_record(
-                    //            record_job,
-                    //            gpu_instance_handle.instance_id,
-                    //            queue,
-                    //            device,
-                    //        )?
-                    //    else {
-                    //        panic!("unexpected upload result type")
-                    //    };
-
-                    //    let instance_key = stack.pop().expect("should be key").as_raw_key();
-                    //    res.push(RenderUpdateDelta::EntitySpawned {
-                    //        instance_key,
-                    //        gpu_instance_handle,
-                    //        record_offset: element_slot,
-                    //        binding_key: InstanceBindKey {
-                    //            lt: lt_buffer_index as u16,
-                    //            jt: joint_result.map(|jr| jr.0).unwrap_or(0) as u16,
-                    //        },
-                    //    });
-                    //}
                     Operations::LocalTransformUpload => {
                         let gpu_instance_handle =
                             stack.pop().expect("should be payload").as_instance_handle();

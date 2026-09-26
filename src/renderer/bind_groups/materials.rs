@@ -58,7 +58,6 @@ impl MaterialBindGroup {
             GPUUploadResult::TextureUploadBGDirty => {
                 self.update_bind_group(device, 0); //TODO: find a way to get the actual bind group
             }
-            _ => panic!("received gpu upload result from the wrong bg"),
         }
         Ok(GPUUploadResult::Success)
     }

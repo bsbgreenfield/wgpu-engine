@@ -14,6 +14,7 @@ use crate::renderer::{
     },
 };
 
+#[allow(unused)]
 #[derive(Debug)]
 enum TextureAllocationError {
     TextureWriteFailed,
@@ -153,12 +154,6 @@ impl TextureChunk {
 pub struct TextureArena {
     chunks: [Option<TextureChunk>; 6],
     alloc_table: TextureAllocTable,
-}
-
-impl<'frame> UploadTextureJob<'frame> {
-    fn new_chunk(&self, device: &wgpu::Device) -> TextureChunk {
-        TextureChunk::new(device, TextureFormat::Rgba8Unorm, self.dim)
-    }
 }
 
 impl TextureArena {

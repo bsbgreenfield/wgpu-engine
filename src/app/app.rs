@@ -2,10 +2,7 @@ use std::{sync::Arc, time::Instant};
 
 use crate::{
     app::{FrameError, app_config::AppConfig, app_state::AppState},
-    renderer::{
-        Instruction, RenderCategory, RenderConstant, RenderPacket, RenderProgram,
-        renderer::Renderer,
-    },
+    renderer::{RenderCategory, RenderPacket, RenderProgram, renderer::Renderer},
     world::{
         FrameArena, instance_manager::gen_draw_calls::DrawCallGenerator, scene::Scene, world::World,
     },
@@ -156,7 +153,7 @@ impl ApplicationHandler<AppConfig<'static>> for App<'_> {
             if !self.world.is_initialized() {
                 self.world
                     .init(aspect_ratio, &self.app_config.as_ref().unwrap().device);
-                Scene::mediaval_room(&mut self.world).expect("scene creation error");
+                Scene::buggy_brain(&mut self.world).expect("scene creation error");
                 self.renderer.init(self.app_config.as_ref().unwrap());
                 self.renderer.add_pass(
                     "Opaque Pass".to_string(),

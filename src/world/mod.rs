@@ -155,7 +155,6 @@ impl RenderBytes for GPUTextureData {
 
 #[derive(Default)]
 pub struct FrameArena {
-    free_list: Vec<usize>,
     data: Vec<Arc<dyn RenderBytes>>,
 }
 
@@ -167,7 +166,7 @@ impl FrameArena {
         self.data.get(token.0 as usize).map(|data| data.as_bytes())
     }
 
-    pub fn add_data(&mut self, data: Arc<dyn RenderBytes>) -> DataToken {
+    pub(crate) fn add_data(&mut self, data: Arc<dyn RenderBytes>) -> DataToken {
         self.data.push(data);
         DataToken(self.data.len() as u32 - 1)
     }

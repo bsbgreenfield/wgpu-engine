@@ -185,23 +185,6 @@ impl DrawPacket {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct InstanceBindKey {
-    lt: u16,
-    jt: u16,
-}
-
-impl InstanceBindKey {
-    pub fn as_u32(self) -> u32 {
-        (((self.lt as u32) << 16) | self.jt as u32) as u32
-    }
-
-    #[allow(unused)]
-    pub fn from_u32(val: u32) -> Self {
-        todo!()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum RenderUpdateDelta {
     AssetUnloaded {
@@ -385,6 +368,7 @@ pub(crate) enum BufferType {
     JointTransform,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Operations {
     CreatePrototype,
@@ -532,7 +516,7 @@ impl StackValue {
 impl From<RenderConstant> for StackValue {
     fn from(value: RenderConstant) -> Self {
         match value {
-            RenderConstant::Token(token) => panic!("cannot convert to stack value from token"),
+            RenderConstant::Token(_token) => panic!("cannot convert to stack value from token"),
             RenderConstant::Key(key) => StackValue::Key(key),
         }
     }

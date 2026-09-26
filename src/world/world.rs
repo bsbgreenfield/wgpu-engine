@@ -1,11 +1,10 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::range::Range;
 use std::sync::Arc;
-use std::{collections::HashSet, fmt::Debug};
 
 use cgmath::vec3;
 
-use crate::renderer::{Instruction, RenderConstant};
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetHandle, AssetLoadError, AssetSource, asset_manager::AssetManager},

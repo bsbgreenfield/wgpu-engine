@@ -3,7 +3,6 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::{
     common::instance::InstanceHandle,
-    renderer::GPUInstanceHandle,
     util::types::{LocalTransform, Mat4F32},
 };
 

@@ -182,10 +182,7 @@ impl GPUUploadable for InstanceRecordData {
         arena
             .alloc_table
             .allocate(handle, AssetAllocationMeta::new(chunk_id, node_id));
-        let element_offset = arena.resolve_element_offset(&handle);
-        return GPUUploadResult::RecordData {
-            element_slot: element_offset as u32,
-        };
+        return GPUUploadResult::Success;
     }
 }
 
@@ -352,6 +349,7 @@ impl<T: GPUUploadable> GPUArena<T> {
         self.chunks.push(T::get_chunk(device));
     }
 
+    #[allow(unused)]
     pub(in crate::renderer) fn resolve_element_offset(&self, handle: &T::GPUHandle) -> usize {
         let byte_off = self.resolve_byte_offset(handle) as usize;
         return byte_off / size_of::<T>();

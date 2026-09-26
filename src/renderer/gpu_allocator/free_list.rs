@@ -1,6 +1,6 @@
 use std::range::Range;
 
-use crate::renderer::gpu_allocator::{CHUNK_SIZE, FreeListAllocError};
+use crate::renderer::gpu_allocator::FreeListAllocError;
 
 pub(super) struct FreeListAllocator {
     free_nodes: Vec<usize>,
@@ -179,6 +179,7 @@ impl FreeListAllocator {
 #[cfg(test)]
 mod free_list_tests {
     use super::*;
+    use crate::renderer::gpu_allocator::CHUNK_SIZE;
 
     const ALLOC: u32 = 1024 * 64; // 64 KB
 

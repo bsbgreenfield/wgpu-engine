@@ -76,7 +76,7 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
             self.remaining_space -= size;
             self.allocator
                 .alloc_first(size)
-                .map_err(|e| VertexArenaError::NoRoomLeft)?
+                .map_err(|_| VertexArenaError::NoRoomLeft)?
         } else {
             return Err(VertexArenaError::NoRoomLeft);
         };
@@ -104,7 +104,6 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
 
 pub(crate) enum GPUUploadResult {
     Success,
-    RecordData { element_slot: u32 },
     TextureUploadBGDirty,
 }
 

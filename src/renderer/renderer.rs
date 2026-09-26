@@ -4,8 +4,8 @@ use crate::{
     app::app_config::AppConfig,
     renderer::{
         AllocationMask, DrawPacket, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob,
-        Instruction, PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderProgram,
-        RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
+        PrototypeHandle, RenderCategory, RenderError, RenderProgram, RenderUpdateDelta,
+        RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
         bind_groups::BindGroupCollection,
         depth_tex::DepthTexture,
         gpu_allocator::{

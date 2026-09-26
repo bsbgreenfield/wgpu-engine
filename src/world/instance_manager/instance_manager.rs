@@ -55,7 +55,7 @@ impl InstanceManager {
             let mut idx: isize = -1;
             let dummy = match command {
                 AppCommand::One => {
-                    idx = 2;
+                    idx = 0;
                     Some(InstanceHandle {
                         archetype: ArchetypeId::Position,
                         entity_handle: EntityHandle(1),

@@ -59,7 +59,6 @@ struct BindRegistry {
 }
 
 pub(super) struct BindGroupCollection {
-    next_handle: u32,
     pub(super) local_transforms: LocalTransformBindGroup,
     pub(super) skinning: SkinningBindGroup,
     pub(super) instance_data: InstanceDataBindGroup,
@@ -133,7 +132,6 @@ impl BindGroupCollection {
 
     pub(super) fn new() -> Self {
         Self {
-            next_handle: 0,
             local_transforms: LocalTransformBindGroup::new(),
             skinning: SkinningBindGroup::new(),
             instance_data: InstanceDataBindGroup::new(),

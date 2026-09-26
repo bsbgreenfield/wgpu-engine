@@ -242,7 +242,7 @@ impl ProvidesAnimationData for GltfAsset {
 }
 
 impl ProvidesMaterialData for GltfAsset {
-    fn material_palette<'a>(&self, material_accessor: &'a ComponentAccessor) -> Vec<u32> {
+    fn material_palette<'a>(&self, _material_accessor: &'a ComponentAccessor) -> Vec<u32> {
         return Vec::from_iter(0..(self.material_palette.len()) as u32);
     }
 }

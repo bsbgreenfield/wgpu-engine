@@ -236,6 +236,8 @@ pub trait Asset {
     fn as_materials_provider(&self) -> Option<&dyn ProvidesMaterialData>;
     fn as_texture_provider(&self) -> Option<&dyn ProvidesTextureData>;
 }
+
+#[allow(unused)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AssetResidency {
     Registered,

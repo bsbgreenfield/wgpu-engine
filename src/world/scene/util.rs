@@ -1,5 +1,3 @@
-use cgmath::vec3;
-
 #[cfg(test)]
 use crate::world::{WorldInitError, world::World};
 
@@ -9,8 +7,7 @@ use crate::{
     world::{
         entity_manager::components::{
             AnimationComponentDescriptor, AnimationMode, ComponentAccessor,
-            MaterialComponentDescriptor::{self, Embedded},
-            MeshCollectionDescriptor,
+            MaterialComponentDescriptor, MeshCollectionDescriptor,
         },
         instance_manager::archetypes::{APosition, Archetype},
         scene::{Scene, SceneId, SceneLoadLevel, builder::SceneBuilder, scene::Spawn},
@@ -54,7 +51,6 @@ impl Scene {
         // lands inside the camera's frustum (zfar is only 100).
         const MR_SCALE: f32 = 0.01;
         const MR_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-381.5, 230.8, 731.9);
-        const MR_FLOOR_Y: f32 = -9.06;
         const MR_ROOM_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-100.5, 20., 900.9);
         const FOX_SCALE: f32 = 0.025;
         world.add_instances(

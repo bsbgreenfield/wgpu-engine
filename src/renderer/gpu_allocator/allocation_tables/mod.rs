@@ -1,6 +1,5 @@
 #[cfg(test)]
 use std::collections::HashMap;
-use std::{hash::Hash, marker::PhantomData};
 
 use crate::{
     renderer::{
@@ -66,8 +65,9 @@ pub trait AllocationSlot: Clone {
     fn node(&self) -> usize;
 }
 
+#[allow(unused)]
 #[derive(Debug)]
-pub enum AllocationTableError {
+pub(crate) enum AllocationTableError {
     AllocationNotFound,
     MaxAllocationReached(String),
     ProtoypeDeallocation,

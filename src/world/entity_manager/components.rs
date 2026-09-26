@@ -150,6 +150,7 @@ impl MeshCollectionDescriptor {
                     mesh_accessor: self.mesh_accessor.clone(),
                 });
             }
+            #[allow(unused)]
             AnimationComponentDescriptor::External {
                 resource_backing,
                 accessor,

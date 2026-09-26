@@ -14,9 +14,9 @@ use crate::asset_manager::gltf_asset::{
     AssetSources, GltfAnimation, GltfAsset, GltfLoadError, GltfMaterial, GltfTexture,
     NodeTransforms, NodeType, PBRMetallicRoughness, loader,
 };
-use crate::asset_manager::texture::{decode_embedded, decode_embedded_parallel};
+use crate::asset_manager::texture::decode_embedded_parallel;
 use crate::asset_manager::{
-    Asset, AssetHandle, BinaryData, GltfValidationError, ModelBuilderError, texture,
+    Asset, AssetHandle, BinaryData, GltfValidationError, ModelBuilderError,
 };
 use crate::util::types::{
     AssetIndices, Mat4F32, ModelVertex, PrimitiveVerticesData, VIndex16, VIndex32,

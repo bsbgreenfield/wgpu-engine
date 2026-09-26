@@ -1,7 +1,7 @@
 use crate::{
     common::instance::InstanceHandle,
     renderer::{
-        GPUInstanceHandle, InstanceUploadJob, RenderUpdateError,
+        GPUInstanceHandle, InstanceUploadJob,
         gpu_allocator::{
             GPUUploadResult, VertexArenaError, allocation_tables::AllocationTableError,
             gpu_arena::GPUArena,
@@ -28,7 +28,7 @@ impl BindGroupProvider for InstanceDataBindGroup {
         self.bind_groups.first().expect("bind group does not exist")
     }
 
-    fn update_bind_group(&mut self, device: &wgpu::Device, bg_idx: usize) {
+    fn update_bind_group(&mut self, _device: &wgpu::Device, _bg_idx: usize) {
         todo!()
     }
 
