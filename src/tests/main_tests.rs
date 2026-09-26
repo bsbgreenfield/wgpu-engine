@@ -6,18 +6,14 @@ mod integration_tests {
 
     use crate::{
         animation::AnimationTransformType, app::{app::App, app_config::AppConfig, app_state::AppState}, common::{entity::EntityHandle, instance::InstanceHandle}, renderer::{
-            DrawItem, GPUInstanceHandle, Instruction, PrototypeHandle, RenderConstant,
-            RenderUpdateDelta,
+            DrawItem, GPUInstanceHandle, Instruction, PrototypeHandle, RenderConstant, RenderProgram, RenderUpdateDelta,
         }, tests::main_tests::integration_tests::{
             RenderDeltaKind::{PrototypeSpawn, TextureGPULoaded}, WorldDeltaKind::AssetDidLoad,
         }, util::types::{InstanceRecordData, LocalTransform, Mat4F32}, world::{
-            bytecode_gen::BytecodeGenerator,
-            instance_manager::{
+            FrameArena,  instance_manager::{
                 archetypes::{APosition, ArchetypeId},
                 gen_draw_calls::DrawCallGenerator,
-            },
-            scene::{Scene, SceneId, SceneLoadLevel, scene::Spawn},
-            world::{World, WorldUpdateDelta},
+            }, scene::{Scene, SceneId, SceneLoadLevel, scene::Spawn}, world::{World, WorldUpdateDelta},
         },
     };
 
@@ -61,13 +57,12 @@ mod integration_tests {
 
     fn get_bytecode<'a>(
         deltas: &'a Vec<WorldUpdateDelta>,
-    ) -> (Vec<RenderConstant<'a>>, Vec<Instruction>) {
-        let mut constants = Vec::<RenderConstant<'a>>::new();
-        let mut instructions = Vec::<Instruction>::new();
+        render_program: &'a mut RenderProgram,
+        frame_arena: &'a mut FrameArena,
+    )  {
 
-        World::gen_bytecode(deltas, &mut instructions, &mut constants);
+        World::gen_bytecode(deltas, render_program, frame_arena);
 
-        (constants, instructions)
     }
 
     fn assert_world_deltas(actual: &[WorldUpdateDelta], expected: &[WorldDeltaKind]) {
@@ -177,13 +172,13 @@ mod integration_tests {
             .unwrap_or_else(|e| panic!("{}", e));
         assert_world_deltas(&app.world.deltas, expected_world_deltas);
 
-        let (constants, instructions) = get_bytecode(&app.world.deltas);
+         get_bytecode(&app.world.deltas,&mut app.render_program, &mut app.frame_arena );
 
         let render_deltas = app
             .renderer
             .update(
-                constants,
-                instructions,
+                &app.render_program,
+            &app.frame_arena, 
                 &app.app_config.as_ref().unwrap().queue,
                 &app.app_config.as_ref().unwrap().device,
             )
@@ -199,17 +194,17 @@ mod integration_tests {
             .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
 
-        let (constants, instructions) = get_bytecode(&app.world.deltas);
+         get_bytecode(&app.world.deltas, &mut app.render_program, &mut app.frame_arena);
         let mut lc = Vec::new();
-        for l in instructions.iter() {
+        for l in app.render_program.instructions.iter() {
             lc.push(l.clone());
         }
 
         let render_deltas: Vec<RenderUpdateDelta> = app
             .renderer
             .update(
-                constants,
-                instructions,
+                &app.render_program,
+                &app.frame_arena,
                 &app.app_config.as_ref().unwrap().queue,
                 &app.app_config.as_ref().unwrap().device,
             )
@@ -229,13 +224,13 @@ mod integration_tests {
         app.world
             .update(&mut app.app_commands)
             .unwrap_or_else(|e| panic!("{}", e));
-        let (constants, instructions) = get_bytecode(&app.world.deltas);
+         get_bytecode(&app.world.deltas,&mut app.render_program, &mut app.frame_arena );
 
         let render_deltas = app
             .renderer
             .update(
-                constants,
-                instructions,
+                &app.render_program,
+                &app.frame_arena,
                 &app.app_config.as_ref().unwrap().queue,
                 &app.app_config.as_ref().unwrap().device,
             )

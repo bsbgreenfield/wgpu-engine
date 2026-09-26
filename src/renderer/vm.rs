@@ -4,7 +4,7 @@ use std::{iter::Peekable, slice::Iter};
 use crate::{
     renderer::{
         AllocationMask, BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle,
-        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderConstant,
+        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderConstant, RenderProgram,
         RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, TexLayer, UploadMeshJob,
         VertexArenaSelector,
         bind_groups::SharedInstanceBindGroup,
@@ -15,7 +15,7 @@ use crate::{
         renderer::Renderer,
     },
     util::types::{GPUMaterialData, InstanceRecordData, PNUJWVertex, PNUVertex},
-    world::RenderKey,
+    world::{FrameArena, RenderKey},
 };
 
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;
@@ -49,10 +49,20 @@ impl<'frame> Renderer {
             _ => panic!("expected a byte"),
         }
     }
+
+    fn resolve_next_token(
+        arena: &'frame FrameArena,
+        render_program: &RenderProgram,
+        instructions: &mut InstructionSet,
+    ) -> Option<&'frame [u8]> {
+        let token =
+            render_program.constants[Self::get_constant_idx(instructions) as usize].unwrap_token();
+        arena.resolve(token)
+    }
     pub(super) fn interpret(
         &mut self,
-        constants: Vec<RenderConstant>,
-        instructions: Vec<Instruction>,
+        render_program: &RenderProgram,
+        frame_arena: &FrameArena,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
@@ -62,7 +72,7 @@ impl<'frame> Renderer {
         //println!("------------------------");
         let mut stack = Vec::<StackValue>::new();
         let mut res: Vec<RenderUpdateDelta> = Vec::new();
-        let mut instr_peek = instructions.iter().peekable();
+        let mut instr_peek = render_program.instructions.iter().peekable();
 
         while instr_peek.peek().is_some() {
             let instr = instr_peek.next().unwrap();
@@ -78,14 +88,14 @@ impl<'frame> Renderer {
                     }
                     Operations::PushPrototype => {
                         let val_idx = Self::get_constant_idx(&mut instr_peek);
-                        let val = constants[val_idx as usize].clone();
+                        let val = render_program.constants[val_idx as usize].clone();
                         stack.push(StackValue::Prototype(PrototypeHandle::from_key(
                             val.unwrap_key(),
                         )));
                     }
                     Operations::PushAlloc => {
                         let val_idx = Self::get_constant_idx(&mut instr_peek);
-                        let val = constants[val_idx as usize].clone();
+                        let val = render_program.constants[val_idx as usize].clone();
                         stack.push(StackValue::Alloc(GPUAllocationHandle::from_key(
                             val.unwrap_key(),
                         )));
@@ -102,8 +112,9 @@ impl<'frame> Renderer {
                     Operations::TextureUpload => {
                         let mut alloc_handle = stack.pop().unwrap().as_alloc();
                         alloc_handle.alloc_mask.insert(AllocationMask::TEX);
-                        let texture_data_idx = Self::get_constant_idx(&mut instr_peek);
-                        let data = constants[texture_data_idx].unwrap_data_ref();
+                        let data =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be texture data");
                         let dim = Self::get_tex_dim(&mut instr_peek);
 
                         let job = UploadTextureJob {
@@ -140,9 +151,9 @@ impl<'frame> Renderer {
                     Operations::MaterialUpload => {
                         let mut gac = stack.pop().expect("should be gac").as_alloc();
                         gac.alloc_mask.insert(AllocationMask::MATERIAL);
-                        let material_data = constants
-                            [Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
+                        let material_data =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be materials");
                         let mut records = material_data.to_vec();
                         for material_chunk in
                             records.chunks_exact_mut(std::mem::size_of::<GPUMaterialData>())
@@ -166,8 +177,9 @@ impl<'frame> Renderer {
                     Operations::PNUUpload => {
                         let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
                         alloc_handle.alloc_mask.insert(AllocationMask::PNU_VERTEX);
-                        let pnu = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
+                        let pnu =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be pnu data");
                         self.upload_mesh(
                             UploadMeshJob::<PNUVertex>::new(pnu, alloc_handle.clone()),
                             queue,
@@ -179,8 +191,9 @@ impl<'frame> Renderer {
                     Operations::PNUJWUpload => {
                         let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
                         alloc_handle.alloc_mask.insert(AllocationMask::PNUJW_VERTEX);
-                        let pnujw = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
+                        let pnujw =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be pnujw");
                         self.upload_mesh(
                             UploadMeshJob::<PNUJWVertex>::new(pnujw, alloc_handle.clone()),
                             queue,
@@ -192,8 +205,9 @@ impl<'frame> Renderer {
                         let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
                         alloc_handle.alloc_mask.insert(AllocationMask::INDEX16);
 
-                        let indices = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
+                        let indices =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be indices");
                         self.upload_indices_16(
                             UploadIndexJob {
                                 indices,
@@ -208,8 +222,9 @@ impl<'frame> Renderer {
                         let mut alloc_handle = stack.pop().expect("should be gac").as_alloc();
                         alloc_handle.alloc_mask.insert(AllocationMask::INDEX32);
 
-                        let indices = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
+                        let indices =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be indices");
                         self.upload_indices_32(
                             UploadIndexJob {
                                 indices,
@@ -230,7 +245,7 @@ impl<'frame> Renderer {
                     }
                     Operations::AddAsset => {
                         let asset_key = Self::get_constant_idx(&mut instr_peek);
-                        stack.push(constants[asset_key as usize].clone().into()); // push asset handle to stack
+                        stack.push(render_program.constants[asset_key as usize].clone().into());
 
                         let global_allocation_id = self.get_global_alloc_id();
 
@@ -353,8 +368,9 @@ impl<'frame> Renderer {
                     Operations::LocalTransformUpload => {
                         let gpu_instance_handle =
                             stack.pop().expect("should be payload").as_instance_handle();
-                        let lt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
+                        let lt =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be lt data");
                         let lt_upload_job = InstanceUploadJob::new(lt, gpu_instance_handle.clone());
                         self.upload_local_transforms(lt_upload_job, queue, device)?;
 
@@ -362,7 +378,8 @@ impl<'frame> Renderer {
                     }
                     Operations::CreatePrototype => {
                         let entity_key_idx = Self::get_constant_idx(&mut instr_peek);
-                        let entity_key = constants[entity_key_idx as usize].unwrap_key();
+                        let entity_key =
+                            render_program.constants[entity_key_idx as usize].unwrap_key();
                         let prototype_handle = PrototypeHandle::from_key(entity_key.clone());
 
                         stack.push(StackValue::Key(entity_key));
@@ -370,16 +387,19 @@ impl<'frame> Renderer {
                     }
                     Operations::ReleasePrototype => {
                         let idx = Self::get_constant_idx(&mut instr_peek);
-                        let prototype = PrototypeHandle::from_key(constants[idx].unwrap_key());
+                        let prototype =
+                            PrototypeHandle::from_key(render_program.constants[idx].unwrap_key());
                         self.release_prototypes(&prototype)?;
                     }
                     Operations::JointTransformUpload => {
                         let gpu_instance_handle =
                             stack.pop().expect("should be payload").as_instance_handle();
-                        let jt = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
-                        let ibms = constants[Self::get_constant_idx(&mut instr_peek) as usize]
-                            .unwrap_data_ref();
+                        let jt =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be joints");
+                        let ibms =
+                            Self::resolve_next_token(frame_arena, render_program, &mut instr_peek)
+                                .expect("should be ibs");
                         let jt_upload_job = InstanceUploadJob::new(jt, gpu_instance_handle.clone());
                         let ibm_upload_job =
                             InstanceUploadJob::new(ibms, gpu_instance_handle.clone());
@@ -389,7 +409,7 @@ impl<'frame> Renderer {
                     }
                     Operations::SpawnInstance => {
                         let instance_key_idx = Self::get_constant_idx(&mut instr_peek);
-                        let instance_key = constants[instance_key_idx].unwrap_key();
+                        let instance_key = render_program.constants[instance_key_idx].unwrap_key();
                         let prototype_handle =
                             stack.pop().expect("should be prototype key").as_prototype();
                         let (reserved_node_id, gpu_instance_handle) = self
@@ -471,7 +491,8 @@ impl<'frame> Renderer {
                     }
                     Operations::DespawnInstance => {
                         let gpu_instance_handle_idx = Self::get_constant_idx(&mut instr_peek);
-                        let gpu_instance_handle_key = &constants[gpu_instance_handle_idx];
+                        let gpu_instance_handle_key =
+                            &render_program.constants[gpu_instance_handle_idx];
                         let gpu_instance_handle =
                             GPUInstanceHandle::from_key(gpu_instance_handle_key.unwrap_key());
                         self.despawn_instance(&gpu_instance_handle);
@@ -479,9 +500,9 @@ impl<'frame> Renderer {
                     }
                     Operations::DespawnAsset => {
                         let asset_key_idx = Self::get_constant_idx(&mut instr_peek);
-                        let asset_key = constants[asset_key_idx].unwrap_key();
+                        let asset_key = render_program.constants[asset_key_idx].unwrap_key();
                         let gpu_alloc_handle_idx = Self::get_constant_idx(&mut instr_peek);
-                        let gpu_alloc_handle_key = &constants[gpu_alloc_handle_idx];
+                        let gpu_alloc_handle_key = &render_program.constants[gpu_alloc_handle_idx];
                         let gpu_alloc_handle =
                             GPUAllocationHandle::from_key(gpu_alloc_handle_key.unwrap_key());
                         self.unload_asset(gpu_alloc_handle.clone())?;

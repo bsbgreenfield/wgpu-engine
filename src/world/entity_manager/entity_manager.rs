@@ -1,4 +1,4 @@
-use std::{any::type_name, collections::HashSet, mem::MaybeUninit, ops::Range};
+use std::{any::type_name, collections::HashSet, mem::MaybeUninit, ops::Range, sync::Arc};
 
 use crate::{
     asset_manager::{
@@ -65,21 +65,23 @@ impl EntityManager {
             .unwrap_or(&AnimationMode::None);
         let local_transforms = match rigid_mode {
             AnimationMode::Independent => LocalTransforms::OwnedCopy {
-                data: local_transform_data,
+                data: Arc::new(local_transform_data),
             },
             AnimationMode::Shared | AnimationMode::None => LocalTransforms::OwnedShared {
-                data: local_transform_data,
+                data: Arc::new(local_transform_data),
             },
         };
         let (joint_transforms, ibms) = if let Some(joints) = joint_transform_data {
             let jt_res = match skinned_mode {
-                AnimationMode::Shared | AnimationMode::None => {
-                    JointTransforms::OwnedShared { data: joints }
-                }
-                AnimationMode::Independent => JointTransforms::OwnedCopy { data: joints },
+                AnimationMode::Shared | AnimationMode::None => JointTransforms::OwnedShared {
+                    data: Arc::new(joints),
+                },
+                AnimationMode::Independent => JointTransforms::OwnedCopy {
+                    data: Arc::new(joints),
+                },
             };
             let ibm_res = InverseBindMatrices::Owned {
-                data: ibm_data.expect("must have ibms"),
+                data: ibm_data.expect("must have ibms").into(),
             };
             (jt_res, ibm_res)
         } else {

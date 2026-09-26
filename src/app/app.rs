@@ -2,10 +2,12 @@ use std::{sync::Arc, time::Instant};
 
 use crate::{
     app::{FrameError, app_config::AppConfig, app_state::AppState},
-    renderer::{Instruction, RenderCategory, RenderConstant, RenderPacket, renderer::Renderer},
+    renderer::{
+        Instruction, RenderCategory, RenderConstant, RenderPacket, RenderProgram,
+        renderer::Renderer,
+    },
     world::{
-        bytecode_gen::BytecodeGenerator, instance_manager::gen_draw_calls::DrawCallGenerator,
-        scene::Scene, world::World,
+        FrameArena, instance_manager::gen_draw_calls::DrawCallGenerator, scene::Scene, world::World,
     },
 };
 use winit::{
@@ -23,6 +25,8 @@ pub struct App<'a> {
     pub app_config: Option<AppConfig<'a>>,
     pub world: World,
     pub(crate) renderer: Renderer,
+    pub frame_arena: FrameArena,
+    pub render_program: RenderProgram,
     pub app_state: AppState,
     pub surface_ready: bool,
     pub render_packet: RenderPacket,
@@ -61,14 +65,17 @@ impl<'frame> App<'frame> {
         }
         self.world.update(&mut self.app_commands)?;
 
-        let mut constants = Vec::<RenderConstant>::new();
-        let mut instructions = Vec::<Instruction>::new();
-
-        World::gen_bytecode(&self.world.deltas, &mut instructions, &mut constants);
+        self.render_program.clear();
+        self.frame_arena.clear();
+        World::gen_bytecode(
+            &self.world.deltas,
+            &mut self.render_program,
+            &mut self.frame_arena,
+        );
 
         let render_deltas = self.renderer.update(
-            constants,
-            instructions,
+            &self.render_program,
+            &self.frame_arena,
             &self.app_config.as_ref().unwrap().queue,
             &self.app_config.as_ref().unwrap().device,
         )?;
@@ -111,6 +118,8 @@ impl<'frame> App<'frame> {
 impl App<'_> {
     pub fn new() -> Self {
         Self {
+            render_program: RenderProgram::new(),
+            frame_arena: FrameArena::default(),
             last_frame_time: Instant::now(),
             window: None,
             app_config: None,

@@ -489,8 +489,8 @@ impl GltfAsset {
             get_animations(&gltf, buffer_offsets, binary_data, &node_tree)?;
         Ok(Box::new(GltfAsset {
             material_palette,
-            pnujw_vertices: Arc::from_iter(pnujw),
-            pnu_vertices: Arc::from_iter(pnu),
+            pnujw_vertices: Arc::new(pnujw),
+            pnu_vertices: Arc::new(pnu),
             node_tree,
             meshes,
             indices,

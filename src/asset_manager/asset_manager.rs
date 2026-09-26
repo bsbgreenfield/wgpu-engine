@@ -433,7 +433,7 @@ impl AssetManager {
 
 #[cfg(test)]
 pub(super) mod asset_mocks {
-    use std::marker::PhantomData;
+    use std::{marker::PhantomData, sync::Arc};
 
     use crate::{
         app::{GPUAssetUploadJob, MaterialPaletteJob},
@@ -456,7 +456,7 @@ pub(super) mod asset_mocks {
                 pnujw_vertices: None,
                 indices: None,
                 embedded_materials: MaterialPaletteJob {
-                    records: vec![],
+                    records: Arc::new(vec![]),
                     textures: vec![],
                 },
             })

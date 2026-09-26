@@ -4,7 +4,7 @@ use crate::{
     app::app_config::AppConfig,
     renderer::{
         AllocationMask, DrawPacket, GPUAllocationHandle, GPUInstanceHandle, InstanceUploadJob,
-        Instruction, PrototypeHandle, RenderCategory, RenderConstant, RenderError,
+        Instruction, PrototypeHandle, RenderCategory, RenderConstant, RenderError, RenderProgram,
         RenderUpdateDelta, RenderUpdateError, UploadMeshJob, VertexArenaError, VertexArenaSelector,
         bind_groups::BindGroupCollection,
         depth_tex::DepthTexture,
@@ -18,7 +18,7 @@ use crate::{
         InstanceRecordData, InverseBindMatrix, JointTransform, LocalTransform, PNUJWVertex,
         PNUVertex, VIndex16, VIndex32,
     },
-    world::{RenderKey, camera::Camera, instance_manager::RenderFrame, world::DrawSet},
+    world::{FrameArena, RenderKey, camera::Camera, instance_manager::RenderFrame, world::DrawSet},
 };
 
 struct EngineRenderPass {
@@ -201,12 +201,12 @@ impl Renderer {
 
     pub(crate) fn update(
         &mut self,
-        constants: Vec<RenderConstant>,
-        ops: Vec<Instruction>,
+        render_program: &RenderProgram,
+        frame_arena: &FrameArena,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
     ) -> Result<Vec<RenderUpdateDelta>, RenderUpdateError> {
-        self.interpret(constants, ops, queue, device)
+        self.interpret(render_program, frame_arena, queue, device)
     }
 
     pub(crate) fn prepare_frame(&mut self, render_frame: RenderFrame, queue: &wgpu::Queue) {

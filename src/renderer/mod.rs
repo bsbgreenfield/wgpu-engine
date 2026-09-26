@@ -6,7 +6,6 @@ use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData}
 
 use bytemuck::Pod;
 
-use crate::renderer::RenderConstant::DataRef;
 use crate::renderer::gpu_allocator::allocation_tables::AllocationTableError;
 use crate::world::InstanceResidency;
 use crate::{
@@ -418,9 +417,56 @@ pub(crate) enum Operations {
     PushAlloc,
 }
 
-#[derive(Debug)]
-pub(crate) enum RenderConstant<'frame> {
-    DataRef(&'frame [u8]),
+#[derive(Debug, Clone, Copy)]
+pub struct DataToken(pub u32);
+
+// TODO: remove lifetime from render program
+pub struct RenderProgram {
+    pub(crate) instructions: Vec<Instruction>,
+    constants: Vec<RenderConstant>,
+}
+
+impl RenderProgram {
+    pub fn clear(&mut self) {
+        self.instructions.clear();
+        self.constants.clear();
+    }
+    pub fn new() -> Self {
+        Self {
+            instructions: vec![],
+            constants: vec![],
+        }
+    }
+
+    pub(crate) fn push_op(&mut self, op: Operations) {
+        self.instructions.push(Instruction::Op(op));
+    }
+    pub(crate) fn push_instruction(&mut self, instruction: Instruction) {
+        self.instructions.push(instruction);
+    }
+
+    pub(crate) fn push_const(&mut self, constant: RenderConstant) {
+        let idx = self.constants.len();
+        debug_assert!(idx <= u16::MAX as usize, "constant table overflow");
+        self.constants.push(constant);
+        if idx > 255 {
+            self.instructions
+                .push(Instruction::WideIdx((idx >> 8) as u8));
+        }
+        self.instructions.push(Instruction::ConstIdx(idx as u8));
+    }
+
+    pub fn push_key(&mut self, key: u64) {
+        self.push_const(RenderConstant::Key(key));
+    }
+    pub fn push_data(&mut self, token: DataToken) {
+        self.push_const(RenderConstant::Token(token));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RenderConstant {
+    Token(DataToken),
     Key(u64),
 }
 
@@ -483,25 +529,16 @@ impl StackValue {
     }
 }
 
-impl From<RenderConstant<'_>> for StackValue {
-    fn from(value: RenderConstant<'_>) -> Self {
+impl From<RenderConstant> for StackValue {
+    fn from(value: RenderConstant) -> Self {
         match value {
-            DataRef(_) => panic!("cannot push binary data onto the stack"),
+            RenderConstant::Token(token) => panic!("cannot convert to stack value from token"),
             RenderConstant::Key(key) => StackValue::Key(key),
         }
     }
 }
 
-impl<'frame> Clone for RenderConstant<'frame> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Key(key) => Self::Key(*key),
-            Self::DataRef(_) => panic!("cannot clone ref data (maybe make it an arc)"),
-        }
-    }
-}
-
-impl<'frame> RenderConstant<'frame> {
+impl RenderConstant {
     fn unwrap_key(&self) -> u64 {
         match self {
             Self::Key(key) => *key,
@@ -509,9 +546,9 @@ impl<'frame> RenderConstant<'frame> {
         }
     }
 
-    fn unwrap_data_ref(&self) -> &[u8] {
+    fn unwrap_token(&self) -> DataToken {
         match self {
-            Self::DataRef(data_ref) => data_ref,
+            Self::Token(token) => *token,
             _ => panic!("invalid bytecode, expected data, found {:?}", self),
         }
     }

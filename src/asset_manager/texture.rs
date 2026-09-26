@@ -1,14 +1,11 @@
-use std::{
-    cell::Cell, collections::HashMap, error::Error, io::Cursor, path::PathBuf, sync::Arc,
-    thread::ScopedJoinHandle,
-};
+use std::{cell::Cell, collections::HashMap, error::Error, io::Cursor, path::PathBuf, sync::Arc};
 
 use image::{DynamicImage, ImageReader};
 
 use crate::{
     app::GPUAssetUploadJob,
     asset_manager::{
-        Asset, AssetSource, BinaryData, ModelBuilderError, ProvidesTextureData,
+        Asset, AssetHandle, AssetSource, BinaryData, ModelBuilderError, ProvidesTextureData,
         asset_manager::AssetManager, gltf_asset::GltfLoadError,
     },
     util::types::GPUTextureData,
@@ -135,12 +132,12 @@ impl Asset for TextureAsset {
 
         Ok(GPUAssetUploadJob::TextureData {
             asset_handle,
-            data: GPUTextureData {
+            data: Arc::new(GPUTextureData {
                 height: image.height(),
                 width: image.width(),
                 srgb: false,
                 pixels: image.to_rgba8().into_raw().into(),
-            },
+            }),
         })
     }
 

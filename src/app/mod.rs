@@ -30,7 +30,7 @@ pub enum GPUTextureBinding {
 
 #[derive(Clone, Debug, Default)]
 pub struct MaterialPaletteJob {
-    pub records: Vec<GPUMaterialData>,
+    pub records: Arc<Vec<GPUMaterialData>>,
     pub textures: Vec<GPUTextureBinding>,
 }
 
@@ -66,7 +66,10 @@ impl MaterialPaletteJob {
             records.push(material_data);
             textures.push(texture);
         }
-        Self { records, textures }
+        Self {
+            records: records.into(),
+            textures,
+        }
     }
 }
 
@@ -74,8 +77,8 @@ impl MaterialPaletteJob {
 pub enum GPUAssetUploadJob {
     ModelData {
         asset_handle: AssetHandle,
-        pnu_vertices: Option<Arc<[PNUVertex]>>,
-        pnujw_vertices: Option<Arc<[PNUJWVertex]>>,
+        pnu_vertices: Option<Arc<Vec<PNUVertex>>>,
+        pnujw_vertices: Option<Arc<Vec<PNUJWVertex>>>,
         indices: Option<AssetIndices>,
         embedded_materials: MaterialPaletteJob,
     },
@@ -86,7 +89,7 @@ pub enum GPUAssetUploadJob {
     },
     TextureData {
         asset_handle: AssetHandle,
-        data: GPUTextureData,
+        data: Arc<GPUTextureData>,
     },
 }
 

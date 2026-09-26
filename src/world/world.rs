@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::range::Range;
+use std::sync::Arc;
 use std::{collections::HashSet, fmt::Debug};
 
 use cgmath::vec3;
 
+use crate::renderer::{Instruction, RenderConstant};
 use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetHandle, AssetLoadError, AssetSource, asset_manager::AssetManager},
@@ -74,8 +76,8 @@ impl RenderGroup {
 #[derive(Debug, Clone)]
 pub enum LocalTransforms {
     Uninit,
-    OwnedShared { data: Vec<LocalTransform> },
-    OwnedCopy { data: Vec<LocalTransform> },
+    OwnedShared { data: Arc<Vec<LocalTransform>> },
+    OwnedCopy { data: Arc<Vec<LocalTransform>> },
     CopiedFrom { donor: InstanceHandle },
     NeedsCopy,
     SharedWith { donor: InstanceHandle },
@@ -85,8 +87,8 @@ pub enum LocalTransforms {
 #[derive(Debug, Clone)]
 pub enum JointTransforms {
     None,
-    OwnedShared { data: Vec<JointTransform> },
-    OwnedCopy { data: Vec<JointTransform> },
+    OwnedShared { data: Arc<Vec<JointTransform>> },
+    OwnedCopy { data: Arc<Vec<JointTransform>> },
     NeedsCopy,
     NeedsShared,
 }
@@ -94,7 +96,7 @@ pub enum JointTransforms {
 #[derive(Debug, Clone)]
 pub enum InverseBindMatrices {
     None,
-    Owned { data: Vec<InverseBindMatrix> },
+    Owned { data: Arc<Vec<InverseBindMatrix>> },
     NeedsCopy,
     NeedsShared,
 }
@@ -120,21 +122,6 @@ pub struct CopiedInstanceData {
 pub enum InstanceUploadData {
     New(NewInstanceData),
     Copied(CopiedInstanceData),
-}
-
-impl InstanceUploadData {
-    pub(super) fn handles(&self) -> Vec<InstanceHandle> {
-        let mut handles: Vec<InstanceHandle> = Vec::new();
-        match self {
-            InstanceUploadData::New(new) => {
-                handles.push(new.handle.clone());
-            }
-            InstanceUploadData::Copied(copied) => {
-                handles.extend(copied.handles.iter().cloned());
-            }
-        }
-        handles
-    }
 }
 
 #[derive(Clone)]

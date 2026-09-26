@@ -1,8 +1,10 @@
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use crate::{
     asset_manager::{AssetHandle, AssetLoadError},
     common::{entity::EntityHandle, instance::InstanceHandle},
+    renderer::DataToken,
+    util::types::{AssetIndices, GPUTextureData},
     world::{entity_manager::EntityManagerError, scene::manager::SceneManagerError},
 };
 
@@ -126,5 +128,47 @@ impl InstanceResidency {
             record_index: u32::MAX,
             bind_key: u32::MAX,
         }
+    }
+}
+
+pub(crate) trait RenderBytes: Send + Sync {
+    fn as_bytes(&self) -> &[u8];
+}
+
+impl<T: bytemuck::Pod + Send + Sync> RenderBytes for Vec<T> {
+    fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(self)
+    }
+}
+
+impl RenderBytes for AssetIndices {
+    fn as_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl RenderBytes for GPUTextureData {
+    fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.pixels)
+    }
+}
+
+#[derive(Default)]
+pub struct FrameArena {
+    free_list: Vec<usize>,
+    data: Vec<Arc<dyn RenderBytes>>,
+}
+
+impl FrameArena {
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+    pub fn resolve(&self, token: DataToken) -> Option<&[u8]> {
+        self.data.get(token.0 as usize).map(|data| data.as_bytes())
+    }
+
+    pub fn add_data(&mut self, data: Arc<dyn RenderBytes>) -> DataToken {
+        self.data.push(data);
+        DataToken(self.data.len() as u32 - 1)
     }
 }
