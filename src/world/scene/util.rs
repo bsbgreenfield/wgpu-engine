@@ -15,7 +15,7 @@ use crate::{
 };
 
 impl Scene {
-    pub fn mediaval_room(
+    pub fn medieval_room(
         world: &mut crate::world::world::World,
     ) -> Result<(), crate::world::WorldInitError> {
         let medieval_room = world.register_asset::<GltfAsset>("medieval_room")?;
@@ -23,6 +23,9 @@ impl Scene {
 
         let fox = world.register_asset::<GltfAsset>("fox")?;
         let fox_entity = world.entity_manager.new_entity()?;
+
+        let box_anim = world.register_asset::<GltfAsset>("box_animated")?;
+        let box_entity = world.entity_manager.new_entity()?;
 
         world.entity_manager.add_mesh_collection_for_entity(
             &mr_entity,
@@ -41,9 +44,21 @@ impl Scene {
                 }),
         );
 
+        world.entity_manager.add_mesh_collection_for_entity(
+            &box_entity,
+            MeshCollectionDescriptor::new(box_anim.into(), ComponentAccessor::All)
+                .with_material(MaterialComponentDescriptor::Embedded)
+                .with_animation(AnimationComponentDescriptor::Embedded {
+                    accessor: ComponentAccessor::All,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                }),
+        );
+
         SceneBuilder::new()
             .add_entity(mr_entity)
             .add_entity(fox_entity)
+            .add_entity(box_entity)
             .create(world)?;
 
         // The gltf is authored in cm: ~1500 units across, centered at
@@ -51,7 +66,8 @@ impl Scene {
         // lands inside the camera's frustum (zfar is only 100).
         const MR_SCALE: f32 = 0.01;
         const MR_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-381.5, 230.8, 731.9);
-        const MR_ROOM_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-100.5, 20., 900.9);
+        const BOX_OFF: cgmath::Vector3<f32> = cgmath::Vector3::new(140., 0., 0.);
+        const MR_ROOM_CENTER: cgmath::Vector3<f32> = cgmath::Vector3::new(-685., 10., 1300.9);
         const FOX_SCALE: f32 = 0.025;
         world.add_instances(
             super::SceneId(0),
@@ -70,6 +86,15 @@ impl Scene {
                         position: (cgmath::Matrix4::<f32>::from_translation(
                             (MR_ROOM_CENTER - MR_CENTER) * MR_SCALE,
                         ) * cgmath::Matrix4::<f32>::from_scale(FOX_SCALE))
+                        .into(),
+                    }),
+                },
+                Spawn {
+                    entity: box_entity,
+                    data: Box::new(APosition {
+                        position: (cgmath::Matrix4::<f32>::from_translation(
+                            (MR_ROOM_CENTER - (MR_CENTER + BOX_OFF)) * MR_SCALE,
+                        ))
                         .into(),
                     }),
                 },
@@ -164,6 +189,63 @@ impl Scene {
                         position: (cgmath::Matrix4::<f32>::from_scale(0.02)).into(),
                     }),
                 }],
+            )
+            .map_err(|e| crate::world::WorldInitError::SceneCreationFailure(e))?;
+
+        world
+            .scene_manager
+            .set_load_level(scene_id, SceneLoadLevel::GPU, &world.asset_manager)?;
+
+        Ok(())
+    }
+
+    pub fn brain(
+        world: &mut crate::world::world::World,
+    ) -> Result<(), crate::world::WorldInitError> {
+        let brain_asset = world.register_asset::<GltfAsset>("brain")?;
+        let brain_entity = world.entity_manager.new_entity()?;
+
+        world.entity_manager.add_mesh_collection_for_entity(
+            &brain_entity,
+            MeshCollectionDescriptor::new(brain_asset.clone().into(), ComponentAccessor::All)
+                .with_animation(AnimationComponentDescriptor::Embedded {
+                    accessor: ComponentAccessor::All,
+                    rigid_animation_mode: AnimationMode::Shared,
+                    skinned_animation_mode: AnimationMode::Shared,
+                })
+                .with_material(MaterialComponentDescriptor::Embedded),
+        );
+        let mut builder = SceneBuilder::new();
+        builder = builder.add_entity(brain_entity);
+        let scene_id = builder.create(world)?;
+
+        world
+            .add_instances(
+                scene_id,
+                vec![
+                    Spawn {
+                        entity: brain_entity,
+                        data: Box::new(APosition {
+                            position: (cgmath::Matrix4::<f32>::from_translation(
+                                cgmath::Vector3::new(-3., 0., 0.),
+                            ) * cgmath::Matrix4::from_angle_y(cgmath::Rad(
+                                std::f32::consts::FRAC_PI_2,
+                            )) * cgmath::Matrix4::from_scale(2.5))
+                            .into(),
+                        }),
+                    },
+                    Spawn {
+                        entity: brain_entity,
+                        data: Box::new(APosition {
+                            position: (cgmath::Matrix4::<f32>::from_translation(
+                                cgmath::Vector3::new(3., 0., 0.),
+                            ) * cgmath::Matrix4::from_angle_y(cgmath::Rad(
+                                std::f32::consts::FRAC_PI_2 * -1.,
+                            )) * cgmath::Matrix4::from_scale(2.5))
+                            .into(),
+                        }),
+                    },
+                ],
             )
             .map_err(|e| crate::world::WorldInitError::SceneCreationFailure(e))?;
 
@@ -458,7 +540,8 @@ impl Scene {
                     accessor: ComponentAccessor::All,
                     rigid_animation_mode: AnimationMode::Shared,
                     skinned_animation_mode: AnimationMode::Shared,
-                }),
+                })
+                .with_material(MaterialComponentDescriptor::Embedded),
         );
 
         let id = SceneBuilder::new()

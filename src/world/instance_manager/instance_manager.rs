@@ -52,25 +52,32 @@ impl InstanceManager {
     pub fn update(&mut self, commands: &mut Vec<AppCommand>) {
         if let Some(command) = commands.pop() {
             let mut idx: isize = -1;
+            let e1_handle = self
+                .pos
+                .arena
+                .handles
+                .iter()
+                .find(|i| i.entity_handle == EntityHandle(0))
+                .unwrap()
+                .clone();
+            // let e2_handle = self
+            //     .pos
+            //     .arena
+            //     .handles
+            //     .iter()
+            //     .find(|i| i.entity_handle == EntityHandle(1))
+            //     .unwrap()
+            //     .clone();
+
             let dummy = match command {
                 AppCommand::One => {
                     idx = 0;
-                    Some(InstanceHandle {
-                        archetype: ArchetypeId::Position,
-                        entity_handle: EntityHandle(1),
-                        instance_id: 0,
-                        generation: 0,
-                    })
+                    Some(e1_handle)
                 }
 
                 AppCommand::Two => {
-                    idx = 1;
-                    Some(InstanceHandle {
-                        archetype: ArchetypeId::Position,
-                        entity_handle: EntityHandle(0),
-                        instance_id: 1,
-                        generation: 0,
-                    })
+                    idx = 2;
+                    Some(e1_handle)
                 }
 
                 AppCommand::Three => {
