@@ -5,9 +5,9 @@ use time::{Duration, ext::InstantExt};
 use crate::{
     animation::{AnimationInstance, EntityAnimations},
     common::entity::EntityHandle,
-    renderer::GPUInstanceHandle,
+    renderer::{AnimationUpdate, GPUInstanceHandle, RenderFrame},
     util::types::Mat4F32,
-    world::instance_manager::{AnimationUpdate, InstanceHandle, RenderFrame},
+    world::instance_manager::InstanceHandle,
 };
 
 #[derive(Default)]

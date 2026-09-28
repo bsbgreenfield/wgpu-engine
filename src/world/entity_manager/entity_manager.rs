@@ -16,7 +16,7 @@ use crate::{
                 MeshCollectionComponent, MeshCollectionDescriptor,
             },
         },
-        world::{
+        instance_manager::{
             CopiedInstanceData, InstanceUploadData, InverseBindMatrices, JointTransforms,
             LocalTransforms, NewInstanceData,
         },
@@ -304,7 +304,7 @@ pub(super) struct SparseSet<T, const N: usize> {
 }
 
 impl<T, const N: usize> SparseSet<T, N> {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             dense: unsafe { MaybeUninit::uninit().assume_init() },
             dense_ids: [INVALID; N],
@@ -313,7 +313,7 @@ impl<T, const N: usize> SparseSet<T, N> {
         }
     }
 
-    pub fn insert(&mut self, id: usize, value: T) {
+    pub(super) fn insert(&mut self, id: usize, value: T) {
         assert!(self.len + 1 < N, "SparseSet is full");
         assert!(id < N, "ID out of bounds");
 
@@ -349,11 +349,11 @@ impl<T, const N: usize> SparseSet<T, N> {
     }
 
     #[inline]
-    pub fn contains(&self, id: usize) -> bool {
+    pub(super) fn contains(&self, id: usize) -> bool {
         id < N && self.sparse[id] < self.len && self.dense_ids[self.sparse[id]] == id
     }
 
-    pub fn remove(&mut self, id: usize) -> Option<T> {
+    pub(super) fn remove(&mut self, id: usize) -> Option<T> {
         if !self.contains(id) {
             return None;
         }

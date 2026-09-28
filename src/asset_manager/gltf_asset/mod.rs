@@ -114,7 +114,9 @@ pub(crate) enum NodeTransforms {
 }
 
 impl NodeTransforms {
-    pub fn to_matrix(components: &[NodeTransforms; 3]) -> cgmath::Matrix4<f32> {
+    pub(in crate::asset_manager) fn to_matrix(
+        components: &[NodeTransforms; 3],
+    ) -> cgmath::Matrix4<f32> {
         let mut t = cgmath::Matrix4::from_translation(cgmath::Vector3::new(0.0, 0.0, 0.0));
         let mut r = cgmath::Matrix4::from(cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0));
         let mut s = cgmath::Matrix4::from_scale(1.0);
@@ -150,7 +152,7 @@ pub(super) struct GltfNode {
 #[cfg(test)]
 impl GltfNode {
     #[allow(unused)]
-    pub fn mock(
+    pub(super) fn mock(
         node_type: NodeType,
         id: usize,
         skin_idx: Option<usize>,

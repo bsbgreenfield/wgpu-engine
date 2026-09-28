@@ -17,9 +17,9 @@ use crate::{
         gltf_asset::{AssetSources, GltfAsset, GltfLoadError, GltfValidationError, TextureSource},
         texture::TextureAsset,
     },
-    renderer::GPUAllocationHandle,
+    renderer::{GPUAllocationHandle, RenderKey},
     util::types::{GPUMaterialData, InverseBindMatrix, JointTransform, LocalTransform},
-    world::{RenderKey, entity_manager::components::ComponentAccessor, scene::SceneLoadLevel},
+    world::{entity_manager::components::ComponentAccessor, scene::SceneLoadLevel},
 };
 
 pub mod asset_manager;

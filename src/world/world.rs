@@ -1,7 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
-use std::range::Range;
-use std::sync::Arc;
 
 use cgmath::vec3;
 
@@ -9,13 +6,12 @@ use crate::{
     app::{GPUAssetUploadJob, app::AppCommand},
     asset_manager::{Asset, AssetHandle, AssetLoadError, AssetSource, asset_manager::AssetManager},
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderUpdateDelta},
-    util::types::{InverseBindMatrix, JointTransform, LocalTransform},
+    renderer::{RenderKey, RenderUpdateDelta, camera::Camera},
     world::{
-        RenderKey, WorldUpdateError,
-        camera::Camera,
+        WorldUpdateDelta, WorldUpdateError,
         entity_manager::{components::ResourceBacking, entity_manager::EntityManager},
         instance_manager::{
+            InstanceUploadData, NewInstanceData,
             archetypes::{APosition, Archetype},
             instance_manager::InstanceManager,
         },
@@ -26,127 +22,6 @@ use crate::{
         },
     },
 };
-
-pub struct DrawSet {
-    /// for use while iterating over primitives
-    /// mesh_map[primitive_slot_index] = mesh_slot_index
-    pub mesh_map: Vec<u32>,
-    pub primtitive_ranges: Vec<Range<u32>>,
-    pub index_ranges: Option<Vec<Range<u32>>>,
-    pub joint_map: Vec<u32>,
-    pub material_indices: Vec<Option<u32>>,
-}
-
-impl DrawSet {
-    #[inline]
-    pub const fn within(prim_range: &Range<u32>, range: &Range<u32>) -> Range<u32> {
-        let start = range.start + prim_range.start;
-        Range {
-            start: start,
-            end: start + (prim_range.end - prim_range.start) as u32,
-        }
-    }
-}
-
-pub(crate) struct RenderView {
-    pub alloc_handle: GPUAllocationHandle,
-    pub pnujw_draws: Option<DrawSet>,
-    pub pnu_draws: Option<DrawSet>,
-}
-
-#[allow(unused)]
-pub(crate) struct RenderGroup {
-    pub entity_handle: EntityHandle,
-    views: Vec<RenderView>,
-}
-
-impl RenderGroup {
-    pub fn views(&self) -> &[RenderView] {
-        &self.views
-    }
-    pub(super) fn new(views: Vec<RenderView>, entity_handle: EntityHandle) -> Self {
-        Self {
-            entity_handle: entity_handle,
-            views,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum LocalTransforms {
-    Uninit,
-    OwnedShared { data: Arc<Vec<LocalTransform>> },
-    OwnedCopy { data: Arc<Vec<LocalTransform>> },
-    CopiedFrom { donor: InstanceHandle },
-    NeedsCopy,
-    SharedWith { donor: InstanceHandle },
-    NeedsShared,
-}
-
-#[derive(Debug, Clone)]
-pub enum JointTransforms {
-    None,
-    OwnedShared { data: Arc<Vec<JointTransform>> },
-    OwnedCopy { data: Arc<Vec<JointTransform>> },
-    NeedsCopy,
-    NeedsShared,
-}
-
-#[derive(Debug, Clone)]
-pub enum InverseBindMatrices {
-    None,
-    Owned { data: Arc<Vec<InverseBindMatrix>> },
-    NeedsCopy,
-    NeedsShared,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewInstanceData {
-    pub handle: InstanceHandle,
-    pub local_transforms: LocalTransforms,
-    pub joint_transforms: JointTransforms,
-    pub ibms: InverseBindMatrices,
-    pub additional: Vec<InstanceHandle>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CopiedInstanceData {
-    pub handles: Vec<InstanceHandle>,
-    pub prototype_handle: PrototypeHandle,
-    pub local_transforms: LocalTransforms,
-    pub joint_transforms: JointTransforms,
-}
-
-#[derive(Debug)]
-pub enum InstanceUploadData {
-    New(NewInstanceData),
-    Copied(CopiedInstanceData),
-}
-
-#[derive(Clone)]
-pub(crate) enum WorldUpdateDelta {
-    NewEntitySpawn(NewInstanceData),
-    EntityInstanceSpawn(CopiedInstanceData),
-    AssetDidLoad(GPUAssetUploadJob),
-    AssetUnload(AssetHandle, GPUAllocationHandle),
-    InstanceDespawn(GPUInstanceHandle),
-    ReleasePrototype(PrototypeHandle),
-}
-
-impl<'frame> Debug for WorldUpdateDelta {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WorldUpdateDelta::NewEntitySpawn(_) => f.write_str("NewEntitySpawn"),
-            WorldUpdateDelta::EntityInstanceSpawn(_) => f.write_str("EntityInstanceSpawn"),
-            WorldUpdateDelta::AssetDidLoad(_) => f.write_str("AssetDidLoad"),
-            WorldUpdateDelta::InstanceDespawn(handle) => write!(f, "despawn {:?}", handle),
-            WorldUpdateDelta::AssetUnload(_asset_handle, alloc_handle) => {
-                write!(f, "unload asset {:?}", alloc_handle)
-            }
-            WorldUpdateDelta::ReleasePrototype(p) => write!(f, "release prototype {p:?}"),
-        }
-    }
-}
 
 pub struct World {
     init: bool,
@@ -175,7 +50,7 @@ impl World {
     }
 
     pub fn new() -> Self {
-        let camera = crate::world::camera::get_camera_default();
+        let camera = crate::renderer::camera::get_camera_default();
         //camera.build_camera_uniform(aspect_ratio, device);
 
         Self {
@@ -375,20 +250,6 @@ impl World {
                     self.asset_manager
                         .register_asset_gpu_unloaded(asset_handle)?;
                 }
-                // RenderUpdateDelta::EntitySpawned {
-                //     instance_key,
-                //     gpu_instance_handle,
-                //     record_offset,
-                //     binding_key,
-                // } => {
-                //     let instance_handle = InstanceHandle::from_key(instance_key);
-                //     self.instance_manager.add_record_index(
-                //         &instance_handle,
-                //         record_offset,
-                //         binding_key.as_u32(),
-                //         gpu_instance_handle,
-                //     );
-                // }
                 RenderUpdateDelta::InstanceDespawn(gpu_handle) => {
                     self.scene_manager.ack_despawn(gpu_handle);
                 }

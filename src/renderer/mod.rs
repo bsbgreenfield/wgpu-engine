@@ -2,6 +2,7 @@ use core::panic;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::range::Range;
+use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fmt::Display, marker::PhantomData};
 
 use bytemuck::Pod;
@@ -10,17 +11,24 @@ use crate::renderer::gpu_allocator::allocation_tables::AllocationTableError;
 use crate::world::InstanceResidency;
 use crate::{
     renderer::gpu_allocator::{UploadMeshJob, VertexArenaError},
-    util::types::{GlobalTransform, ModelVertex},
-    world::RenderKey,
+    util::types::GlobalTransform,
 };
 
 mod bind_groups;
+pub(crate) mod camera;
 mod depth_tex;
 mod gpu_allocator;
 mod pipeline;
+mod render_pass;
 pub(crate) mod renderer;
+mod upload;
+mod vertex_arena;
 mod vm;
 
+pub(crate) trait RenderKey {
+    fn as_key(&self) -> u64;
+    fn from_key(key: u64) -> Self;
+}
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PrototypeHandle(u16);
 
@@ -36,6 +44,62 @@ impl RenderKey for PrototypeHandle {
 
     fn from_key(key: u64) -> Self {
         Self(key as u16)
+    }
+}
+
+#[derive(Debug)]
+pub struct AnimationUpdate<'frame> {
+    pub gpu_handle: GPUInstanceHandle,
+    pub transforms: &'frame [u8],
+}
+
+#[derive(Debug, Default)]
+pub struct RenderFrame<'frame> {
+    pub global_transforms: &'frame [GlobalTransform],
+    pub indirection_list: &'frame [u32],
+    pub rigid_animation_data: Vec<AnimationUpdate<'frame>>,
+    pub joint_animation_data: Vec<AnimationUpdate<'frame>>,
+}
+
+pub(crate) trait RenderBytes: Send + Sync {
+    fn as_bytes(&self) -> &[u8];
+}
+#[derive(Default)]
+pub struct FrameArena {
+    data: Vec<Arc<dyn RenderBytes>>,
+}
+
+impl FrameArena {
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+    pub fn resolve(&self, token: DataToken) -> Option<&[u8]> {
+        self.data.get(token.0 as usize).map(|data| data.as_bytes())
+    }
+
+    pub(crate) fn add_data(&mut self, data: Arc<dyn RenderBytes>) -> DataToken {
+        self.data.push(data);
+        DataToken(self.data.len() as u32 - 1)
+    }
+}
+pub(crate) struct DrawSet {
+    /// for use while iterating over primitives
+    /// mesh_map[primitive_slot_index] = mesh_slot_index
+    pub mesh_map: Vec<u32>,
+    pub primtitive_ranges: Vec<Range<u32>>,
+    pub index_ranges: Option<Vec<Range<u32>>>,
+    pub joint_map: Vec<u32>,
+    pub material_indices: Vec<Option<u32>>,
+}
+
+impl DrawSet {
+    #[inline]
+    pub(crate) const fn within(prim_range: &Range<u32>, range: &Range<u32>) -> Range<u32> {
+        let start = range.start + prim_range.start;
+        Range {
+            start: start,
+            end: start + (prim_range.end - prim_range.start) as u32,
+        }
     }
 }
 
@@ -91,7 +155,7 @@ impl RenderPacket {
 }
 
 #[derive(Debug, Clone)]
-pub struct DrawBucket {
+pub(crate) struct DrawBucket {
     pub group_idx: usize,
     pub start: u32,
     pub count: u32,
@@ -113,7 +177,7 @@ impl DrawPacket {
     // TODO: bucket keys is a linear search through the bucket keys vec
     // to find bucket idx from bucket_keys<Key>
     // if the bucket lengths ever start to get really high, itll be better to actually hash
-    pub fn count_sort(&mut self, residencies: &[InstanceResidency]) {
+    pub(crate) fn count_sort(&mut self, residencies: &[InstanceResidency]) {
         // build entity_count list, where entity_count[i] = number of entities
         // and i = render group index + instance bind key
         self.instance_to_bucket.clear();
@@ -160,11 +224,11 @@ impl DrawPacket {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.pnu.is_empty() && self.pnujw.is_empty()
     }
 
-    pub fn reset(&mut self, record_len: usize) {
+    pub(crate) fn reset(&mut self, record_len: usize) {
         self.pnu.clear();
         self.pnujw.clear();
         self.cursors.clear();
@@ -202,12 +266,6 @@ pub(crate) enum RenderUpdateDelta {
         entity_key: u64,
         prototype_handle: PrototypeHandle,
     },
-    //EntitySpawned {
-    //    instance_key: u64,
-    //    gpu_instance_handle: GPUInstanceHandle,
-    //    record_offset: u32,
-    //    binding_key: InstanceBindKey,
-    //},
     InstanceDespawn(GPUInstanceHandle),
 }
 
@@ -228,6 +286,27 @@ impl GPUInstanceHandle {
     }
 }
 
+impl RenderKey for GPUInstanceHandle {
+    fn as_key(&self) -> u64 {
+        ((self.instance_id as u64) << 32)
+            | ((self.prototype.0 as u64) << 16)
+            | (self.bind_id as u64)
+    }
+
+    fn from_key(key: u64) -> Self {
+        let instance = (key >> 32) as u32;
+        let p = (key >> 16) as u16;
+        let bind_id = key as u16;
+
+        let prototype = PrototypeHandle(p);
+
+        Self {
+            prototype,
+            instance_id: instance,
+            bind_id,
+        }
+    }
+}
 impl Hash for GPUInstanceHandle {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.instance_id.hash(state);
@@ -456,7 +535,7 @@ pub(crate) enum RenderConstant {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct TexLayer {
+pub(crate) struct TexLayer {
     layer: u16,
     bucket: u16,
 }
@@ -589,14 +668,6 @@ impl Display for RenderError {
 impl Error for RenderUpdateError {}
 impl Error for RenderError {}
 
-trait VertexArenaSelector<V: ModelVertex> {
-    fn upload_mesh(
-        &mut self,
-        mesh_job: UploadMeshJob<V>,
-        queue: &wgpu::Queue,
-        device: &wgpu::Device,
-    ) -> Result<(), VertexArenaError>;
-}
 pub(crate) enum RenderCategory {
     OpaqueStatic,
     OpaqueSkinned,

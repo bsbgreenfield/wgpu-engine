@@ -7,10 +7,10 @@ use crate::{
             local_transforms::LocalTransformBindGroup, materials::MaterialBindGroup,
             skinning::SkinningBindGroup,
         },
+        camera::Camera,
         depth_tex::DepthTexture,
     },
     util::types::{ModelVertex, PNUJWVertex, PNUVertex},
-    world::camera::Camera,
 };
 
 pub(super) struct EnginePipeline {

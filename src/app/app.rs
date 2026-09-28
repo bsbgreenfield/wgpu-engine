@@ -2,10 +2,8 @@ use std::{sync::Arc, time::Instant};
 
 use crate::{
     app::{FrameError, app_config::AppConfig, app_state::AppState},
-    renderer::{RenderCategory, RenderPacket, RenderProgram, renderer::Renderer},
-    world::{
-        FrameArena, instance_manager::gen_draw_calls::DrawCallGenerator, scene::Scene, world::World,
-    },
+    renderer::{FrameArena, RenderCategory, RenderPacket, RenderProgram, renderer::Renderer},
+    world::{instance_manager::gen_draw_calls::DrawCallGenerator, scene::Scene, world::World},
 };
 use winit::{
     application::ApplicationHandler,
@@ -64,11 +62,8 @@ impl<'frame> App<'frame> {
 
         self.render_program.clear();
         self.frame_arena.clear();
-        World::gen_bytecode(
-            &self.world.deltas,
-            &mut self.render_program,
-            &mut self.frame_arena,
-        );
+        let deltas = self.world.deltas.drain(..);
+        World::gen_bytecode(deltas, &mut self.render_program, &mut self.frame_arena);
 
         let render_deltas = self.renderer.update(
             &self.render_program,

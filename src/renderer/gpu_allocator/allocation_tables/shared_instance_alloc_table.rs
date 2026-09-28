@@ -53,7 +53,7 @@ impl InstanceAllocationTable for SharedInstanceAllocTable {
 }
 
 #[derive(Clone)]
-pub enum SharedInstanceAllocationSlot {
+pub(in crate::renderer) enum SharedInstanceAllocationSlot {
     Prototype { slot: AssetAllocationMeta },
     Shared,
     Copied { slot: AssetAllocationMeta },

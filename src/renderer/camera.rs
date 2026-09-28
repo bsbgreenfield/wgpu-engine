@@ -49,7 +49,7 @@ impl Camera {
         }
     }
 
-    pub(super) fn build_camera_uniform(&mut self, aspect_ratio: f32, device: &wgpu::Device) {
+    pub fn build_camera_uniform(&mut self, aspect_ratio: f32, device: &wgpu::Device) {
         self.uniform = Some(CameraUniform::new(&self.data, aspect_ratio, device));
     }
     pub fn get_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -149,7 +149,7 @@ impl PipelineUniform for CameraUniform {
     }
 }
 
-pub(super) fn get_camera_default() -> Camera {
+pub(crate) fn get_camera_default() -> Camera {
     let camera = Camera::new(std::f32::consts::FRAC_PI_4, 0.1, 200.0);
     camera
 }

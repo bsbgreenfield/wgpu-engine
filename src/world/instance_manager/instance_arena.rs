@@ -21,7 +21,7 @@ pub(super) struct InstanceArena<A: Archetype> {
 }
 
 impl<A: Archetype + ArchetypeIdent> InstanceArena<A> {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             slots: Vec::new(),
             free_list: Vec::new(),
@@ -29,7 +29,7 @@ impl<A: Archetype + ArchetypeIdent> InstanceArena<A> {
             _t: PhantomData,
         }
     }
-    pub fn insert(&mut self, entity_handle: EntityHandle) -> InstanceHandle {
+    pub(super) fn insert(&mut self, entity_handle: EntityHandle) -> InstanceHandle {
         // select an open slot
         let slot_index = if let Some(free) = self.free_list.pop() {
             free
@@ -57,7 +57,7 @@ impl<A: Archetype + ArchetypeIdent> InstanceArena<A> {
         new_handle
     }
 
-    pub fn remove(&mut self, handle: InstanceHandle) -> Option<usize> {
+    pub(super) fn remove(&mut self, handle: InstanceHandle) -> Option<usize> {
         // get the slot indicated by the handle to be removed
         let slot = &mut self.slots[handle.instance_id as usize];
 
@@ -89,7 +89,7 @@ impl<A: Archetype + ArchetypeIdent> InstanceArena<A> {
         res
     }
 
-    pub fn resolve(&self, handle: &InstanceHandle) -> Option<usize> {
+    pub(super) fn resolve(&self, handle: &InstanceHandle) -> Option<usize> {
         let slot = &self.slots[handle.instance_id as usize];
 
         if slot.generation != handle.generation {

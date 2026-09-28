@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-pub trait ArchetypeTable {
+pub(super) trait ArchetypeTable {
     type A: Archetype;
     type Ref<'a>
     where
@@ -28,14 +28,14 @@ pub trait ArchetypeTable {
     fn query<'a>(&'a self, handle: &InstanceHandle) -> Option<Self::Ref<'a>>;
 }
 
-pub struct APositionTable {
+pub(super) struct APositionTable {
     pub(super) positions: Vec<GlobalTransform>,
     pub(super) arena: InstanceArena<APosition>,
     pub(super) record_indices: Vec<InstanceResidency>,
 }
 #[cfg(test)]
 impl APositionTable {
-    pub fn get_positions(&self) -> Vec<GlobalTransform> {
+    pub(super) fn get_positions(&self) -> Vec<GlobalTransform> {
         self.positions.clone()
     }
 }

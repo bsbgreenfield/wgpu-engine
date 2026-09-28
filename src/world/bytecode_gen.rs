@@ -6,26 +6,27 @@ use crate::{
     asset_manager::AssetHandle,
     common::instance::InstanceHandle,
     renderer::{
-        BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction, Operations,
-        PrototypeHandle, RenderProgram, TexDim,
+        BufferType, FrameArena, GPUAllocationHandle, GPUBindings, GPUInstanceHandle, Instruction,
+        Operations, PrototypeHandle, RenderKey, RenderProgram, TexDim,
     },
     util::types::AssetIndices,
     world::{
-        FrameArena, RenderBytes, RenderKey,
-        world::{
+        RenderBytes, WorldUpdateDelta,
+        instance_manager::{
             CopiedInstanceData, InverseBindMatrices, JointTransforms, LocalTransforms,
-            NewInstanceData, World, WorldUpdateDelta,
+            NewInstanceData,
         },
+        world::World,
     },
 };
 
 impl World {
     pub(crate) fn gen_bytecode(
-        deltas: &[WorldUpdateDelta],
+        deltas: std::vec::Drain<WorldUpdateDelta>,
         render_program: &mut RenderProgram,
         frame_arena: &mut FrameArena,
     ) {
-        for delta in deltas.iter() {
+        for delta in deltas {
             match delta {
                 WorldUpdateDelta::AssetDidLoad(asset_upload_job) => {
                     asset_upload(asset_upload_job, render_program, frame_arena)
@@ -37,13 +38,13 @@ impl World {
                     entity_instance_spawn(copied_instance, render_program)
                 }
                 WorldUpdateDelta::InstanceDespawn(gpu_instance_handle) => {
-                    despawn_instance(gpu_instance_handle, render_program)
+                    despawn_instance(&gpu_instance_handle, render_program)
                 }
                 WorldUpdateDelta::AssetUnload(asset_handle, alloc_handle) => {
-                    unload_asset(alloc_handle, asset_handle, render_program)
+                    unload_asset(&alloc_handle, &asset_handle, render_program)
                 }
                 WorldUpdateDelta::ReleasePrototype(prototype) => {
-                    release_prototype(prototype, render_program)
+                    release_prototype(&prototype, render_program)
                 }
             }
         }
@@ -55,7 +56,7 @@ fn push_data(data: Arc<dyn RenderBytes>, program: &mut RenderProgram, arena: &mu
     program.push_data(token);
 }
 
-fn asset_upload(job: &GPUAssetUploadJob, program: &mut RenderProgram, arena: &mut FrameArena) {
+fn asset_upload(job: GPUAssetUploadJob, program: &mut RenderProgram, arena: &mut FrameArena) {
     match job {
         GPUAssetUploadJob::ModelData {
             asset_handle,
@@ -66,20 +67,20 @@ fn asset_upload(job: &GPUAssetUploadJob, program: &mut RenderProgram, arena: &mu
         } => {
             program.push_op(Operations::AddAsset);
             program.push_key(asset_handle.as_key());
-            if let Some(pnu) = &pnu_vertices {
+            if let Some(pnu) = pnu_vertices {
                 program.push_op(Operations::PNUUpload);
-                push_data(pnu.clone(), program, arena);
+                push_data(pnu, program, arena);
             }
-            if let Some(pnujw) = &pnujw_vertices {
+            if let Some(pnujw) = pnujw_vertices {
                 program.push_op(Operations::PNUJWUpload);
-                push_data(pnujw.clone(), program, arena);
+                push_data(pnujw, program, arena);
             }
-            if let Some(indices) = &indices {
+            if let Some(indices) = indices {
                 match indices {
                     AssetIndices::U16(_) => program.push_op(Operations::Index16Upload),
                     AssetIndices::U32(_) => program.push_op(Operations::Index32Upload),
                 };
-                push_data(Arc::new(indices.clone()), program, arena);
+                push_data(Arc::new(indices), program, arena);
             }
             if !embedded_materials.records.is_empty() {
                 let mut alloc_indices = Vec::<u8>::with_capacity(embedded_materials.records.len());
@@ -121,7 +122,7 @@ fn asset_upload(job: &GPUAssetUploadJob, program: &mut RenderProgram, arena: &mu
                     }
                 }
                 program.push_op(Operations::MaterialUpload);
-                push_data(embedded_materials.records.clone(), program, arena);
+                push_data(embedded_materials.records, program, arena);
             }
 
             program.push_op(Operations::EmitAssetUpload);
@@ -142,7 +143,7 @@ fn asset_upload(job: &GPUAssetUploadJob, program: &mut RenderProgram, arena: &mu
         }
     }
 }
-fn new_entity_spawn(job: &NewInstanceData, program: &mut RenderProgram, arena: &mut FrameArena) {
+fn new_entity_spawn(job: NewInstanceData, program: &mut RenderProgram, arena: &mut FrameArena) {
     let mut bind_mask = GPUBindings::empty();
 
     // create the prototype, associated with this entity
@@ -258,7 +259,7 @@ fn entity_instance_spawn_ex(
     }
 }
 
-fn entity_instance_spawn(job: &CopiedInstanceData, program: &mut RenderProgram) {
+fn entity_instance_spawn(job: CopiedInstanceData, program: &mut RenderProgram) {
     let mut bind_mask = GPUBindings::empty();
 
     program.push_op(Operations::PushPrototype);

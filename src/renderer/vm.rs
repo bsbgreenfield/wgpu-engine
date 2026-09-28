@@ -3,19 +3,19 @@ use std::{iter::Peekable, slice::Iter};
 
 use crate::{
     renderer::{
-        AllocationMask, BufferType, GPUAllocationHandle, GPUBindings, GPUInstanceHandle,
-        InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderProgram,
-        RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, TexLayer, UploadMeshJob,
-        VertexArenaSelector,
+        AllocationMask, BufferType, FrameArena, GPUAllocationHandle, GPUBindings,
+        GPUInstanceHandle, InstanceUploadJob, Instruction, Operations, PrototypeHandle, RenderKey,
+        RenderProgram, RenderUpdateDelta, RenderUpdateError, StackValue, TexDim, TexLayer,
+        UploadMeshJob,
         bind_groups::SharedInstanceBindGroup,
         gpu_allocator::{
             UploadIndexJob, UploadMaterialJob, UploadTextureJob,
             gpu_arena::InstanceAllocationResult,
         },
         renderer::Renderer,
+        vertex_arena::VertexArenaSelector,
     },
     util::types::{GPUMaterialData, InstanceRecordData, PNUJWVertex, PNUVertex},
-    world::{FrameArena, RenderKey},
 };
 
 type InstructionSet<'a> = Peekable<Iter<'a, Instruction>>;

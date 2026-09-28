@@ -8,13 +8,13 @@ use crate::renderer::{
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct GPUTextureHandle {
+pub(in crate::renderer) struct GPUTextureHandle {
     asset_handle: GPUAllocationHandle,
     index: usize,
 }
 
 impl GPUTextureHandle {
-    pub fn new(alloc: GPUAllocationHandle, index: usize) -> Self {
+    pub(in crate::renderer) fn new(alloc: GPUAllocationHandle, index: usize) -> Self {
         Self {
             asset_handle: alloc,
             index,
@@ -23,13 +23,13 @@ impl GPUTextureHandle {
 }
 
 #[derive(Default)]
-pub struct TextureAllocTable {
+pub(in crate::renderer) struct TextureAllocTable {
     free_list: Vec<usize>,
     alloc_meta: Vec<AssetAllocationMeta>,
     table: HashMap<GPUAllocationHandle, Vec<usize>>,
 }
 impl TextureAllocTable {
-    pub fn dealloc_all(
+    pub(in crate::renderer) fn dealloc_all(
         &mut self,
         alloc_handle: &GPUAllocationHandle,
     ) -> Result<Vec<AssetAllocationMeta>, AllocationTableError> {

@@ -64,7 +64,7 @@ impl Deref for PrimitiveRange {
 }
 
 impl PrimitiveRange {
-    pub const fn byte_size(&self) -> usize {
+    pub(super) const fn byte_size(&self) -> usize {
         match self {
             PrimitiveRange::U16(_) => 2,
             PrimitiveRange::U32(_) => 4,
@@ -384,7 +384,7 @@ pub(super) fn copy_binary_data_from_gltf(
     Ok(copy_dest)
 }
 #[allow(unused)]
-pub fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+pub(super) fn base64_decode(input: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     use base64::prelude::BASE64_STANDARD;
     // Uses standard lib base64 via experimental feature or stable crate if you choose
     let decoded = BASE64_STANDARD.decode(input)?; // Requires base64 crate

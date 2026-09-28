@@ -8,7 +8,7 @@ use crate::{
     common::{entity::EntityHandle, instance::InstanceHandle},
     renderer::GPUInstanceHandle,
     util::types::GlobalTransform,
-    world::world::RenderGroup,
+    world::instance_manager::RenderGroup,
 };
 
 impl InstanceManager {

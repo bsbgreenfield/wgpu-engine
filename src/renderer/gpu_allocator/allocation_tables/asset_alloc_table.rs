@@ -4,7 +4,7 @@ use crate::renderer::gpu_allocator::allocation_tables::{
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 #[derive(Clone)]
-pub struct AssetAllocationMeta {
+pub(in crate::renderer) struct AssetAllocationMeta {
     chunk_id: u32,
     node_id: u32,
 }

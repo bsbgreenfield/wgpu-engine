@@ -151,13 +151,13 @@ impl TextureChunk {
     }
 }
 
-pub struct TextureArena {
+pub(in crate::renderer) struct TextureArena {
     chunks: [Option<TextureChunk>; 6],
     alloc_table: TextureAllocTable,
 }
 
 impl TextureArena {
-    pub fn new() -> Self {
+    pub(in crate::renderer) fn new() -> Self {
         Self {
             chunks: [None, None, None, None, None, None],
             alloc_table: TextureAllocTable::new(),
@@ -203,7 +203,11 @@ impl TextureArena {
         }
     }
 
-    pub fn ensure_default(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    pub(in crate::renderer) fn ensure_default(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
         if self.chunks[0].is_none() {
             let white_chunk = TextureChunk::white(device);
 
@@ -242,7 +246,7 @@ impl TextureArena {
         }
         return ChunkResult::Existing(chunk_idx);
     }
-    pub fn upload(
+    pub(in crate::renderer) fn upload(
         &mut self,
         job: UploadTextureJob,
         device: &wgpu::Device,
@@ -272,7 +276,7 @@ impl TextureArena {
         }
     }
 
-    pub fn get_view(&self, chunk_idx: usize) -> &wgpu::TextureView {
+    pub(in crate::renderer) fn get_view(&self, chunk_idx: usize) -> &wgpu::TextureView {
         if let Some(chunk) = &self.chunks[chunk_idx] {
             &chunk.view
         } else {

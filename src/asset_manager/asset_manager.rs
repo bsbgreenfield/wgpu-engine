@@ -443,7 +443,7 @@ pub(super) mod asset_mocks {
         },
     };
 
-    pub struct MockAsset;
+    pub(in crate::asset_manager) struct MockAsset;
     impl Asset for MockAsset {
         fn get_upload_job(
             &self,

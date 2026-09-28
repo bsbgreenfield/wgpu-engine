@@ -1,15 +1,19 @@
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
 use crate::{
+    app::GPUAssetUploadJob,
     asset_manager::{AssetHandle, AssetLoadError},
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::DataToken,
+    renderer::{GPUAllocationHandle, GPUInstanceHandle, PrototypeHandle, RenderBytes},
     util::types::{AssetIndices, GPUTextureData},
-    world::{entity_manager::EntityManagerError, scene::manager::SceneManagerError},
+    world::{
+        entity_manager::EntityManagerError,
+        instance_manager::{CopiedInstanceData, NewInstanceData},
+        scene::manager::SceneManagerError,
+    },
 };
 
 pub(super) mod bytecode_gen;
-pub mod camera;
 pub mod entity_manager;
 pub mod instance_manager;
 mod load_queue;
@@ -28,6 +32,30 @@ impl From<SceneManagerError> for WorldInitError {
     }
 }
 
+#[derive(Clone)]
+pub(crate) enum WorldUpdateDelta {
+    NewEntitySpawn(NewInstanceData),
+    EntityInstanceSpawn(CopiedInstanceData),
+    AssetDidLoad(GPUAssetUploadJob),
+    AssetUnload(AssetHandle, GPUAllocationHandle),
+    InstanceDespawn(GPUInstanceHandle),
+    ReleasePrototype(PrototypeHandle),
+}
+
+impl<'frame> std::fmt::Debug for WorldUpdateDelta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WorldUpdateDelta::NewEntitySpawn(_) => f.write_str("NewEntitySpawn"),
+            WorldUpdateDelta::EntityInstanceSpawn(_) => f.write_str("EntityInstanceSpawn"),
+            WorldUpdateDelta::AssetDidLoad(_) => f.write_str("AssetDidLoad"),
+            WorldUpdateDelta::InstanceDespawn(handle) => write!(f, "despawn {:?}", handle),
+            WorldUpdateDelta::AssetUnload(_asset_handle, alloc_handle) => {
+                write!(f, "unload asset {:?}", alloc_handle)
+            }
+            WorldUpdateDelta::ReleasePrototype(p) => write!(f, "release prototype {p:?}"),
+        }
+    }
+}
 #[derive(Debug)]
 pub enum WorldUpdateError {
     AssetLoadFailure(AssetLoadError),
@@ -106,11 +134,6 @@ impl From<EntityManagerError> for WorldInitError {
     }
 }
 
-pub trait RenderKey {
-    fn as_key(&self) -> u64;
-    fn from_key(key: u64) -> Self;
-}
-
 pub struct InstanceResidency {
     pub group_id: u64,
     pub record_index: u32,
@@ -131,10 +154,6 @@ impl InstanceResidency {
     }
 }
 
-pub(crate) trait RenderBytes: Send + Sync {
-    fn as_bytes(&self) -> &[u8];
-}
-
 impl<T: bytemuck::Pod + Send + Sync> RenderBytes for Vec<T> {
     fn as_bytes(&self) -> &[u8] {
         bytemuck::cast_slice(self)
@@ -150,24 +169,5 @@ impl RenderBytes for AssetIndices {
 impl RenderBytes for GPUTextureData {
     fn as_bytes(&self) -> &[u8] {
         bytemuck::cast_slice(&self.pixels)
-    }
-}
-
-#[derive(Default)]
-pub struct FrameArena {
-    data: Vec<Arc<dyn RenderBytes>>,
-}
-
-impl FrameArena {
-    pub fn clear(&mut self) {
-        self.data.clear();
-    }
-    pub fn resolve(&self, token: DataToken) -> Option<&[u8]> {
-        self.data.get(token.0 as usize).map(|data| data.as_bytes())
-    }
-
-    pub(crate) fn add_data(&mut self, data: Arc<dyn RenderBytes>) -> DataToken {
-        self.data.push(data);
-        DataToken(self.data.len() as u32 - 1)
     }
 }

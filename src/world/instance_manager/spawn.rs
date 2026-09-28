@@ -7,9 +7,9 @@ use crate::{
     world::{
         WorldUpdateError,
         entity_manager::{Renderables, entity_manager::EntityManager},
+        instance_manager::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
         instance_manager::{archetypes::Archetype, instance_manager::InstanceManager},
         scene::scene::Spawn,
-        world::{DrawSet, InstanceUploadData, NewInstanceData, RenderGroup, RenderView},
     },
 };
 
@@ -222,7 +222,7 @@ impl InstanceManager {
 }
 
 impl InstanceSpawn for InstanceManager {}
-pub trait InstanceSpawn {
+pub(super) trait InstanceSpawn {
     fn get_entity_animations(renderables: Renderables) -> Option<EntityAnimations> {
         if let Some(entity_animation_data) = renderables.animations {
             return Some(EntityAnimations {

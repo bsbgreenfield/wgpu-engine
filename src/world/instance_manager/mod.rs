@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use crate::{
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::GPUInstanceHandle,
-    util::types::GlobalTransform,
-    world::{RenderKey, instance_manager::archetypes::ArchetypeId},
+    renderer::{DrawSet, GPUAllocationHandle, PrototypeHandle, RenderKey},
+    util::types::{InverseBindMatrix, JointTransform, LocalTransform},
+    world::instance_manager::archetypes::ArchetypeId,
 };
 
 pub(super) mod ack;
@@ -58,21 +60,82 @@ impl InstanceHandle {
 }
 
 #[derive(Debug)]
-pub struct AnimationUpdate<'frame> {
-    pub gpu_handle: GPUInstanceHandle,
-    pub transforms: &'frame [u8],
-}
-
-#[derive(Debug, Default)]
-pub struct RenderFrame<'frame> {
-    pub global_transforms: &'frame [GlobalTransform],
-    pub indirection_list: &'frame [u32],
-    pub rigid_animation_data: Vec<AnimationUpdate<'frame>>,
-    pub joint_animation_data: Vec<AnimationUpdate<'frame>>,
-}
-
-#[derive(Debug)]
 pub struct InstanceGPUBindings {
     pub lt_offset: u32,
     pub joint_offset: Option<u32>,
+}
+
+pub(crate) struct RenderView {
+    pub alloc_handle: GPUAllocationHandle,
+    pub pnujw_draws: Option<DrawSet>,
+    pub pnu_draws: Option<DrawSet>,
+}
+
+#[allow(unused)]
+pub(crate) struct RenderGroup {
+    pub entity_handle: EntityHandle,
+    views: Vec<RenderView>,
+}
+
+impl RenderGroup {
+    pub(crate) fn views(&self) -> &[RenderView] {
+        &self.views
+    }
+    pub(super) fn new(views: Vec<RenderView>, entity_handle: EntityHandle) -> Self {
+        Self {
+            entity_handle: entity_handle,
+            views,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum LocalTransforms {
+    Uninit,
+    OwnedShared { data: Arc<Vec<LocalTransform>> },
+    OwnedCopy { data: Arc<Vec<LocalTransform>> },
+    CopiedFrom { donor: InstanceHandle },
+    NeedsCopy,
+    SharedWith { donor: InstanceHandle },
+    NeedsShared,
+}
+
+#[derive(Debug, Clone)]
+pub enum JointTransforms {
+    None,
+    OwnedShared { data: Arc<Vec<JointTransform>> },
+    OwnedCopy { data: Arc<Vec<JointTransform>> },
+    NeedsCopy,
+    NeedsShared,
+}
+
+#[derive(Debug, Clone)]
+pub enum InverseBindMatrices {
+    None,
+    Owned { data: Arc<Vec<InverseBindMatrix>> },
+    NeedsCopy,
+    NeedsShared,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewInstanceData {
+    pub handle: InstanceHandle,
+    pub local_transforms: LocalTransforms,
+    pub joint_transforms: JointTransforms,
+    pub ibms: InverseBindMatrices,
+    pub additional: Vec<InstanceHandle>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CopiedInstanceData {
+    pub handles: Vec<InstanceHandle>,
+    pub prototype_handle: PrototypeHandle,
+    pub local_transforms: LocalTransforms,
+    pub joint_transforms: JointTransforms,
+}
+
+#[derive(Debug)]
+pub enum InstanceUploadData {
+    New(NewInstanceData),
+    Copied(CopiedInstanceData),
 }

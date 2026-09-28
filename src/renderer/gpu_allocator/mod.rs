@@ -87,7 +87,12 @@ impl<T: GPUUploadable + bytemuck::Pod + Debug> GPUChunk<T> {
         ))
     }
 
-    pub fn new(device: &wgpu::Device, size: u32, label: &str, usages: wgpu::BufferUsages) -> Self {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        size: u32,
+        label: &str,
+        usages: wgpu::BufferUsages,
+    ) -> Self {
         Self {
             remaining_space: size,
             buffer: device.create_buffer(&wgpu::BufferDescriptor {

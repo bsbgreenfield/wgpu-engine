@@ -1,4 +1,4 @@
-use crate::world::RenderKey;
+use crate::renderer::RenderKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntityHandle(pub u16);

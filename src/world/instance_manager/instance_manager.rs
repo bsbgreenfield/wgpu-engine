@@ -1,16 +1,15 @@
 use crate::{
     app::app::AppCommand,
     common::{entity::EntityHandle, instance::InstanceHandle},
-    renderer::{GPUInstanceHandle, RenderPacket},
+    renderer::{GPUInstanceHandle, RenderFrame, RenderPacket},
     world::{
         WorldUpdateError,
         instance_manager::{
-            ArchetypeId, RenderFrame,
+            ArchetypeId, RenderGroup,
             animation_controller::AnimationController,
             archetype_table::{APositionTable, ArchetypeTable},
             gpu_bind_registry::GPUBindRegistry,
         },
-        world::RenderGroup,
     },
 };
 

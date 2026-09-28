@@ -42,7 +42,7 @@ pub(in crate::renderer) trait StorageData:
         .union(wgpu::BufferUsages::COPY_SRC);
 }
 
-pub trait SharedInstanceData:
+pub(in crate::renderer) trait SharedInstanceData:
     StorageData + GPUUploadable<GPUHandle = GPUInstanceHandle, AllocTable = SharedInstanceAllocTable>
 {
 }
@@ -59,7 +59,7 @@ impl StorageData for GlobalTransform {}
 impl StorageData for InstanceRecordData {}
 impl StorageData for InstanceOffset {}
 
-pub trait AllocationSlot: Clone {
+pub(in crate::renderer) trait AllocationSlot: Clone {
     fn new(chunk_id: usize, node_id: usize) -> Self;
     fn chunk(&self) -> usize;
     fn node(&self) -> usize;
@@ -94,7 +94,7 @@ impl std::fmt::Display for AllocationTableError {
     }
 }
 impl std::error::Error for AllocationTableError {}
-pub trait TAllocationTable {
+pub(in crate::renderer) trait TAllocationTable {
     type Handle: Eq + std::hash::Hash + Clone + std::fmt::Debug;
     type MetaData: AllocationSlot;
 

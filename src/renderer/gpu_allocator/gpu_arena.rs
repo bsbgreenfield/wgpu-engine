@@ -400,7 +400,7 @@ pub(in crate::renderer) struct GPUArena<T: GPUUploadable> {
 }
 
 impl<T: ReservedSlotData> GPUArena<T> {
-    pub fn reserve(
+    pub(crate) fn reserve(
         &mut self,
         queue: &wgpu::Queue,
         device: &wgpu::Device,
@@ -422,7 +422,7 @@ impl<T: ReservedSlotData> GPUArena<T> {
         return Err(AllocationTableError::MaxAllocationReached(T::arena_label()));
     }
 
-    pub fn upload_reserved<'a>(
+    pub(crate) fn upload_reserved<'a>(
         &mut self,
         job: T::UploadJob<'a>,
         reserved_node: u32,
@@ -443,7 +443,7 @@ impl<T: ReservedSlotData> GPUArena<T> {
 }
 
 impl<T: SharedInstanceData> GPUArena<T> {
-    pub fn remove_prototype_binding(
+    pub(crate) fn remove_prototype_binding(
         &mut self,
         prototype: &PrototypeHandle,
     ) -> Result<(), VertexArenaError> {
@@ -456,7 +456,7 @@ impl<T: SharedInstanceData> GPUArena<T> {
 
         Ok(())
     }
-    pub fn register_shared_binding(
+    pub(crate) fn register_shared_binding(
         &mut self,
         new_handle: &GPUInstanceHandle,
     ) -> Result<InstanceAllocationResult, AllocationTableError> {
@@ -470,7 +470,7 @@ impl<T: SharedInstanceData> GPUArena<T> {
         })
     }
 
-    pub fn register_copy_binding(
+    pub(crate) fn register_copy_binding(
         &mut self,
         new_handle: &GPUInstanceHandle,
         queue: &wgpu::Queue,

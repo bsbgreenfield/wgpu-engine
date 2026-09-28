@@ -1,2 +1,4 @@
 [env]
 
+[build]
+rustflags = ["-W", "unreachable_pub"]
