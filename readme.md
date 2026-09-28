@@ -9,4 +9,6 @@ An in progress game engine made from scratch using wgpu and winit
 - Bytecode driven renderer, with zero dependencies on the in crate ECS, can be driven with any bytecode provider.
 
 
+![Medieval Scene](./Peek 2026-09-28 11-24.gif)
 
+![Brain Dance](./brain.gif)
